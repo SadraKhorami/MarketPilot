@@ -1,5 +1,5 @@
 import { type CanActivate, type ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
-import type { Reflector } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 
 import { API_SCOPES_KEY, type AuthenticatedRequest } from "./auth";
 

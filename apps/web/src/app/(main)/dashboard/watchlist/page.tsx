@@ -10,7 +10,7 @@ export default function WatchlistPage() {
   return (
     <MarketPilotPage
       title="Watchlist"
-      description="Organize the assets you want to follow. Changes in this preview stay in temporary page state."
+      description="Organize saved assets for your account. Market prices and changes remain sample data."
       actions={<Bookmark className="size-5 text-muted-foreground" aria-hidden="true" />}
     >
       <WatchlistManager />

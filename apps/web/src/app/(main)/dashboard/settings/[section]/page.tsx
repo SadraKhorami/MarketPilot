@@ -8,7 +8,7 @@ import { SettingsPanel, type SettingsSection } from "../_components/settings-pan
 type SettingsPageProps = { params: Promise<{ section: string }> };
 const sections: SettingsSection[] = ["profile", "security", "notifications", "appearance"];
 const descriptions: Record<SettingsSection, string> = {
-  profile: "Profile information for the current local preview workspace.",
+  profile: "Profile information for your MarketPilot account.",
   security: "Security controls and session status for the future authenticated workspace.",
   notifications: "Choose which updates would be enabled after notification services are connected.",
   appearance: "Choose a theme for the MarketPilot workspace.",

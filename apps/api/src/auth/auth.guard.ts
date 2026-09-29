@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { type CanActivate, type ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
-import type { Reflector } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 import { type AuthenticatedRequest, IS_PUBLIC } from "../common/auth";
 import { DatabaseService } from "../database.module";
 import { SESSION_COOKIE } from "./auth.constants";

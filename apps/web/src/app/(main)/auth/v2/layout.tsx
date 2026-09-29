@@ -25,10 +25,8 @@ export default function Layout({ children }: Readonly<{ children: ReactNode }>) 
             </div>
             <Separator orientation="vertical" className="mx-3 h-auto!" />
             <div className="flex-1 space-y-1 text-primary-foreground">
-              <h2 className="font-medium">Frontend preview</h2>
-              <p className="text-sm">
-                Account access is not connected yet. No credentials are submitted from this preview.
-              </p>
+              <h2 className="font-medium">Your market workspace</h2>
+              <p className="text-sm">Sign in to manage your saved watchlists, alerts, and account settings.</p>
             </div>
           </div>
         </div>
