@@ -29,7 +29,7 @@ packages/
 - `apps/worker` runs isolated BullMQ processors. It invokes application services and writes durable job outcomes; it does not become a second source of domain rules.
 - `apps/bot` authenticates Telegram/Discord updates and translates commands/notifications into API or shared application-service calls. It has no direct DB access except through a deliberately shared service boundary if later justified.
 - `packages/db` is the only package that owns Prisma schema and database client construction. API and worker may consume it through services; web and bot do not access it.
-- `packages/marketfeed` isolates the unknown vendor contract. Its typed interface is based only on confirmed capabilities; the development mock implements that interface and is selected explicitly by configuration.
+- `packages/marketfeed` is a MarketPilot-owned provider/client adapter for the separately maintained MarketFeed HTTP service. It validates upstream requests/responses and maps them to stable MarketPilot types; it must not import or copy the MarketFeed repository's Express/MongoDB implementation. The local source audit confirms routes and code-level behavior, while deployed URL, data rights, operational limits, and contract stability remain unresolved. A development mock implements the same MarketPilot-owned interface and is selected explicitly by configuration.
 - `packages/ai` receives scoped application tools and provider configuration. It does not own authentication or call vendor APIs directly.
 - `packages/types` contains stable shared value types only; avoid turning it into a dumping ground or creating circular imports.
 - `packages/config` holds shared build/lint configuration, not secrets or runtime credentials.

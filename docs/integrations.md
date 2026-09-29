@@ -2,21 +2,19 @@
 
 ## MarketFeed API audit
 
-The supplied project workspace had no MarketFeed repository, API URL, OpenAPI/Swagger document, or endpoint definitions. The dashboard foundation also contains no MarketFeed integration. The product brief says the service provides current/real-time prices, technical indicators, trend analysis, news, sentiment, and token-based authentication. It does not specify how any of these are requested or returned.
+The source project `marketsentinel-marketfeed` was found on the Desktop and inspected read-only at revision `f060fd281139c593852d1248768e74337e323892`. Its implementation, API shape, calculations, data-source flow, and limitations are documented in [marketfeed-audit.md](marketfeed-audit.md). This project is a potential upstream data service only. Its Express/MongoDB architecture is explicitly not the MarketPilot backend architecture, and its repository/code must not become a MarketPilot dependency.
 
-| Contract detail | Discovery result |
-|---|---|
-| Base URL / environments | Not supplied or discoverable locally |
-| Token transport, acquisition, expiry/refresh | Token-based authentication is stated; header/query format and lifecycle are unknown |
-| Endpoint paths and HTTP methods | Unknown; do not invent |
-| Request parameters and supported symbols/assets | Unknown |
-| Price, indicator, trend, news, and sentiment response schemas | Capabilities are stated; fields/enums/units are unknown |
-| Pagination and time-range semantics | Unknown |
-| Error schema and retry hints | Unknown |
-| Rate limits, quotas, freshness guarantees | Unknown |
-| Websocket/stream protocol for “real-time” | Unknown; real-time may mean polling or streaming |
+| Contract detail | Confirmed from the inspected source | Still unverified |
+|---|---|---|
+| Base URL | Defaults to `http://127.0.0.1:3199`, configurable with `HOST` and `PORT` | No authoritative deployed URL/environment found |
+| Authentication | Bearer token or `x-api-key`; token creation/list/revoke/validate CLI; token hashes stored in MongoDB | No production credential flow or independent sandbox found; OpenAPI incorrectly labels opaque tokens as JWT |
+| Market data | `GET /api/market-data/:symbol`, optional `interval` default `15`; returns current price, up to 120 candles, indicators, trend, levels, market status, and volatility | Actual asset catalog, provider success, freshness, and contract/versioning not established |
+| News | `GET /api/news/:symbol`; article fields include ID, title, published time, source, URL, sentiment | Coverage/pagination are unknown; code copies provider sentiment or defaults to neutral, with no sentiment-analysis implementation |
+| Health and docs | `/api/health`, `/docs`, `/swagger.json`, `/routes.json` are public | Health reports process-level `healthy` without dependency readiness |
+| Errors and limits | Common `{ error, details? }`; route-level cases include 400/401/403/502/503/500; 100 requests per IP per 15 minutes on `/api/` | OpenAPI omits some implementation outcomes; upstream TradingView quotas/terms and service freshness are unknown |
+| History / streaming | Implementation requests chart history, then returns latest 120 candles | No date-range/pagination or WebSocket endpoint found |
 
-Before implementing the real adapter, obtain the authoritative API URL and docs/spec or source repository, a development credential or safe sandbox, supported asset universe, and provider guidance for rate limits and data reuse. Until then, keep a typed `MarketFeedProvider` boundary based only on confirmed product capabilities and build a deterministic development mock behind explicit environment selection. Validate all mock/real responses at the adapter boundary; label mock results as demo data. Production must fail closed when real provider configuration is absent.
+Before implementing the adapter, obtain the deployed API URL/version, a safe development credential or sandbox, the supported asset universe, and written guidance for licensing/data reuse, freshness, request limits, and provider outages. Keep a MarketPilot-owned typed provider boundary and convert upstream responses into MarketPilot domain types. The web app, bots, workers, and AI tools must not consume raw MarketFeed payloads. Validate external responses at the adapter boundary; label mock results as demo data. Production must fail closed when real provider configuration is absent.
 
 ## AI tools and trust boundary
 

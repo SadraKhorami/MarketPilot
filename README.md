@@ -37,3 +37,4 @@ GitHub Actions runs the same checks on pull requests and pushes to `main`.
 - [Architecture](docs/architecture.md)
 - [Database proposal](docs/database.md)
 - [Integration and security design](docs/integrations.md)
+- [MarketFeed source audit](docs/marketfeed-audit.md)
