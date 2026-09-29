@@ -1,0 +1,16 @@
+# Local working copy used to inspect the upstream dashboard during Phase 0.
+/work/
+
+# Runtime secrets and local environment.
+.env
+.env.*
+!.env.example
+
+# JavaScript build artifacts.
+node_modules/
+.next/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.turbo/
