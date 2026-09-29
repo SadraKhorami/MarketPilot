@@ -1,0 +1,17 @@
+{
+  "name": "marketpilot",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.26.0",
+  "scripts": {
+    "dev": "turbo run dev --filter=@marketpilot/web",
+    "build": "turbo run build --filter=@marketpilot/*",
+    "lint": "turbo run lint --filter=@marketpilot/*",
+    "format:check": "turbo run format:check --filter=@marketpilot/*",
+    "typecheck": "turbo run typecheck --filter=@marketpilot/*",
+    "ci": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.6"
+  }
+}

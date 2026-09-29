@@ -1,5 +1,6 @@
 # Local working copy used to inspect the upstream dashboard during Phase 0.
 /work/
+.DS_Store
 
 # Runtime secrets and local environment.
 .env
