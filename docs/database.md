@@ -1,6 +1,6 @@
 # Database Model
 
-PostgreSQL is authoritative. The implemented Prisma schema and initial migration live in `packages/db/prisma`. Models use UUID primary keys, UTC timestamps, explicit ownership foreign keys, and database constraints for invariants. Asset identifiers remain normalized strings; no MarketFeed-specific fields are assumed.
+PostgreSQL is authoritative. The implemented Prisma schema and initial migration live in `packages/db/prisma`. Models use UUID primary keys, UTC timestamps, explicit ownership foreign keys, and database constraints for invariants. Asset identifiers remain normalized strings; no market-provider-specific fields are assumed.
 
 Phase 3 adds `NewsArticle` as provider-owned normalized news metadata. It stores the original URL and a unique SHA-256 canonical URL hash, source, title/description as supplied, publication/retrieval timestamps, language, source categories, and deterministic affected asset symbols. `publishedAt/source`, `category/publishedAt`, and `fetchedAt` have B-tree indexes; affected assets use a PostgreSQL GIN index. The future classification columns (`category`, `priority`, `impactScore`, `classificationConfidence`, `classifiedAt`) remain nullable and are not populated in Phase 3. Market observations remain in Redis only; PostgreSQL is not used to retain provider prices in this phase.
 
@@ -31,4 +31,4 @@ Phase 3 adds `NewsArticle` as provider-owned normalized news metadata. It stores
 
 ## Remaining data decisions
 
-Confirm email verification/password-reset requirements, user deletion and retention behavior, whether teams/tenants are in scope, asset identifier semantics from MarketFeed, alert evaluation/cooldown rules, API key scopes/quotas, and channel-specific metadata/privacy requirements. Start without team/tenant tables unless collaboration is confirmed.
+Confirm email verification/password-reset requirements, user deletion and retention behavior, whether teams/tenants are in scope, canonical asset identifier semantics across providers, alert evaluation/cooldown rules, API key scopes/quotas, and channel-specific metadata/privacy requirements. Start without team/tenant tables unless collaboration is confirmed.

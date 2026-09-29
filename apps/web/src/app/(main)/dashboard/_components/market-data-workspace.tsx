@@ -9,15 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { apiRequest, type ApiEnvelope } from "@/lib/api/client";
-import type { MarketFeedInterval, MarketFeedResponse } from "@marketpilot/marketfeed";
+import type { MarketDataInterval, MarketObservation } from "@marketpilot/market-data";
 
 import { MarketPilotPage } from "./marketpilot-page";
 import { PriceHistoryChart } from "./price-history-chart";
 
 interface MarketSnapshot {
-  source: "MarketFeed";
+  source: string;
   requestedSymbol: string;
-  data: MarketFeedResponse;
+  data: MarketObservation;
   freshness: "fresh" | "stale";
   fetchedAt: string;
 }
@@ -29,10 +29,10 @@ interface Props {
   mode?: "overview" | "analytics" | "watchlist";
 }
 
-export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUSDT", mode = "overview" }: Props) {
+export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-USD", mode = "overview" }: Props) {
   const [symbol, setSymbol] = useState(initialSymbol);
   const [draft, setDraft] = useState(initialSymbol);
-  const [interval, setInterval] = useState<MarketFeedInterval>("15");
+  const [interval, setInterval] = useState<MarketDataInterval>("15m");
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,6 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
     () =>
       (snapshot?.data.candles ?? [])
         .slice()
-        .reverse()
         .map((candle) => ({ time: formatCandleTime(candle.time, interval), price: candle.close })),
     [interval, snapshot],
   );
@@ -84,7 +83,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
             }}
           >
             <label className="min-w-0 flex-1 font-medium text-sm" htmlFor="market-symbol">
-              Provider symbol
+              Trading pair
               <Input
                 id="market-symbol"
                 value={draft}
@@ -103,10 +102,10 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
             <select
               id="market-interval"
               value={interval}
-              onChange={(event) => setInterval(event.target.value as MarketFeedInterval)}
+              onChange={(event) => setInterval(event.target.value as MarketDataInterval)}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             >
-              {["1", "5", "15", "30", "60", "240", "D", "W", "M"].map((value) => (
+              {["1m", "5m", "15m", "1h", "6h", "1d"].map((value) => (
                 <option key={value}>{value}</option>
               ))}
             </select>
@@ -126,7 +125,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
       {loading && !data ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground" role="status">
-            Loading verified MarketFeed data…
+            Loading verified Coinbase Exchange data…
           </CardContent>
         </Card>
       ) : null}
@@ -147,7 +146,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
       {!loading && !error && !data ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
-            No MarketFeed observation is available for this symbol.
+            No Coinbase Exchange observation is available for this symbol.
           </CardContent>
         </Card>
       ) : null}
@@ -169,8 +168,12 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
               }
               detail="First to latest candle in returned set"
             />
-            <MetricCard label="Trend" value={data.trend} detail="MarketFeed trend classification" />
-            <MetricCard label="Sentiment" value="Unavailable" detail="MarketFeed does not provide verified sentiment" />
+            <MetricCard
+              label="Trend"
+              value={data.trend ?? "Insufficient history"}
+              detail="Calculated from validated candles"
+            />
+            <MetricCard label="Sentiment" value="Unavailable" detail="No verified sentiment source is configured" />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.8fr)]">
@@ -178,7 +181,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
               <CardHeader>
                 <CardTitle className="text-base">Price history</CardTitle>
                 <CardDescription>
-                  {data.candles.length} MarketFeed candles · interval {data.interval}
+                  {data.candles.length} Coinbase Exchange candles · interval {data.interval}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -192,19 +195,27 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
             <Card className="shadow-none">
               <CardHeader>
                 <CardTitle className="text-base">Technical indicators</CardTitle>
-                <CardDescription>Values returned by MarketFeed</CardDescription>
+                <CardDescription>Calculated from Coinbase Exchange candles</CardDescription>
               </CardHeader>
               <CardContent className="divide-y">
                 <Indicator label="RSI" value={data.indicators.rsi} />
                 <Indicator
                   label="MACD"
-                  value={`${data.indicators.macd.value} · signal ${data.indicators.macd.signal}`}
+                  value={
+                    data.indicators.macd
+                      ? `${data.indicators.macd.value} · signal ${data.indicators.macd.signal}`
+                      : null
+                  }
                 />
                 <Indicator label="SMA 50" value={data.indicators.sma50} />
                 <Indicator label="SMA 200" value={data.indicators.sma200} />
                 <Indicator
                   label="Bollinger bands"
-                  value={`${data.indicators.bollingerBands.lower} – ${data.indicators.bollingerBands.upper}`}
+                  value={
+                    data.indicators.bollingerBands
+                      ? `${data.indicators.bollingerBands.lower} – ${data.indicators.bollingerBands.upper}`
+                      : null
+                  }
                 />
                 <Indicator label="ATR" value={data.indicators.atr} />
                 <Indicator label="Market open" value={data.marketStatus.isOpen ? "Yes" : "No"} />
@@ -216,23 +227,23 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
             <Card className="shadow-none">
               <CardHeader>
                 <CardTitle className="text-base">Signal summary</CardTitle>
-                <CardDescription>Derived only from this returned MarketFeed snapshot</CardDescription>
+                <CardDescription>Derived from this provider observation</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-3">
                 <MetricCard
                   label="Support levels"
                   value={data.supportResistance?.support.join(", ") || "Unavailable"}
-                  detail="MarketFeed response"
+                  detail="Coinbase Exchange response"
                 />
                 <MetricCard
                   label="Resistance levels"
                   value={data.supportResistance?.resistance.join(", ") || "Unavailable"}
-                  detail="MarketFeed response"
+                  detail="Coinbase Exchange response"
                 />
                 <MetricCard
                   label="Volatility ATR"
-                  value={data.volatility?.atr_percentage ?? "Unavailable"}
-                  detail="MarketFeed response"
+                  value={data.volatility.atrPercentage?.toFixed(2) ?? "Unavailable"}
+                  detail="ATR as a percentage of price"
                 />
               </CardContent>
             </Card>
@@ -242,9 +253,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
             <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
               <div>
                 <CardTitle className="text-base">Data provenance</CardTitle>
-                <CardDescription>
-                  Provider timestamp and MarketPilot cache metadata. MarketFeed may apply its own 15-minute cache.
-                </CardDescription>
+                <CardDescription>Provider timestamp and MarketPilot cache metadata.</CardDescription>
               </div>
               <Badge variant={snapshot?.freshness === "fresh" ? "secondary" : "outline"}>
                 {snapshot?.freshness === "fresh" ? "Recent MarketPilot retrieval" : "Stale MarketPilot cache"}
@@ -253,7 +262,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTCUS
             <CardContent className="grid gap-3 text-sm sm:grid-cols-3">
               <div>
                 <p className="text-muted-foreground">Source</p>
-                <p className="mt-1 font-medium">MarketFeed</p>
+                <p className="mt-1 font-medium">Coinbase Exchange</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Provider timestamp</p>
@@ -285,12 +294,16 @@ function MetricCard({ label, value, detail }: { label: string; value: string; de
   );
 }
 
-function Indicator({ label, value }: { label: string; value: number | string }) {
+function Indicator({ label, value }: { label: string; value: number | string | null }) {
   return (
     <div className="flex justify-between gap-3 py-2.5 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right font-medium tabular-nums">
-        {typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 6 }) : value}
+        {value === null
+          ? "Unavailable"
+          : typeof value === "number"
+            ? value.toLocaleString(undefined, { maximumFractionDigits: 6 })
+            : value}
       </span>
     </div>
   );
@@ -300,9 +313,9 @@ function formatPrice(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 1 ? 8 : 4 }).format(value);
 }
 
-function formatCandleTime(value: string, interval: MarketFeedInterval) {
+function formatCandleTime(value: string, interval: MarketDataInterval) {
   const timestamp = new Date(value);
-  return ["1", "5", "15", "30", "60", "240"].includes(interval)
+  return ["1m", "5m", "15m", "1h", "6h"].includes(interval)
     ? timestamp.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
     : timestamp.toLocaleDateString();
 }

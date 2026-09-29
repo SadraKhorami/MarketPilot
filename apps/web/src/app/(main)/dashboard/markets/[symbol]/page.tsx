@@ -9,7 +9,7 @@ export default async function AssetPage({ params }: { params: Promise<{ symbol: 
   return (
     <MarketDataWorkspace
       title={`${symbol.toUpperCase()} market data`}
-      description="MarketFeed price history, technical indicators, trend information, and provider timestamps."
+      description="Provider-backed price history, technical indicators, trend information, and source timestamps."
       initialSymbol={symbol}
     />
   );

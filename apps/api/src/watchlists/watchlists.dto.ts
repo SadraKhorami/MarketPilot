@@ -10,14 +10,14 @@ export class CreateWatchlistDto {
 }
 
 export class AddWatchlistItemDto {
-  @ApiProperty({ example: "BTCUSDT" })
+  @ApiProperty({ example: "BTC-USD" })
   @IsString()
   @Matches(/^[a-zA-Z0-9:_-]{2,32}$/)
   assetId!: string;
 }
 
 export class ReorderWatchlistDto {
-  @ApiProperty({ type: [String], example: ["BTCUSDT", "ETHUSDT"] })
+  @ApiProperty({ type: [String], example: ["BTC-USD", "ETH-USD"] })
   @IsArray()
   @IsString({ each: true })
   assetIds!: string[];

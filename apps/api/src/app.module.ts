@@ -17,17 +17,16 @@ import { RateLimitGuard } from "./common/rate-limit.guard";
 import { RolesGuard } from "./common/roles.guard";
 import { DatabaseModule } from "./database.module";
 import { HealthController } from "./health.controller";
-import { RedisService } from "./redis.service";
+import { RedisModule } from "./redis.module";
 import { SettingsController } from "./settings/settings.controller";
 import { UsersController } from "./users/users.controller";
 import { WatchlistsController } from "./watchlists/watchlists.controller";
 import { WatchlistsService } from "./watchlists/watchlists.service";
-import { MarketsController } from "./markets/markets.controller";
-import { MarketsService } from "./markets/markets.service";
+import { MarketDataModule } from "./market-data/market-data.module";
 import { NewsController } from "./news/news.controller";
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, RedisModule, MarketDataModule],
   controllers: [
     AuthController,
     UsersController,
@@ -37,17 +36,14 @@ import { NewsController } from "./news/news.controller";
     ActivityController,
     SettingsController,
     HealthController,
-    MarketsController,
     NewsController,
   ],
   providers: [
-    RedisService,
     AuthService,
     ActivityService,
     WatchlistsService,
     AlertsService,
     ApiKeysService,
-    MarketsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: OriginGuard },

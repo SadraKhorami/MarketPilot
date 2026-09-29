@@ -8,7 +8,7 @@ export default function MarketsPage() {
   return (
     <MarketDataWorkspace
       title="Markets"
-      description="Load any provider-supported MarketFeed symbol to view its actual price, candles, indicators, and trend."
+      description="Explore Coinbase Exchange crypto products with provider timestamps, candles, and calculated technical indicators."
     />
   );
 }

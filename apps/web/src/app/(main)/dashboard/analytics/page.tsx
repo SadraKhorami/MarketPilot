@@ -8,7 +8,7 @@ export default function AnalyticsPage() {
   return (
     <MarketDataWorkspace
       title="Analytics"
-      description="Review indicators and support, resistance, and volatility fields returned by MarketFeed."
+      description="Review indicators, support and resistance levels, volatility, and source timestamps."
       mode="analytics"
     />
   );

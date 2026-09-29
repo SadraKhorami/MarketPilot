@@ -31,21 +31,21 @@ describe("WatchlistsService", () => {
       watchlist: { findFirst: jest.fn().mockResolvedValue({ id: "w1" }), update: jest.fn() },
       watchlistItem: {
         count: jest.fn().mockResolvedValue(0),
-        create: jest.fn().mockResolvedValue({ id: "i1", assetId: "BTCUSDT" }),
+        create: jest.fn().mockResolvedValue({ id: "i1", assetId: "BTC-USD" }),
       },
     };
     const service = new WatchlistsService(db as never, activity as never);
-    const result = await service.addItem("user-1", "w1", "btcusdt");
+    const result = await service.addItem("user-1", "w1", "btc-usd");
     expect(db.watchlistItem.create).toHaveBeenCalledWith({
-      data: { watchlistId: "w1", assetId: "BTCUSDT", position: 0 },
+      data: { watchlistId: "w1", assetId: "BTC-USD", position: 0 },
     });
-    expect(result.assetId).toBe("BTCUSDT");
+    expect(result.assetId).toBe("BTC-USD");
   });
 
   it("does not disclose or mutate another user's watchlist", async () => {
     const db = { watchlist: { findFirst: jest.fn().mockResolvedValue(null) } };
     const service = new WatchlistsService(db as never, activity as never);
-    await expect(service.addItem("user-2", "w1", "BTCUSDT")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.addItem("user-2", "w1", "BTC-USD")).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("deletes an owned list and prevents deleting the final list", async () => {

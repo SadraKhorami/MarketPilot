@@ -8,7 +8,7 @@ export default function DashboardPage() {
   return (
     <MarketDataWorkspace
       title="Market overview"
-      description="Provider-backed market observations and candle history. Values appear only when MarketFeed returns validated data."
+      description="Verified Coinbase Exchange observations, candle history, and calculated technical analysis."
     />
   );
 }

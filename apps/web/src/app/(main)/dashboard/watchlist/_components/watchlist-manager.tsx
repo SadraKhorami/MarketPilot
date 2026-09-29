@@ -13,10 +13,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest, type ApiEnvelope } from "@/lib/api/client";
-import type { MarketFeedResponse } from "@marketpilot/marketfeed";
+import type { MarketObservation } from "@marketpilot/market-data";
 
 type Watchlist = { id: string; name: string; items: { id: string; assetId: string }[] };
-type MarketSnapshot = { data: MarketFeedResponse; freshness: "fresh" | "stale" };
+type MarketSnapshot = { data: MarketObservation; freshness: "fresh" | "stale" };
 
 export function WatchlistManager() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
@@ -49,7 +49,7 @@ export function WatchlistManager() {
     for (const item of assets) {
       if (requestedSymbols.current.has(item.assetId)) continue;
       requestedSymbols.current.add(item.assetId);
-      apiRequest<ApiEnvelope<MarketSnapshot>>(`/market-data/${encodeURIComponent(item.assetId)}?interval=15`)
+      apiRequest<ApiEnvelope<MarketSnapshot>>(`/market-data/${encodeURIComponent(item.assetId)}?interval=15m`)
         .then(({ data }) => {
           setSnapshots((previous) => ({ ...previous, [item.assetId]: data }));
         })
@@ -171,12 +171,12 @@ export function WatchlistManager() {
             }}
           >
             <label className="font-medium text-sm" htmlFor="watchlist-add">
-              MarketFeed symbol
+              Coinbase product
               <Input
                 id="watchlist-add"
                 value={addSymbol}
                 onChange={(event) => setAddSymbol(event.target.value)}
-                placeholder="BTCUSDT or EURUSD"
+                placeholder="BTC-USD"
                 className="mt-1 sm:w-52"
               />
             </label>
@@ -190,7 +190,7 @@ export function WatchlistManager() {
         <CardHeader>
           <CardTitle className="text-base">{current?.name ?? "Watchlist"}</CardTitle>
           <CardDescription>
-            {items.length} saved symbols · prices and indicators load only from MarketFeed
+            {items.length} saved products · prices and indicators load from Coinbase Exchange
           </CardDescription>
         </CardHeader>
         {visibleItems.length === 0 ? (
@@ -198,7 +198,7 @@ export function WatchlistManager() {
             <div className="rounded-lg border border-dashed p-8 text-center">
               <p className="font-medium">{items.length ? "No matching symbols" : "Your watchlist is empty"}</p>
               <p className="mt-1 text-muted-foreground text-sm">
-                Add an exact symbol supported by the configured MarketFeed service.
+                Add an exact Coinbase Exchange product identifier, such as BTC-USD.
               </p>
             </div>
           </CardContent>
@@ -245,7 +245,7 @@ export function WatchlistManager() {
                           {change === null ? "Unavailable" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}
                         </TableCell>
                         <TableCell>
-                          {response ? <Badge variant="outline">{response.trend}</Badge> : "Unavailable"}
+                          {response?.trend ? <Badge variant="outline">{response.trend}</Badge> : "Insufficient data"}
                         </TableCell>
                         <TableCell>Unavailable</TableCell>
                         <TableCell className="text-right">
@@ -290,7 +290,7 @@ function MarketPriceValue({
   loading,
   error,
 }: {
-  response?: MarketFeedResponse;
+  response?: MarketObservation;
   loading: boolean;
   error?: string;
 }) {

@@ -6,7 +6,7 @@ import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } f
 import type { PricePoint } from "@/data/marketpilot";
 
 const chartConfig = {
-  price: { label: "MarketFeed candle close", color: "var(--color-chart-2)" },
+  price: { label: "Coinbase Exchange candle close", color: "var(--color-chart-2)" },
 } satisfies ChartConfig;
 
 function formatAxisPrice(value: number) {

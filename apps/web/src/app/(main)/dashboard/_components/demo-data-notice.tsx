@@ -8,9 +8,9 @@ export function DemoDataNotice() {
       <Info aria-hidden="true" />
       <AlertTitle>Market data and news sources</AlertTitle>
       <AlertDescription>
-        Prices, candles, indicators, and trends come from MarketFeed when configured, with source timestamps and stale
-        or unavailable states shown. News uses a separate RSS worker and remains disabled until its display terms are
-        approved.
+        Market observations are fetched and validated by MarketPilot using Coinbase Exchange. Source timestamps and
+        stale or unavailable states are shown; unsupported pairs are never estimated. News uses a separate RSS worker
+        and remains disabled until its display terms are approved.
       </AlertDescription>
     </Alert>
   );

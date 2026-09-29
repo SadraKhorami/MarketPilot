@@ -2,21 +2,22 @@
 
 ## Purpose
 
-MarketPilot is a market intelligence SaaS application. It presents market data supplied by MarketFeed, lets authenticated users organize assets and alerts, and provides AI-assisted analysis grounded in verified application data. It does not execute trades and must not present the AI as a financial adviser.
+MarketPilot is a market intelligence SaaS application. It presents provider-backed market data, lets authenticated users organize assets and alerts, and provides AI-assisted analysis grounded in verified application data. It does not execute trades and must not present the AI as a financial adviser.
 
 ## Users and core workflows
 
 - A user signs in, reviews the market overview, and creates a personal watchlist.
-- A user explores an asset's current price, indicators, trend, news, and sentiment when those capabilities and fields are confirmed in the MarketFeed contract.
+- A user explores a supported Coinbase Exchange product's current price, candles, calculated indicators, and trend with source timestamps.
 - A user configures an alert and selects dashboard, Telegram, or Discord delivery.
 - A user asks the AI Analyst a question; the assistant calls authorized read tools and explains the returned data with timestamps and source context.
 - A user manages linked notification channels, API keys, API usage, account sessions, and an activity history.
 
 ## Product boundaries
 
-- MarketFeed is the only planned external market data source until another source is explicitly approved.
-- All market data, news, sentiment, symbols, ranges, rate limits, and endpoint details must come from the verified MarketFeed contract. Unknown values are not represented as facts.
-- Current market pages do not use fixture values. If MarketFeed is not configured or returns no observation, the UI reports data as unavailable. No provider mock is selected in Phase 3.
+- The Desktop MarketFeed project is a read-only source of ideas and implementation lessons, never a MarketPilot runtime service or code dependency.
+- Market data is fetched directly by MarketPilot's API through provider adapters. The current adapter uses exact Coinbase Exchange product IDs and documented intervals; unsupported products and unconfigured asset classes are reported as unavailable.
+- Prices/candles are never estimated or mocked in market pages. Technical indicators and trends are calculated from validated provider candles; values are null when history is insufficient.
+- Sentiment remains unavailable until a verified, independent sentiment source is selected.
 - No order placement, brokerage connection, portfolio custody, or trade execution is in scope.
 - Third-party news content is displayed and summarized as untrusted data, not as application instructions.
 

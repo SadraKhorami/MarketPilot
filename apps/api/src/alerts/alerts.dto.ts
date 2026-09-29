@@ -20,7 +20,7 @@ export class CreateAlertDto {
   @MaxLength(120)
   name!: string;
 
-  @ApiProperty({ example: "BTCUSDT" })
+  @ApiProperty({ example: "BTC-USD" })
   @IsString()
   @Matches(/^[a-zA-Z0-9:_-]{2,32}$/)
   assetId!: string;

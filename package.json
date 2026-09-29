@@ -9,7 +9,7 @@
     "db:generate": "pnpm --filter @marketpilot/db build",
     "db:migrate": "pnpm --filter @marketpilot/db migrate:dev",
     "db:seed": "pnpm --filter @marketpilot/db seed",
-    "test": "turbo run test --filter=@marketpilot/api --filter=@marketpilot/marketfeed --filter=@marketpilot/news",
+    "test": "turbo run test --filter=@marketpilot/api --filter=@marketpilot/market-data --filter=@marketpilot/news",
     "build": "turbo run build --filter=@marketpilot/*",
     "lint": "turbo run lint --filter=@marketpilot/*",
     "format:check": "turbo run format:check --filter=@marketpilot/*",

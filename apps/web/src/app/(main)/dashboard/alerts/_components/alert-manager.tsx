@@ -63,7 +63,7 @@ export function AlertManager() {
   const [selected, setSelected] = useState<AlertRecord | null>(null);
   const form = useForm<Draft>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", asset: "BTCUSDT", condition: "Price rises above", threshold: "" },
+    defaultValues: { name: "", asset: "BTC-USD", condition: "Price rises above", threshold: "" },
   });
 
   useEffect(() => {
@@ -173,7 +173,7 @@ export function AlertManager() {
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
                       <FieldLabel htmlFor="alert-asset">Asset symbol</FieldLabel>
-                      <Input {...field} id="alert-asset" placeholder="BTCUSDT" aria-invalid={fieldState.invalid} />
+                      <Input {...field} id="alert-asset" placeholder="BTC-USD" aria-invalid={fieldState.invalid} />
                       {fieldState.invalid ? <FieldError errors={[fieldState.error]} /> : null}
                     </Field>
                   )}
