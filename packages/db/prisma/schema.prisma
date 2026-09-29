@@ -33,21 +33,21 @@ enum ChannelProvider {
 }
 
 model User {
-  id             String                @id @default(uuid()) @db.Uuid
-  email          String                @unique @db.VarChar(320)
-  passwordHash   String                @db.VarChar(255)
-  name           String?               @db.VarChar(120)
-  status         UserStatus            @default(ACTIVE)
-  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
-  roles          UserRole[]
-  sessions       Session[]
-  watchlists     Watchlist[]
-  alerts         Alert[]
-  channels       NotificationChannel[]
-  apiKeys        ApiKey[]
-  apiUsage       ApiUsage[]
-  activity       ActivityLog[]
+  id           String                @id @default(uuid()) @db.Uuid
+  email        String                @unique @db.VarChar(320)
+  passwordHash String                @db.VarChar(255)
+  name         String?               @db.VarChar(120)
+  status       UserStatus            @default(ACTIVE)
+  createdAt    DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime              @updatedAt @db.Timestamptz(3)
+  roles        UserRole[]
+  sessions     Session[]
+  watchlists   Watchlist[]
+  alerts       Alert[]
+  channels     NotificationChannel[]
+  apiKeys      ApiKey[]
+  apiUsage     ApiUsage[]
+  activity     ActivityLog[]
 
   @@index([status, createdAt])
 }
@@ -60,10 +60,10 @@ model Role {
 }
 
 model UserRole {
-  userId String   @db.Uuid
-  roleId String   @db.Uuid
-  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role   Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  roleId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   @@id([userId, roleId])
@@ -71,26 +71,26 @@ model UserRole {
 }
 
 model Session {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
-  tokenHash String    @unique @db.Char(64)
-  expiresAt DateTime  @db.Timestamptz(3)
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique @db.Char(64)
+  expiresAt  DateTime  @db.Timestamptz(3)
   lastSeenAt DateTime? @db.Timestamptz(3)
-  revokedAt DateTime? @db.Timestamptz(3)
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
   @@index([expiresAt])
 }
 
 model Watchlist {
-  id        String         @id @default(uuid()) @db.Uuid
-  userId    String         @db.Uuid
-  name      String         @db.VarChar(80)
-  createdAt DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime       @updatedAt @db.Timestamptz(3)
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String          @id @default(uuid()) @db.Uuid
+  userId    String          @db.Uuid
+  name      String          @db.VarChar(80)
+  createdAt DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime        @updatedAt @db.Timestamptz(3)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   items     WatchlistItem[]
 
   @@unique([userId, name])
@@ -98,31 +98,31 @@ model Watchlist {
 }
 
 model WatchlistItem {
-  id         String   @id @default(uuid()) @db.Uuid
-  watchlistId String  @db.Uuid
-  assetId    String   @db.VarChar(80)
-  position   Int      @default(0)
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  watchlist  Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid()) @db.Uuid
+  watchlistId String    @db.Uuid
+  assetId     String    @db.VarChar(80)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
 
   @@unique([watchlistId, assetId])
   @@index([watchlistId, position])
 }
 
 model Alert {
-  id          String         @id @default(uuid()) @db.Uuid
-  userId      String         @db.Uuid
-  name        String         @db.VarChar(120)
-  assetId     String         @db.VarChar(80)
-  condition   AlertCondition
-  threshold   Decimal        @db.Decimal(24, 10)
-  enabled     Boolean        @default(true)
-  cooldownMinutes Int        @default(60)
-  lastEvaluatedAt DateTime?  @db.Timestamptz(3)
-  lastTriggeredAt DateTime?  @db.Timestamptz(3)
-  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String         @id @default(uuid()) @db.Uuid
+  userId          String         @db.Uuid
+  name            String         @db.VarChar(120)
+  assetId         String         @db.VarChar(80)
+  condition       AlertCondition
+  threshold       Decimal        @db.Decimal(24, 10)
+  enabled         Boolean        @default(true)
+  cooldownMinutes Int            @default(60)
+  lastEvaluatedAt DateTime?      @db.Timestamptz(3)
+  lastTriggeredAt DateTime?      @db.Timestamptz(3)
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, enabled, createdAt])
   @@index([enabled, assetId])
@@ -147,17 +147,17 @@ model NotificationChannel {
 }
 
 model ApiKey {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  name       String    @db.VarChar(80)
-  prefix     String    @unique @db.VarChar(24)
-  secretHash String    @db.Char(64)
-  scopes     String[]  @default([])
-  lastUsedAt DateTime? @db.Timestamptz(3)
-  expiresAt  DateTime? @db.Timestamptz(3)
-  revokedAt  DateTime? @db.Timestamptz(3)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @db.Uuid
+  name       String     @db.VarChar(80)
+  prefix     String     @unique @db.VarChar(24)
+  secretHash String     @db.Char(64)
+  scopes     String[]   @default([])
+  lastUsedAt DateTime?  @db.Timestamptz(3)
+  expiresAt  DateTime?  @db.Timestamptz(3)
+  revokedAt  DateTime?  @db.Timestamptz(3)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   usage      ApiUsage[]
 
   @@index([userId, revokedAt, createdAt])
@@ -182,15 +182,40 @@ model ApiUsage {
 }
 
 model ActivityLog {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @db.Uuid
-  eventType  String   @db.VarChar(80)
-  description String  @db.VarChar(240)
-  metadata   Json     @default("{}")
-  requestId  String?  @db.VarChar(80)
-  occurredAt DateTime @default(now()) @db.Timestamptz(3)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  eventType   String   @db.VarChar(80)
+  description String   @db.VarChar(240)
+  metadata    Json     @default("{}")
+  requestId   String?  @db.VarChar(80)
+  occurredAt  DateTime @default(now()) @db.Timestamptz(3)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, occurredAt])
   @@index([eventType, occurredAt])
+}
+
+model NewsArticle {
+  id                       String    @id @default(uuid()) @db.Uuid
+  source                   String    @db.VarChar(80)
+  title                    String    @db.VarChar(500)
+  description              String?   @db.Text
+  originalUrl              String    @db.Text
+  canonicalUrlHash         String    @unique @db.Char(64)
+  publishedAt              DateTime? @db.Timestamptz(3)
+  fetchedAt                DateTime  @db.Timestamptz(3)
+  language                 String?   @db.VarChar(16)
+  sourceCategories         String[]  @default([])
+  affectedAssets           String[]  @default([])
+  category                 String?   @db.VarChar(80)
+  priority                 Int?
+  impactScore              Float?
+  classificationConfidence Float?
+  classifiedAt             DateTime? @db.Timestamptz(3)
+  createdAt                DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([publishedAt, source])
+  @@index([category, publishedAt])
+  @@index([fetchedAt])
 }

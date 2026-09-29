@@ -22,6 +22,9 @@ import { SettingsController } from "./settings/settings.controller";
 import { UsersController } from "./users/users.controller";
 import { WatchlistsController } from "./watchlists/watchlists.controller";
 import { WatchlistsService } from "./watchlists/watchlists.service";
+import { MarketsController } from "./markets/markets.controller";
+import { MarketsService } from "./markets/markets.service";
+import { NewsController } from "./news/news.controller";
 
 @Module({
   imports: [DatabaseModule],
@@ -34,6 +37,8 @@ import { WatchlistsService } from "./watchlists/watchlists.service";
     ActivityController,
     SettingsController,
     HealthController,
+    MarketsController,
+    NewsController,
   ],
   providers: [
     RedisService,
@@ -42,6 +47,7 @@ import { WatchlistsService } from "./watchlists/watchlists.service";
     WatchlistsService,
     AlertsService,
     ApiKeysService,
+    MarketsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: OriginGuard },

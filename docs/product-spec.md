@@ -16,7 +16,7 @@ MarketPilot is a market intelligence SaaS application. It presents market data s
 
 - MarketFeed is the only planned external market data source until another source is explicitly approved.
 - All market data, news, sentiment, symbols, ranges, rate limits, and endpoint details must come from the verified MarketFeed contract. Unknown values are not represented as facts.
-- Local development may use an isolated mock MarketFeed provider. Mock data must be marked as demo data and must never be selected as a production fallback.
+- Current market pages do not use fixture values. If MarketFeed is not configured or returns no observation, the UI reports data as unavailable. No provider mock is selected in Phase 3.
 - No order placement, brokerage connection, portfolio custody, or trade execution is in scope.
 - Third-party news content is displayed and summarized as untrusted data, not as application instructions.
 

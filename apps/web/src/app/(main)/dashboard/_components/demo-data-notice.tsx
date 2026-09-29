@@ -6,10 +6,11 @@ export function DemoDataNotice() {
   return (
     <Alert className="border-primary/20 bg-primary/[0.035]">
       <Info aria-hidden="true" />
-      <AlertTitle>Demo workspace · sample data only</AlertTitle>
+      <AlertTitle>Market data and news sources</AlertTitle>
       <AlertDescription>
-        Market prices and activity are illustrative local fixtures. Live market feeds, AI tools, alerts, and
-        integrations are not connected.
+        Prices, candles, indicators, and trends come from MarketFeed when configured, with source timestamps and stale
+        or unavailable states shown. News uses a separate RSS worker and remains disabled until its display terms are
+        approved.
       </AlertDescription>
     </Alert>
   );

@@ -6,13 +6,11 @@ import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } f
 import type { PricePoint } from "@/data/marketpilot";
 
 const chartConfig = {
-  price: { label: "Illustrative price", color: "var(--color-chart-2)" },
+  price: { label: "MarketFeed candle close", color: "var(--color-chart-2)" },
 } satisfies ChartConfig;
 
 function formatAxisPrice(value: number) {
-  if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
-  if (value >= 1) return `$${value.toFixed(0)}`;
-  return `$${value.toFixed(2)}`;
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 }).format(value);
 }
 
 export function PriceHistoryChart({ data }: { data: PricePoint[] }) {

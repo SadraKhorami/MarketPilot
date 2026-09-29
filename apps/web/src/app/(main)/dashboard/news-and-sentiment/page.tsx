@@ -10,7 +10,7 @@ export default function NewsPage() {
   return (
     <MarketPilotPage
       title="News & Sentiment"
-      description="Review sample headlines and asset sentiment. Article content here is illustrative, not current news."
+      description="Browse normalized financial RSS metadata with original source links. Sentiment remains unavailable until a verified source or later classifier is added."
       actions={<Newspaper className="size-5 text-muted-foreground" aria-hidden="true" />}
     >
       <NewsExplorer />

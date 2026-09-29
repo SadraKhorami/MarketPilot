@@ -3,6 +3,7 @@
   "globalPassThroughEnv": ["DATABASE_URL", "REDIS_URL"],
   "tasks": {
     "dev": {
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },
@@ -10,7 +11,7 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
-    "test": { "dependsOn": ["^generate"] },
+    "test": { "dependsOn": ["^build"] },
     "test:e2e": { "dependsOn": ["^generate"], "cache": false },
     "generate": { "cache": false },
     "lint": {
@@ -20,7 +21,7 @@
       "outputs": []
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"],
+      "dependsOn": ["^build"],
       "outputs": []
     }
   }

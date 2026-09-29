@@ -1,16 +1,16 @@
 # MarketPilot Architecture
 
-## Phase 2 implementation status
+## Phase 3 implementation status
 
-The repository uses pnpm workspaces and Turborepo. `apps/web` is the retained Next.js dashboard; `apps/api` is a NestJS REST API; `packages/db` owns Prisma schema, migrations, generated client, and seed logic. GitHub Actions runs PostgreSQL and Redis services, applies the checked-in migration, then runs lint, formatting, typecheck, tests, and production builds. Worker, bot, MarketFeed, and AI packages are future phases and are not dependencies of the API.
+The repository uses pnpm workspaces and Turborepo. `apps/web` is the retained Next.js dashboard; `apps/api` is a NestJS REST API; `apps/worker` runs controlled RSS refreshes; `packages/db` owns Prisma schema, migrations, generated client, and seed logic; `packages/marketfeed` and `packages/news` own separate provider boundaries. GitHub Actions runs PostgreSQL and Redis services, applies the checked-in migration, then runs lint, formatting, typecheck, tests, and production builds. Bot and AI packages remain future work.
 
-PostgreSQL is authoritative for product data. Redis backs distributed rate limiting; a bounded per-process fallback is used if Redis is unavailable. No BullMQ worker or provider integration is active yet.
+PostgreSQL is authoritative for product data and normalized news articles. Redis backs distributed rate limiting, MarketFeed response caching, and RSS fetch state. MarketPilot does not use BullMQ in Phase 3; the news worker uses a configurable interval and Redis lock. Market observations are cached in Redis, not persisted in PostgreSQL.
 
 ## Baseline and principles
 
 Use the supplied `arhamkhnz/next-shadcn-admin-dashboard` repository as the frontend starting point. The inspected snapshot is commit `7eedd77` on 2026-09-29. Its Next.js 16 / React / TypeScript / Tailwind CSS v4 / shadcn foundation, dashboard shell, theme preferences, charting, table, and form patterns are useful. It is currently a single npm app with many unrelated demo routes and static data, not a SaaS backend. Adapt it deliberately; retain its `LICENSE` and add `THIRD_PARTY_NOTICES.md` with attribution. The upstream license is MIT.
 
-Keep a small monorepo with explicit boundaries. NestJS DTOs use class-validator at the HTTP boundary; use strict TypeScript and runtime validation for future provider and cross-service contracts. No MarketFeed path, field, or behavior is assumed by the current API.
+Keep a small monorepo with explicit boundaries. NestJS DTOs use class-validator at the HTTP boundary; provider payloads are validated with strict runtime schemas.
 
 ## Proposed repository
 
@@ -22,7 +22,8 @@ apps/
   bot/       Telegram and Discord adapters/commands; no duplicated domain rules
 packages/
   db/        Prisma schema/client/migrations and database helpers
-  marketfeed/ Typed provider contract, contract validation, real and dev mock adapters
+  marketfeed/ Typed adapter to the separate MarketFeed HTTP API
+  news/      Investing.com RSS parser and source abstraction
   ai/        Provider abstraction, tool schemas, orchestration and policy prompts
   types/     Stable shared domain/API types that do not import application internals
   config/    Shared lint/TypeScript/runtime-safe configuration
@@ -32,10 +33,11 @@ packages/
 
 - `apps/web` calls the MarketPilot API; it does not call MarketFeed or hold provider/model/bot credentials. Use the dashboard's existing shell and semantic theme system as the base, replacing routes and static product data incrementally.
 - `apps/api` owns user identity, authorization, business rules, validation, rate limits, REST endpoints, OpenAPI, and orchestration of market/AI/alert services. It exposes MarketPilot contracts, never raw vendor contracts.
-- `apps/worker` runs isolated BullMQ processors. It invokes application services and writes durable job outcomes; it does not become a second source of domain rules.
+- `apps/worker` runs controlled news RSS refreshes, uses a Redis lock, and stores normalized articles through the shared database client. BullMQ alert/notification queues remain future work.
 - `apps/bot` authenticates Telegram/Discord updates and translates commands/notifications into API or shared application-service calls. It has no direct DB access except through a deliberately shared service boundary if later justified.
 - `packages/db` is the only package that owns Prisma schema and database client construction. API and worker may consume it through services; web and bot do not access it.
-- `packages/marketfeed` is a MarketPilot-owned provider/client adapter for the separately maintained MarketFeed HTTP service. It validates upstream requests/responses and maps them to stable MarketPilot types; it must not import or copy the MarketFeed repository's Express/MongoDB implementation. The local source audit confirms routes and code-level behavior, while deployed URL, data rights, operational limits, and contract stability remain unresolved. A development mock implements the same MarketPilot-owned interface and is selected explicitly by configuration.
+- `packages/marketfeed` is a MarketPilot-owned typed HTTP client for the separately maintained MarketFeed service. It validates the verified route contract and does not import or copy the upstream Express/MongoDB implementation. Live service credentials, operation, data rights, and FX pair availability remain unverified.
+- `packages/news` is independent from MarketFeed. It validates the official Investing.com RSS host/feed format and normalizes article metadata. The worker is disabled by default pending written source permission.
 - `packages/ai` receives scoped application tools and provider configuration. It does not own authentication or call vendor APIs directly.
 - `packages/types` contains stable shared value types only; avoid turning it into a dumping ground or creating circular imports.
 - `packages/config` holds shared build/lint configuration, not secrets or runtime credentials.
@@ -47,7 +49,8 @@ Dependency flow: web/bot -> API; API/worker -> application services -> db and Ma
 NestJS serves a versioned REST API (initial prefix proposal: `/api/v1`) and publishes OpenAPI. These are MarketPilot-owned routes, not claims about MarketFeed endpoints.
 
 - Identity/session: register, login, logout, current-user, session revocation.
-- Market read: price, indicators, trend, news, sentiment, and asset comparison only after the MarketFeed contract confirms the required operations and shapes.
+- Market read: authenticated `GET /market-data/:symbol` returns the verified MarketFeed price, candle, indicator, trend, market-status, and volatility fields with cache/provenance metadata. MarketFeed sentiment is unavailable.
+- News read: authenticated `GET /news` reads normalized Investing.com RSS metadata from PostgreSQL; sentiment and AI classification remain unavailable.
 - Personal data: watchlists and items, alerts, notification-channel linking, API keys, usage, activity, and AI conversations/tool calls.
 - Operations: liveness/readiness health endpoints with no secret or infrastructure details in public responses.
 
@@ -55,9 +58,9 @@ Validate path/query/body input in NestJS. Normalize errors into a stable envelop
 
 ## Runtime and data flow
 
-PostgreSQL is the source of truth. Redis supports cache/rate-limit coordination and BullMQ. The API validates a user request and authorization, calls a domain service, and returns a normalized result with provider and observation time where available. Workers refresh only contract-supported market resources, evaluate enabled alerts against validated observations, and enqueue notifications. An outbox record bridges database commits to queue publishing so a committed alert/notification intent is not silently lost.
+PostgreSQL is the source of truth for account/news records. Redis supports rate limits, per-symbol/interval MarketFeed cache (900-second freshness window with 24-hour stale fallback), RSS ETag/Last-Modified state, and a worker lock. The API validates user authorization and upstream response schemas, then returns source and observation time. The frontend does not poll MarketFeed automatically; it requests on navigation or explicit refresh because the upstream service exposes no streaming endpoint. News refresh defaults to 900 seconds with a 300-second minimum.
 
-Use per-request timeouts, bounded retries for retryable upstream failures, and circuit-breaking/backoff for repeated provider failures. Do not retry invalid input or authentication failures. Cache keys must include the normalized asset/query dimensions and contract-compatible time range; TTLs remain a configuration decision until MarketFeed freshness/rate limits are known.
+Use bounded timeouts and retries for transient MarketFeed network/server failures. Do not retry invalid input, authentication failures, or rate limits. Cache keys include normalized symbol and interval. MarketFeed's 900-second upstream cache informs MarketPilot's cache TTL; stale data is explicitly labeled and never generated from fixtures.
 
 ## Source dashboard reuse
 
