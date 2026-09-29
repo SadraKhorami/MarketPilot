@@ -9,7 +9,7 @@ import { LoginForm } from "../../_components/login-form";
 
 export const metadata: Metadata = {
   title: "Sign in · MarketPilot",
-  description: "Sign-in interface preview for MarketPilot. Account authentication is not connected.",
+  description: "Sign in to your MarketPilot account.",
   alternates: {
     canonical: "/auth/v2/login",
   },
@@ -24,9 +24,6 @@ export default function LoginV2() {
           <p className="text-muted-foreground text-sm">Please enter your details to login.</p>
         </div>
         <div className="space-y-4">
-          <p className="text-center text-muted-foreground text-sm">
-            Authentication is not available in this frontend preview.
-          </p>
           <LoginForm />
         </div>
       </div>

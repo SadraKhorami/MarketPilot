@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum RoleName {
+  ADMIN
+  USER
+}
+
+enum AlertCondition {
+  PRICE_ABOVE
+  PRICE_BELOW
+  PERCENT_CHANGE_ABOVE
+  PERCENT_CHANGE_BELOW
+  RSI_ABOVE
+  RSI_BELOW
+}
+
+enum ChannelProvider {
+  WEB
+  TELEGRAM
+  DISCORD
+}
+
+model User {
+  id             String                @id @default(uuid()) @db.Uuid
+  email          String                @unique @db.VarChar(320)
+  passwordHash   String                @db.VarChar(255)
+  name           String?               @db.VarChar(120)
+  status         UserStatus            @default(ACTIVE)
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+  roles          UserRole[]
+  sessions       Session[]
+  watchlists     Watchlist[]
+  alerts         Alert[]
+  channels       NotificationChannel[]
+  apiKeys        ApiKey[]
+  apiUsage       ApiUsage[]
+  activity       ActivityLog[]
+
+  @@index([status, createdAt])
+}
+
+model Role {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      RoleName   @unique
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  users     UserRole[]
+}
+
+model UserRole {
+  userId String   @db.Uuid
+  roleId String   @db.Uuid
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([userId, roleId])
+  @@index([roleId, userId])
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Char(64)
+  expiresAt DateTime  @db.Timestamptz(3)
+  lastSeenAt DateTime? @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model Watchlist {
+  id        String         @id @default(uuid()) @db.Uuid
+  userId    String         @db.Uuid
+  name      String         @db.VarChar(80)
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime       @updatedAt @db.Timestamptz(3)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     WatchlistItem[]
+
+  @@unique([userId, name])
+  @@index([userId, updatedAt])
+}
+
+model WatchlistItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  watchlistId String  @db.Uuid
+  assetId    String   @db.VarChar(80)
+  position   Int      @default(0)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  watchlist  Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, assetId])
+  @@index([watchlistId, position])
+}
+
+model Alert {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @db.Uuid
+  name        String         @db.VarChar(120)
+  assetId     String         @db.VarChar(80)
+  condition   AlertCondition
+  threshold   Decimal        @db.Decimal(24, 10)
+  enabled     Boolean        @default(true)
+  cooldownMinutes Int        @default(60)
+  lastEvaluatedAt DateTime?  @db.Timestamptz(3)
+  lastTriggeredAt DateTime?  @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled, createdAt])
+  @@index([enabled, assetId])
+}
+
+model NotificationChannel {
+  id                String          @id @default(uuid()) @db.Uuid
+  userId            String          @db.Uuid
+  provider          ChannelProvider
+  externalAccountId String?         @db.VarChar(200)
+  displayName       String?         @db.VarChar(120)
+  verifiedAt        DateTime?       @db.Timestamptz(3)
+  active            Boolean         @default(false)
+  preferences       Json            @default("{}")
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalAccountId])
+  @@unique([userId, provider])
+  @@index([userId, active])
+}
+
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  name       String    @db.VarChar(80)
+  prefix     String    @unique @db.VarChar(24)
+  secretHash String    @db.Char(64)
+  scopes     String[]  @default([])
+  lastUsedAt DateTime? @db.Timestamptz(3)
+  expiresAt  DateTime? @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usage      ApiUsage[]
+
+  @@index([userId, revokedAt, createdAt])
+}
+
+model ApiUsage {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  apiKeyId   String?  @db.Uuid
+  requestId  String   @db.VarChar(80)
+  route      String   @db.VarChar(160)
+  method     String   @db.VarChar(12)
+  statusCode Int
+  latencyMs  Int
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey     ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt])
+  @@index([apiKeyId, occurredAt])
+  @@index([requestId])
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  eventType  String   @db.VarChar(80)
+  description String  @db.VarChar(240)
+  metadata   Json     @default("{}")
+  requestId  String?  @db.VarChar(80)
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@index([eventType, occurredAt])
+}

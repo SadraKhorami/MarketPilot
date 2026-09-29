@@ -1,32 +1,32 @@
-# Initial Database Proposal
+# Database Model
 
-PostgreSQL is authoritative and Prisma owns schema/migrations. Use UUID primary keys, UTC timestamps, explicit ownership foreign keys, and database constraints for invariants. The entities below are proposals, not a migration. Market-specific asset fields must follow the confirmed MarketFeed contract.
+PostgreSQL is authoritative. The implemented Prisma schema and initial migration live in `packages/db/prisma`. Models use UUID primary keys, UTC timestamps, explicit ownership foreign keys, and database constraints for invariants. Asset identifiers remain normalized strings; no MarketFeed-specific fields are assumed.
 
 ## Core entities
 
 | Entity | Important fields and relationships | Indexes / constraints | Security and lifecycle |
 |---|---|---|---|
-| `User` | `id`, normalized unique `email`, `passwordHash`, `status`, timestamps; has sessions, watchlists, alerts, channels, keys, usage, activity | Unique normalized email; status index if operational queries need it | Store only an Argon2id password hash; no plaintext secrets. Verify email policy before account activation. |
-| `Role` | `id`, unique stable `name`; many-to-many with users via `UserRole` | Unique role name; unique `(userId, roleId)` join | Seed a small fixed role set (for example user/admin); never trust a client-supplied role. Additional `UserRole` join table is required for multi-role RBAC. |
-| `Session` | `id`, `userId`, `tokenHash`, created/last-seen/expiry/revocation timestamps, optional coarse device metadata | Unique token hash; `(userId, expiresAt)` and expiry indexes | Generate high-entropy opaque tokens; store only a hash; revoke on logout, password reset, or suspicious activity. Avoid storing full IP/user-agent unless retention and privacy needs justify it. |
-| `Watchlist` | `id`, `userId`, `name`, timestamps; owns items | `(userId, name)` unique or otherwise enforce a documented naming policy; `(userId, updatedAt)` | Every read/write scopes by owner. |
-| `WatchlistItem` | `id`, `watchlistId`, normalized provider asset identifier, display metadata only if verified, position/created time | Unique `(watchlistId, assetId)`; `(watchlistId, position)` | Foreign-key cascade on owning watchlist; do not accept arbitrary asset identifiers as supported until the provider universe is known. |
-| `Alert` | `id`, `userId`, optional `assetId` per confirmed domain model, condition type/operator/threshold in typed columns, enabled state, cooldown, last-evaluated/triggered times, timestamps | `(userId, enabled)`; `(enabled, nextEvaluationAt)` if scheduled polling is used; asset/evaluation index based on job design | Validate conditions against a versioned schema and supported measures. Ownership on all mutations. Never interpret JSON as executable logic. |
-| `NotificationChannel` | `id`, `userId`, `provider` (`telegram`/`discord`/web), external account/recipient ID, verified/active timestamps, encrypted provider-specific metadata only when needed | Unique `(provider, externalAccountId)` when provider semantics permit; `(userId, provider, active)` | Link using short-lived single-use proof; encrypt sensitive channel metadata at rest; never store bot tokens here. |
-| `ApiKey` | `id`, `userId`, `name`, `prefix`, `secretHash`, `scopes`, created/last-used/expiry/revocation timestamps | Unique `prefix`; `(userId, revokedAt)` | Display secret exactly once. Store only a keyed hash of the high-entropy secret; compare in constant time. Prefix is for lookup and must not authenticate by itself. |
-| `ApiUsage` | `id`, `userId`, optional `apiKeyId`, request ID, route/method, status, units/latency, timestamp | `(userId, occurredAt)`; `(apiKeyId, occurredAt)`; retention/partitioning can be added if volume warrants it | Do not store request bodies, secrets, or sensitive query values. Apply a documented retention window and aggregate older records if required. |
-| `ActivityLog` | `id`, `userId`, event type, safe metadata, request ID, timestamp | `(userId, occurredAt desc)`; event-type/time for investigation | Append-only to application roles; redact secrets and minimize personal data. Record security-relevant changes, not every read by default. |
+| `User` | `id`, lowercase unique `email`, `passwordHash`, `name`, `status`, timestamps; owns sessions and product records | Unique email; `(status, createdAt)` | Passwords use bcrypt cost 12 and are limited to 72 UTF-8 bytes; no plaintext password is stored. Registration assigns `USER`. |
+| `Role` / `UserRole` | `Role.name` is `ADMIN` or `USER`; join rows connect users and roles | Unique role name; composite `(userId, roleId)` primary key and reverse lookup index | Seeded roles are server-controlled. `UserRole` foreign keys cascade on deletion. |
+| `Session` | `userId`, unique SHA-256 `tokenHash`, expiry, last-seen, revocation, creation timestamps | Unique token hash; `(userId, expiresAt)` and `expiresAt` | API issues random opaque tokens in an HTTP-only cookie with a 14-day expiry; only the hash is stored. Logout and per-session revoke invalidate it. |
+| `Watchlist` | `userId`, `name`, timestamps; owns `WatchlistItem` rows | Unique `(userId, name)`; `(userId, updatedAt)` | User ownership is included in read/write queries. Deleting a user cascades to its lists. |
+| `WatchlistItem` | `watchlistId`, normalized string `assetId`, `position`, creation time | Unique `(watchlistId, assetId)`; `(watchlistId, position)` | Deleting the list cascades to its items. Asset values are product identifiers, not provider-validated symbols yet. |
+| `Alert` | `userId`, name, asset ID, typed condition enum, decimal threshold, enabled flag, cooldown, evaluation/trigger timestamps | `(userId, enabled, createdAt)`; `(enabled, assetId)` | All operations scope by owner. CRUD is active; background evaluation and notification delivery are not implemented. |
+| `NotificationChannel` | `userId`, provider enum (`WEB`, `TELEGRAM`, `DISCORD`), external account, verification/active state, JSON preferences, timestamps | Unique `(provider, externalAccountId)` and `(userId, provider)`; `(userId, active)` | Current registration creates an active WEB preference row. Bot linking is not implemented; never store bot tokens in this model. |
+| `ApiKey` | `userId`, name, unique lookup prefix, SHA-256 `secretHash`, string scopes, last-used/expiry/revocation/creation timestamps | Unique prefix; `(userId, revokedAt, createdAt)` | High-entropy secret is returned once and never stored. Prefix is 24 characters; scope checks guard API-key reads. |
+| `ApiUsage` | `userId`, optional `apiKeyId`, request ID, route/method/status/latency, occurrence time | `(userId, occurredAt)`, `(apiKeyId, occurredAt)`, request ID | Stores request metadata only, no request bodies or credentials. Retention policy remains to be set. |
+| `ActivityLog` | `userId`, event type, description, safe JSON metadata, optional request ID, occurrence time | `(userId, occurredAt)`, `(eventType, occurredAt)` | Records registration, sign-in, watchlist, alert, API-key, and profile changes. User deletion cascades to its activity. |
 
 ## Justified supporting entities
 
 - `UserRole` is required to implement the proposed `User`–`Role` many-to-many relationship with database-enforced uniqueness.
-- `OutboxEvent` stores a typed event, aggregate ID, creation/dispatch time, retry count and status. It makes alert/notification enqueueing recoverable if the API commits a DB transaction but Redis is unavailable. Keep payloads minimal and versioned; consumers must be idempotent.
+- `OutboxEvent` is deferred until a worker/notification pipeline is implemented. It should store a typed event, aggregate ID, creation/dispatch time, retry count, and status so queue publication can be recovered.
 - A one-time bot-link challenge may be stored as a short-lived hashed token in a dedicated `AccountLinkChallenge` table or a tightly bounded Redis record. Prefer PostgreSQL when link completion must survive cache restart; delete/expire after use.
 
 ## Relationship sketch
 
 `User` 1—N `Session`, `Watchlist`, `Alert`, `NotificationChannel`, `ApiKey`, `ApiUsage`, `ActivityLog`; `User` N—N `Role`; `Watchlist` 1—N `WatchlistItem`; alert changes may enqueue `OutboxEvent` records. Bot identities are represented by verified `NotificationChannel` rows, not by duplicate user accounts.
 
-## Schema decisions to confirm before migrations
+## Remaining data decisions
 
-Confirm email verification/password-reset requirements, user deletion and retention behavior, whether teams/tenants are in scope, asset identifier semantics from MarketFeed, alert condition types/cooldowns, API key scopes/quotas, and channel-specific metadata/privacy requirements. Start without team/tenant tables unless collaboration is confirmed.
+Confirm email verification/password-reset requirements, user deletion and retention behavior, whether teams/tenants are in scope, asset identifier semantics from MarketFeed, alert evaluation/cooldown rules, API key scopes/quotas, and channel-specific metadata/privacy requirements. Start without team/tenant tables unless collaboration is confirmed.

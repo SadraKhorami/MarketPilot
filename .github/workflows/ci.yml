@@ -16,6 +16,33 @@ jobs:
   checks:
     name: Lint, format, typecheck, build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: marketpilot
+          POSTGRES_USER: marketpilot
+          POSTGRES_PASSWORD: marketpilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U marketpilot -d marketpilot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://marketpilot:marketpilot@localhost:5432/marketpilot?schema=public
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -33,6 +60,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Apply database migrations
+        run: pnpm --filter @marketpilot/db migrate:deploy
 
       - name: Run CI checks
         run: pnpm run ci

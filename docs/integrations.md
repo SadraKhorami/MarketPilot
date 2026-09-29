@@ -1,5 +1,7 @@
 # Integration Design and Known Unknowns
 
+This document records verified MarketFeed details and designs for future AI, bot, and worker phases. The current MarketPilot API uses the authentication, authorization, API-key, and rate-limit controls listed below; it does not yet connect to MarketFeed, AI providers, Telegram, Discord, or BullMQ.
+
 ## MarketFeed API audit
 
 The source project `marketsentinel-marketfeed` was found on the Desktop and inspected read-only at revision `f060fd281139c593852d1248768e74337e323892`. Its implementation, API shape, calculations, data-source flow, and limitations are documented in [marketfeed-audit.md](marketfeed-audit.md). This project is a potential upstream data service only. Its Express/MongoDB architecture is explicitly not the MarketPilot backend architecture, and its repository/code must not become a MarketPilot dependency.
@@ -68,11 +70,12 @@ Redis is not the system of record. PostgreSQL stores user/alert/notification int
 
 ## Security baseline
 
-- Authentication: NestJS-owned email/password sessions; hash passwords with Argon2id using a maintained library and current parameters. Use random opaque session tokens, store only token hashes, and set cookies `HttpOnly`, `Secure` in production, `SameSite=Lax` (or stricter if flow permits), scoped path, and bounded lifetime. Rotate on login/privilege changes; revoke on logout/password reset. Enforce CSRF protection for cookie-authenticated mutations and origin checks.
-- Authorization: default-deny NestJS guards, ownership checks in domain services/queries, and database relations scoped by `userId`. Use server-assigned roles and least privilege; admin actions audited. Do not trust hidden UI navigation as authorization.
-- API keys: reveal high-entropy secrets once; store only an HMAC/hash with a server-side pepper in secret management, keep a non-secret lookup prefix, scopes, expiry/revocation, and last-used metadata. Constant-time verify; rate-limit and audit issuance/revocation/use.
-- Rate limits: protect login, password reset, API key auth, AI usage, and public/bot callbacks by account and source. Use Redis-backed distributed limits with safe fallback behavior; do not return detailed account-existence information.
-- Secret management: environment injection or deployment secret manager; separate dev/test/prod credentials; rotation plan; never commit `.env`, log credentials, or expose server variables through Next public env prefixes. Mock mode must be explicit and disabled in production.
+- Authentication (implemented): NestJS email/password sessions; bcrypt cost 12 with a 12-character minimum and a 72-byte UTF-8 maximum. Random opaque session tokens are stored only as SHA-256 hashes. The cookie is HTTP-only, `SameSite=Lax`, secure in production, and expires after 14 days. Logout and session revocation invalidate tokens.
+- Authorization (implemented): global authentication and role guards; server-assigned `ADMIN`/`USER` roles; user-owned service queries; API-key scope checks. Mutating requests with an `Origin` header must match `WEB_ORIGIN` or the API's own origin. Credentialed CORS uses the configured web-origin allowlist.
+- API keys (implemented): 256-bit random secret plus a 64-bit random lookup prefix; SHA-256 hash only is stored; the secret is shown once and verification uses constant-time comparison. Keys support watchlist-read and alert-read scopes, revocation, and last-used tracking.
+- Rate limits (implemented): Redis-backed fixed windows allow 10 auth-route requests and 120 other API requests per minute, keyed by IP before authentication and user ID afterward. A bounded per-process fallback runs if Redis is unavailable; this fallback is not distributed across replicas.
+- Secret management: local values load from a root `.env` file ignored by Git; deployments should inject separate environment-specific credentials. Never log passwords, session/API-key secrets, or authorization headers. No MarketFeed mock/provider selector exists yet.
+- Bot security (planned): verify Telegram webhook secrets; verify Discord Ed25519 signatures against raw request bytes and timestamps; deduplicate provider delivery IDs; allowlist commands; keep bot tokens server-side.
 - Bot security: verify Telegram webhook secret when using webhooks; verify Discord Ed25519 signatures on exact raw bytes and timestamp; deduplicate provider delivery IDs; allowlist commands; use least-privilege bot permissions; store bot tokens only server-side.
 - Upstream security: HTTPS, fixed configured base URL, strict timeouts, response size limits, schema validation, bounded retries, and no user-controlled URL fetching. Avoid returning upstream stack traces or secrets.
 - Audit/privacy: record security changes and integration link/unlink/delivery events with minimal safe metadata; define retention and export/deletion behavior before launch.

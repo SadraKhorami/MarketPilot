@@ -12,10 +12,10 @@ export default function AlertsPage() {
   return (
     <MarketPilotPage
       title="Alerts"
-      description="Configure conditions and notification preferences for a future connected workspace."
+      description="Create and manage saved market alert rules for your account."
       actions={
         <Button variant="outline" disabled>
-          <BellRing /> Alert service disconnected
+          <BellRing /> Evaluation not enabled
         </Button>
       }
     >

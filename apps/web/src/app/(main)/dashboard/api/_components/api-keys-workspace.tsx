@@ -1,7 +1,9 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleAlert, KeyRound, Plus } from "lucide-react";
+import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -12,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -24,49 +25,100 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { type ApiEnvelope, ApiError, apiRequest } from "@/lib/api/client";
 
-const createKeySchema = z.object({
-  name: z.string().trim().min(2, "Enter at least 2 characters.").max(48, "Use 48 characters or fewer."),
-  scope: z.enum(["Read-only", "Read and write"]),
-});
-type CreateKeyInput = z.infer<typeof createKeySchema>;
-
-const sampleRows = [
-  {
-    id: "DEMO-KEY-01",
-    name: "Research notebook",
-    prefix: "mp_demo_••••4a91",
-    scope: "Read-only",
-    created: "Example date",
-    lastUsed: "Example · 2h ago",
-  },
-  {
-    id: "DEMO-KEY-02",
-    name: "Local dashboard",
-    prefix: "mp_demo_••••8c2d",
-    scope: "Read-only",
-    created: "Example date",
-    lastUsed: "Never · example",
-  },
-];
+const schema = z.object({ name: z.string().trim().min(2).max(80), scope: z.enum(["read", "watchlists", "alerts"]) });
+type ApiKeyFormValues = z.infer<typeof schema>;
+type KeyRecord = {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+};
 
 export function ApiKeysWorkspace() {
-  const form = useForm<CreateKeyInput>({
-    resolver: zodResolver(createKeySchema),
-    defaultValues: { name: "", scope: "Read-only" },
-  });
-  const onSubmit = (_input: CreateKeyInput) => {
-    form.reset();
-    toast.info("API key creation is not connected. No secret was generated or saved.");
+  const [rows, setRows] = useState<KeyRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const form = useForm<ApiKeyFormValues>({ resolver: zodResolver(schema), defaultValues: { name: "", scope: "read" } });
+
+  const refresh = useCallback(async () => {
+    try {
+      const { data } = await apiRequest<ApiEnvelope<KeyRecord[]>>("/api-keys");
+      setRows(data);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load API keys.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const createKey = async (input: ApiKeyFormValues) => {
+    const scopes = input.scope === "read" ? ["watchlists:read", "alerts:read"] : [`${input.scope}:read`];
+    try {
+      const { data } = await apiRequest<ApiEnvelope<KeyRecord & { secret: string }>>("/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ name: input.name, scopes }),
+      });
+      setNewSecret(data.secret);
+      setRows((current) => [{ ...data, revokedAt: null, lastUsedAt: null }, ...current]);
+      form.reset();
+      setDialogOpen(false);
+      toast.success("API key created. Copy the secret now; it will not be shown again.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not create an API key.");
+    }
   };
+
+  const revoke = async (id: string) => {
+    try {
+      await apiRequest(`/api-keys/${id}`, { method: "DELETE" });
+      setRows((current) =>
+        current.map((item) => (item.id === id ? { ...item, revokedAt: new Date().toISOString() } : item)),
+      );
+      toast.success("API key revoked.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not revoke the API key.");
+    }
+  };
+
+  const copySecret = async () => {
+    if (!newSecret) return;
+    await navigator.clipboard.writeText(newSecret);
+    toast.success("API key copied to clipboard.");
+  };
+
+  const activeCount = rows.filter((row) => !row.revokedAt).length;
 
   return (
     <div className="space-y-4">
+      {newSecret ? (
+        <Alert>
+          <KeyRound />
+          <AlertTitle>Copy your new key now</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <code className="break-all font-mono text-xs">{newSecret}</code>
+            <Button variant="outline" size="sm" onClick={() => void copySecret()}>
+              <Copy /> Copy key
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setNewSecret(null)}>
+              Dismiss
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          ["Active keys", "0", "No real keys exist"],
-          ["Default scope", "Read-only", "Least-privilege preview"],
-          ["Key rotation", "Unavailable", "Backend not connected"],
+          ["Active keys", String(activeCount), "Scoped credentials"],
+          ["Default scope", "Least privilege", "Read access only"],
+          ["Key rotation", "Available", "Revoke at any time"],
         ].map(([label, value, detail]) => (
           <Card key={label} className="shadow-none">
             <CardContent className="p-4">
@@ -80,10 +132,10 @@ export function ApiKeysWorkspace() {
       <Card className="shadow-none">
         <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
           <div>
-            <CardTitle className="text-base">Create a key</CardTitle>
-            <CardDescription>Form preview only · no API key will be issued</CardDescription>
+            <CardTitle className="text-base">API keys</CardTitle>
+            <CardDescription>Create, review, or revoke programmatic credentials.</CardDescription>
           </div>
-          <Dialog>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus /> Create API key
@@ -93,23 +145,17 @@ export function ApiKeysWorkspace() {
               <DialogHeader>
                 <DialogTitle>Create API key</DialogTitle>
                 <DialogDescription>
-                  Configure a future key. Submitting this form does not create credentials.
+                  The secret is shown once. Store it in a password manager or secret vault.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form onSubmit={form.handleSubmit(createKey)} className="space-y-4">
                 <Controller
                   control={form.control}
                   name="name"
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
                       <FieldLabel htmlFor="key-name">Key name</FieldLabel>
-                      <Input
-                        {...field}
-                        id="key-name"
-                        placeholder="e.g. Research notebook"
-                        autoComplete="off"
-                        aria-invalid={fieldState.invalid}
-                      />
+                      <Input {...field} id="key-name" autoComplete="off" aria-invalid={fieldState.invalid} />
                       {fieldState.invalid ? <FieldError errors={[fieldState.error]} /> : null}
                     </Field>
                   )}
@@ -125,86 +171,98 @@ export function ApiKeysWorkspace() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Read-only">Read-only</SelectItem>
-                          <SelectItem value="Read and write">Read and write</SelectItem>
+                          <SelectItem value="read">Watchlist + alert reads</SelectItem>
+                          <SelectItem value="watchlists">Watchlist reads</SelectItem>
+                          <SelectItem value="alerts">Alert reads</SelectItem>
                         </SelectContent>
                       </Select>
                       {fieldState.invalid ? <FieldError errors={[fieldState.error]} /> : null}
                     </Field>
                   )}
                 />
-                <Alert>
-                  <CircleAlert aria-hidden="true" />
-                  <AlertTitle>Key service unavailable</AlertTitle>
-                  <AlertDescription>
-                    No secret is generated, displayed, or persisted in this frontend phase.
-                  </AlertDescription>
-                </Alert>
                 <DialogFooter>
-                  <DialogClose asChild>
-                    <Button type="button" variant="outline">
-                      Cancel
-                    </Button>
-                  </DialogClose>
-                  <Button type="submit">Preview request</Button>
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={form.formState.isSubmitting}>
+                    {form.formState.isSubmitting ? "Creating…" : "Create key"}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
         </CardHeader>
-        <CardContent>
-          <Alert>
-            <KeyRound aria-hidden="true" />
-            <AlertTitle>API credentials are not enabled</AlertTitle>
-            <AlertDescription>
-              Connect the MarketPilot API before issuing keys. Existing keys, usage, revocation, and last-used
-              timestamps are not available.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-      <Card className="shadow-none">
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-base">Key records</CardTitle>
-            <CardDescription>Fictional rows demonstrate the future table layout</CardDescription>
-          </div>
-          <Badge variant="outline">Sample only</Badge>
-        </CardHeader>
         <CardContent className="px-0 sm:px-6">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key prefix</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Last used</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sampleRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <span className="font-medium">{row.name}</span>
-                      <span className="block font-mono text-muted-foreground text-xs">{row.id}</span>
-                    </TableCell>
-                    <TableCell>
-                      <code className="font-mono text-xs">{row.prefix}</code>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{row.scope}</Badge>
-                    </TableCell>
-                    <TableCell>{row.created}</TableCell>
-                    <TableCell>{row.lastUsed}</TableCell>
+          {loading ? (
+            <p className="p-8 text-center text-muted-foreground" role="status">
+              Loading API keys…
+            </p>
+          ) : rows.length === 0 ? (
+            <div className="m-4 rounded-lg border border-dashed p-8 text-center sm:m-0">
+              <KeyRound className="mx-auto size-6 text-muted-foreground" />
+              <p className="mt-2 font-medium">No API keys yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">Create a scoped key for a trusted integration.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Prefix</TableHead>
+                    <TableHead>Scope</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Last used</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">{row.name}</TableCell>
+                      <TableCell>
+                        <code className="font-mono text-xs">{row.prefix}••••</code>
+                      </TableCell>
+                      <TableCell>
+                        {row.scopes.map((scope) => (
+                          <Badge key={scope} variant="secondary" className="mr-1">
+                            {scope}
+                          </Badge>
+                        ))}
+                      </TableCell>
+                      <TableCell>{new Date(row.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell>{row.lastUsedAt ? new Date(row.lastUsedAt).toLocaleString() : "Never"}</TableCell>
+                      <TableCell>
+                        <Badge variant={row.revokedAt ? "outline" : "default"}>
+                          {row.revokedAt ? "Revoked" : "Active"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {row.revokedAt ? null : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Revoke ${row.name}`}
+                            onClick={() => void revoke(row.id)}
+                          >
+                            <Trash2 />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+      <p className="text-muted-foreground text-xs">
+        API key secrets are never stored in plaintext and cannot be retrieved after creation.
+      </p>
     </div>
   );
 }

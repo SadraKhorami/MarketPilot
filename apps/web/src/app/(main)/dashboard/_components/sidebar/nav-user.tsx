@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-import { EllipsisVertical, Settings2 } from "lucide-react";
+import { EllipsisVertical, LogOut, Settings2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -12,22 +14,32 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
+import { apiRequest } from "@/lib/api/client";
 
 export function NavUser() {
   const { isMobile } = useSidebar();
+  const router = useRouter();
+  const logout = async () => {
+    try {
+      await apiRequest("/auth/logout", { method: "POST" });
+      router.replace("/auth/v2/login");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sign out.");
+    }
+  };
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg" aria-label="Open demo workspace menu">
+            <SidebarMenuButton size="lg" aria-label="Open account menu">
               <Avatar className="size-8 rounded-lg">
                 <AvatarFallback className="rounded-lg">MP</AvatarFallback>
               </Avatar>
               <span className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">Demo workspace</span>
-                <span className="truncate text-muted-foreground text-xs">Frontend preview</span>
+                <span className="truncate font-medium">My account</span>
+                <span className="truncate text-muted-foreground text-xs">MarketPilot</span>
               </span>
               <EllipsisVertical className="ml-auto size-4" aria-hidden="true" />
             </SidebarMenuButton>
@@ -37,6 +49,9 @@ export function NavUser() {
               <Link href="/dashboard/settings/profile">
                 <Settings2 /> Workspace settings
               </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void logout()}>
+              <LogOut /> Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

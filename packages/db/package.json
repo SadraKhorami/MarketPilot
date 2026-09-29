@@ -1,0 +1,31 @@
+{
+  "name": "@marketpilot/db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "generate": "prisma generate --schema prisma/schema.prisma",
+    "build": "pnpm generate && pnpm typecheck",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed": "prisma db seed",
+    "typecheck": "tsc --project tsconfig.json",
+    "lint": "biome lint src prisma/seed.ts",
+    "format:check": "biome format src prisma/seed.ts",
+    "format": "biome format --write src prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "bcrypt": "^6.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^22.20.4",
+    "dotenv": "^18.0.4",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

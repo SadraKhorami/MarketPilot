@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["DATABASE_URL", "REDIS_URL"],
   "tasks": {
     "dev": {
       "cache": false,
@@ -9,6 +10,9 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
+    "test": { "dependsOn": ["^generate"] },
+    "test:e2e": { "dependsOn": ["^generate"], "cache": false },
+    "generate": { "cache": false },
     "lint": {
       "outputs": []
     },

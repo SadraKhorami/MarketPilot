@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 
 import { cn } from "cn";
 
+import { AuthGate } from "@/app/(main)/dashboard/_components/auth-gate";
 import { DemoDataNotice } from "@/app/(main)/dashboard/_components/demo-data-notice";
 import { AppSidebar } from "@/app/(main)/dashboard/_components/sidebar/app-sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -67,7 +68,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
           <div className="mx-auto mb-5 w-full max-w-screen-2xl">
             <DemoDataNotice />
           </div>
-          {children}
+          <AuthGate>{children}</AuthGate>
         </div>
       </SidebarInset>
     </SidebarProvider>

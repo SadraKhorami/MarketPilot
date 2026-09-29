@@ -9,7 +9,7 @@ import { RegisterForm } from "../../_components/register-form";
 
 export const metadata: Metadata = {
   title: "Create account · MarketPilot",
-  description: "Account creation interface preview for MarketPilot. Registration is not connected.",
+  description: "Create your MarketPilot account.",
   alternates: {
     canonical: "/auth/v2/register",
   },
@@ -24,9 +24,6 @@ export default function RegisterV2() {
           <p className="text-muted-foreground text-sm">Please enter your details to register.</p>
         </div>
         <div className="space-y-4">
-          <p className="text-center text-muted-foreground text-sm">
-            Account creation is not available in this frontend preview.
-          </p>
           <RegisterForm />
         </div>
       </div>

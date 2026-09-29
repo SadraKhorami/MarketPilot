@@ -10,7 +10,7 @@ export default function ApiKeysPage() {
   return (
     <MarketPilotPage
       title="API keys"
-      description="Review access key configuration and scopes. This preview never generates or stores a secret."
+      description="Create scoped credentials, review usage, and revoke keys you no longer need."
       actions={<KeyRound className="size-5 text-muted-foreground" aria-hidden="true" />}
     >
       <ApiKeysWorkspace />

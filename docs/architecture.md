@@ -1,10 +1,16 @@
 # MarketPilot Architecture
 
+## Phase 2 implementation status
+
+The repository uses pnpm workspaces and Turborepo. `apps/web` is the retained Next.js dashboard; `apps/api` is a NestJS REST API; `packages/db` owns Prisma schema, migrations, generated client, and seed logic. GitHub Actions runs PostgreSQL and Redis services, applies the checked-in migration, then runs lint, formatting, typecheck, tests, and production builds. Worker, bot, MarketFeed, and AI packages are future phases and are not dependencies of the API.
+
+PostgreSQL is authoritative for product data. Redis backs distributed rate limiting; a bounded per-process fallback is used if Redis is unavailable. No BullMQ worker or provider integration is active yet.
+
 ## Baseline and principles
 
 Use the supplied `arhamkhnz/next-shadcn-admin-dashboard` repository as the frontend starting point. The inspected snapshot is commit `7eedd77` on 2026-09-29. Its Next.js 16 / React / TypeScript / Tailwind CSS v4 / shadcn foundation, dashboard shell, theme preferences, charting, table, and form patterns are useful. It is currently a single npm app with many unrelated demo routes and static data, not a SaaS backend. Adapt it deliberately; retain its `LICENSE` and add `THIRD_PARTY_NOTICES.md` with attribution. The upstream license is MIT.
 
-Prioritize a small, clear monorepo with explicit boundaries. The proposed tools are pnpm workspaces and Turborepo, subject to Phase 1 validation against the source app's current setup. Strict TypeScript and Zod validation are required at external and cross-service boundaries. No MarketFeed path, field, or behavior is assumed in this proposal.
+Keep a small monorepo with explicit boundaries. NestJS DTOs use class-validator at the HTTP boundary; use strict TypeScript and runtime validation for future provider and cross-service contracts. No MarketFeed path, field, or behavior is assumed by the current API.
 
 ## Proposed repository
 
@@ -59,7 +65,7 @@ Preserve the dashboard shell, sidebar/layout controls, theme preferences and CSS
 
 ## CI and release
 
-Use GitHub Actions for pull-request and main-branch CI. The initial workflow should install the locked pnpm toolchain, use the pnpm cache, then run formatting/lint, type checks, relevant tests, and production builds through workspace filters. Add PostgreSQL/Redis service containers only when checks require them. Do not publish, deploy, or expose secrets from untrusted pull-request workflows. Workflow implementation belongs with repository bootstrap and will be reviewed separately.
+GitHub Actions runs pull-request and main-branch checks with PostgreSQL and Redis service containers. It installs the locked pnpm toolchain, generates Prisma Client, applies migrations, and runs formatting/lint, type checks, tests, and production builds. It does not publish or deploy artifacts.
 
 ## Operational requirements
 

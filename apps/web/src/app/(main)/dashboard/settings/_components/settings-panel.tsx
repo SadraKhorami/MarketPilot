@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import Link from "next/link";
 
@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 export type SettingsSection = "profile" | "security" | "notifications" | "appearance";
@@ -50,20 +51,34 @@ export function SettingsPanel({ section }: { section: SettingsSection }) {
 }
 
 function ProfileSettings() {
-  const [name, setName] = useState("Demo User");
-  const [email, setEmail] = useState("preview@marketpilot.local");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    apiRequest<ApiEnvelope<{ email: string; name: string | null }>>("/users/me")
+      .then(({ data }) => {
+        setName(data.name ?? "");
+        setEmail(data.email);
+      })
+      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not load your profile."))
+      .finally(() => setLoading(false));
+  }, []);
   return (
     <Card className="shadow-none">
       <CardHeader>
         <CardTitle className="text-base">Profile</CardTitle>
-        <CardDescription>Editable preview fields · not sent to a server</CardDescription>
+        <CardDescription>Update the name shown on your MarketPilot account.</CardDescription>
       </CardHeader>
       <CardContent>
         <form
           className="max-w-xl space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            toast.info("Profile changes are temporary and were not saved.");
+            void apiRequest("/users/me", { method: "PATCH", body: JSON.stringify({ name }) })
+              .then(() => toast.success("Profile saved."))
+              .catch((error: unknown) =>
+                toast.error(error instanceof Error ? error.message : "Could not save profile."),
+              );
           }}
         >
           <div className="space-y-2">
@@ -73,23 +88,18 @@ function ProfileSettings() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               autoComplete="name"
+              disabled={loading}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="profile-email">Email</Label>
-            <Input
-              id="profile-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-            />
+            <Input id="profile-email" type="email" value={email} autoComplete="email" disabled />
           </div>
           <div className="flex items-center gap-2">
             <Button type="submit">
               <Save /> Save profile
             </Button>
-            <Badge variant="outline">Preview only</Badge>
+            <Badge variant="outline">Email changes unavailable</Badge>
           </div>
         </form>
       </CardContent>
@@ -98,42 +108,68 @@ function ProfileSettings() {
 }
 
 function SecuritySettings() {
-  const [twoFactor, setTwoFactor] = useState(false);
+  const [sessions, setSessions] = useState<
+    Array<{ id: string; createdAt: string; lastSeenAt: string | null; expiresAt: string; current: boolean }>
+  >([]);
+  useEffect(() => {
+    apiRequest<ApiEnvelope<typeof sessions>>("/auth/sessions")
+      .then(({ data }) => setSessions(data))
+      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not load sessions."));
+  }, []);
+  const revokeSession = async (id: string) => {
+    try {
+      await apiRequest(`/auth/sessions/${id}`, { method: "DELETE" });
+      setSessions((current) => current.filter((session) => session.id !== id));
+      toast.success("Session revoked.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not revoke session.");
+    }
+  };
   return (
     <div className="space-y-4">
       <Card className="shadow-none">
         <CardHeader>
           <CardTitle className="text-base">Sign-in security</CardTitle>
-          <CardDescription>Authentication controls are not connected</CardDescription>
+          <CardDescription>Your account uses an HTTP-only browser session.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           <Alert>
             <ShieldCheck aria-hidden="true" />
-            <AlertTitle>No authenticated session</AlertTitle>
+            <AlertTitle>Session authentication is active</AlertTitle>
             <AlertDescription>
-              This frontend preview does not sign in, change passwords, or manage server sessions.
+              Sessions expire after 14 days. Password reset, password changes, and multi-factor authentication are not
+              available yet.
             </AlertDescription>
           </Alert>
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-            <div>
-              <Label htmlFor="two-factor" className="font-medium">
-                Two-factor authentication
-              </Label>
-              <p className="mt-1 text-muted-foreground text-sm">
-                Preview toggle only. No security setting will be saved.
-              </p>
-            </div>
-            <Switch id="two-factor" checked={twoFactor} onCheckedChange={setTwoFactor} />
-          </div>
         </CardContent>
       </Card>
       <Card className="shadow-none">
         <CardHeader>
-          <CardTitle className="text-base">Active sessions</CardTitle>
-          <CardDescription>Session records become available with backend authentication.</CardDescription>
+          <CardTitle className="text-base">Active session</CardTitle>
+          <CardDescription>This browser has an authenticated server-side session.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm">No session data is available in this UI phase.</p>
+        <CardContent className="space-y-3">
+          {sessions.map((session) => (
+            <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+              <div>
+                <p className="font-medium text-sm">
+                  {session.current ? "This browser" : `Session ${session.id.slice(0, 8)}`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Created {new Date(session.createdAt).toLocaleString()} · expires{" "}
+                  {new Date(session.expiresAt).toLocaleDateString()}
+                </p>
+              </div>
+              {session.current ? (
+                <Badge variant="secondary">Current</Badge>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => void revokeSession(session.id)}>
+                  Revoke
+                </Button>
+              )}
+            </div>
+          ))}
+          {sessions.length === 0 ? <p className="text-muted-foreground text-sm">No active sessions.</p> : null}
         </CardContent>
       </Card>
     </div>
@@ -141,18 +177,52 @@ function SecuritySettings() {
 }
 
 function NotificationSettings() {
-  const [preferences, setPreferences] = useState({ inApp: true, email: false, telegram: false, discord: false });
+  const [preferences, setPreferences] = useState({ inAppEnabled: true, emailEnabled: false });
+  useEffect(() => {
+    apiRequest<
+      ApiEnvelope<{
+        channels: Array<{ provider: string; preferences: { inAppEnabled?: boolean; emailEnabled?: boolean } }>;
+      }>
+    >("/settings")
+      .then(({ data }) => {
+        const channel = data.channels.find((item) => item.provider === "WEB");
+        if (channel?.preferences) setPreferences((current) => ({ ...current, ...channel.preferences }));
+      })
+      .catch((error: unknown) =>
+        toast.error(error instanceof Error ? error.message : "Could not load notification settings."),
+      );
+  }, []);
+
+  const save = (id: keyof typeof preferences, checked: boolean) => {
+    const previous = preferences;
+    const next = { ...preferences, [id]: checked };
+    setPreferences(next);
+    void apiRequest("/settings/notifications", { method: "PATCH", body: JSON.stringify(next) })
+      .then(() => toast.success("Notification preferences saved."))
+      .catch((error: unknown) => {
+        setPreferences(previous);
+        toast.error(error instanceof Error ? error.message : "Could not save settings.");
+      });
+  };
   const options: Array<{ id: keyof typeof preferences; label: string; detail: string }> = [
-    { id: "inApp", label: "In-app notifications", detail: "Display alert events in the dashboard." },
-    { id: "email", label: "Email notifications", detail: "Send security and market alert updates by email." },
-    { id: "telegram", label: "Telegram", detail: "Deliver selected updates through a linked bot." },
-    { id: "discord", label: "Discord", detail: "Deliver selected updates through a linked bot." },
+    {
+      id: "inAppEnabled",
+      label: "In-app notifications",
+      detail: "Show alert events in your dashboard when evaluation is available.",
+    },
+    {
+      id: "emailEnabled",
+      label: "Email notifications",
+      detail: "Preference is saved; outbound email delivery is not configured.",
+    },
   ];
   return (
     <Card className="shadow-none">
       <CardHeader>
         <CardTitle className="text-base">Notification preferences</CardTitle>
-        <CardDescription>Temporary local preferences · no notification service is connected</CardDescription>
+        <CardDescription>
+          Your preferences are saved to your account. Delivery services are not connected.
+        </CardDescription>
       </CardHeader>
       <CardContent className="divide-y">
         {options.map(({ id, label, detail }) => (
@@ -166,7 +236,7 @@ function NotificationSettings() {
             <Switch
               id={`notify-${id}`}
               checked={preferences[id]}
-              onCheckedChange={(checked) => setPreferences((current) => ({ ...current, [id]: checked }))}
+              onCheckedChange={(checked) => save(id, checked)}
               aria-label={`${label} preference`}
             />
           </div>

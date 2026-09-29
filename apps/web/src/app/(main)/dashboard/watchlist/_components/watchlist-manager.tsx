@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import Link from "next/link";
 
@@ -13,18 +13,41 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { defaultWatchlist, demoAssets, findAsset, formatPrice } from "@/data/marketpilot";
+import { demoAssets, findAsset, formatPrice } from "@/data/marketpilot";
+import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
 import { ChangeText, FixtureNote, StatusBadge } from "../../_components/marketpilot-page";
 
 type SortMode = "symbol" | "price-desc" | "change-desc";
+type WatchlistsResponse = {
+  data: Array<{ id: string; name: string; items: Array<{ id: string; assetId: string }> }>;
+};
 
 export function WatchlistManager() {
-  const [symbols, setSymbols] = useState<string[]>(defaultWatchlist);
+  const [watchlists, setWatchlists] = useState<
+    Array<{ id: string; name: string; items: Array<{ id: string; assetId: string }> }>
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("symbol");
   const [addSymbol, setAddSymbol] = useState("");
 
+  useEffect(() => {
+    apiRequest<WatchlistsResponse>("/watchlists")
+      .then(({ data }) => {
+        setWatchlists(data);
+        setLoading(false);
+      })
+      .catch((error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : "Could not load watchlists.");
+        setLoading(false);
+      });
+  }, []);
+
+  const current = watchlists[0];
+  const items = current?.items ?? [];
+  const symbols = items.map((item) => item.assetId);
   const assets = useMemo(() => symbols.map(findAsset).filter((asset) => asset !== undefined), [symbols]);
   const shownAssets = useMemo(
     () =>
@@ -39,17 +62,50 @@ export function WatchlistManager() {
   );
   const candidates = demoAssets.filter((asset) => !symbols.includes(asset.symbol));
 
-  const addAsset = () => {
-    if (!candidates.some((asset) => asset.symbol === addSymbol)) return;
-    setSymbols((current) => [...current, addSymbol]);
-    setAddSymbol("");
-    toast.success("Asset added to this temporary watchlist.");
+  const addAsset = async () => {
+    if (!current || !candidates.some((asset) => asset.symbol === addSymbol)) return;
+    try {
+      const { data } = await apiRequest<ApiEnvelope<{ id: string; assetId: string }>>(
+        `/watchlists/${current.id}/items`,
+        { method: "POST", body: JSON.stringify({ assetId: addSymbol }) },
+      );
+      setWatchlists((previous) =>
+        previous.map((list) => (list.id === current.id ? { ...list, items: [...list.items, data] } : list)),
+      );
+      setAddSymbol("");
+      toast.success("Asset added to your watchlist.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add the asset.");
+    }
   };
 
-  const removeAsset = (symbol: string) => {
-    setSymbols((current) => current.filter((item) => item !== symbol));
-    toast.info(`${symbol} removed from this temporary watchlist.`);
+  const removeAsset = async (itemId: string, symbol: string) => {
+    if (!current) return;
+    try {
+      await apiRequest(`/watchlists/${current.id}/items/${itemId}`, { method: "DELETE" });
+      setWatchlists((previous) =>
+        previous.map((list) =>
+          list.id === current.id ? { ...list, items: list.items.filter((item) => item.id !== itemId) } : list,
+        ),
+      );
+      toast.success(`${symbol} removed from your watchlist.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not remove the asset.");
+    }
   };
+
+  if (loading)
+    return (
+      <div className="rounded-lg border p-8 text-center text-muted-foreground" role="status">
+        Loading your watchlist…
+      </div>
+    );
+  if (loadError)
+    return (
+      <div className="rounded-lg border border-destructive/40 p-8 text-center text-sm" role="alert">
+        {loadError}
+      </div>
+    );
 
   return (
     <div className="space-y-4">
@@ -94,7 +150,7 @@ export function WatchlistManager() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={addAsset} disabled={!addSymbol}>
+            <Button onClick={() => void addAsset()} disabled={!addSymbol || !current}>
               <Plus /> Add asset
             </Button>
           </div>
@@ -104,8 +160,8 @@ export function WatchlistManager() {
       <Card className="shadow-none">
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <div>
-            <CardTitle className="text-base">Main watchlist</CardTitle>
-            <CardDescription>{symbols.length} assets · temporary local state</CardDescription>
+            <CardTitle className="text-base">{current?.name ?? "Main watchlist"}</CardTitle>
+            <CardDescription>{symbols.length} assets · saved to your account</CardDescription>
           </div>
           <Badge variant="outline">Demo fixtures</Badge>
         </CardHeader>
@@ -138,73 +194,81 @@ export function WatchlistManager() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {shownAssets.map((asset) => (
-                      <TableRow key={asset.symbol}>
-                        <TableCell>
-                          <Link href={`/dashboard/markets/${asset.symbol}`} className="font-medium hover:underline">
-                            {asset.name}
-                            <span className="ml-2 text-muted-foreground">{asset.symbol}</span>
-                          </Link>
-                        </TableCell>
-                        <TableCell className="tabular-nums">{formatPrice(asset.price)}</TableCell>
-                        <TableCell>
-                          <ChangeText value={asset.change24h} />
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge value={asset.trend} />
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge value={asset.sentiment} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeAsset(asset.symbol)}
-                            aria-label={`Remove ${asset.name} from watchlist`}
-                          >
-                            <Trash2 />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {shownAssets.map((asset) => {
+                      const item = items.find((candidate) => candidate.assetId === asset.symbol);
+                      if (!item) return null;
+                      return (
+                        <TableRow key={asset.symbol}>
+                          <TableCell>
+                            <Link href={`/dashboard/markets/${asset.symbol}`} className="font-medium hover:underline">
+                              {asset.name}
+                              <span className="ml-2 text-muted-foreground">{asset.symbol}</span>
+                            </Link>
+                          </TableCell>
+                          <TableCell className="tabular-nums">{formatPrice(asset.price)}</TableCell>
+                          <TableCell>
+                            <ChangeText value={asset.change24h} />
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge value={asset.trend} />
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge value={asset.sentiment} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => void removeAsset(item.id, asset.symbol)}
+                              aria-label={`Remove ${asset.name} from watchlist`}
+                            >
+                              <Trash2 />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
             </CardContent>
             <CardContent className="grid gap-3 sm:hidden">
-              {shownAssets.map((asset) => (
-                <div key={asset.symbol} className="rounded-lg border p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <Link href={`/dashboard/markets/${asset.symbol}`} className="font-medium hover:underline">
-                      {asset.name} <span className="text-muted-foreground">{asset.symbol}</span>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeAsset(asset.symbol)}
-                      aria-label={`Remove ${asset.name} from watchlist`}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                  <div className="mt-2 flex items-end justify-between">
-                    <div>
-                      <p className="font-semibold tabular-nums">{formatPrice(asset.price)}</p>
-                      <ChangeText value={asset.change24h} />
+              {shownAssets.map((asset) => {
+                const item = items.find((candidate) => candidate.assetId === asset.symbol);
+                if (!item) return null;
+                return (
+                  <div key={asset.symbol} className="rounded-lg border p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <Link href={`/dashboard/markets/${asset.symbol}`} className="font-medium hover:underline">
+                        {asset.name} <span className="text-muted-foreground">{asset.symbol}</span>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => void removeAsset(item.id, asset.symbol)}
+                        aria-label={`Remove ${asset.name} from watchlist`}
+                      >
+                        <Trash2 />
+                      </Button>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <StatusBadge value={asset.trend} />
-                      <StatusBadge value={asset.sentiment} />
+                    <div className="mt-2 flex items-end justify-between">
+                      <div>
+                        <p className="font-semibold tabular-nums">{formatPrice(asset.price)}</p>
+                        <ChangeText value={asset.change24h} />
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <StatusBadge value={asset.trend} />
+                        <StatusBadge value={asset.sentiment} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </>
         )}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 sm:px-6">
-          <FixtureNote />
+          <FixtureNote>Watchlist membership is saved. Market prices and sentiment remain sample fixtures.</FixtureNote>
           <Button variant="link" size="sm" asChild>
             <Link href="/dashboard/markets">
               Browse sample assets <ArrowUpRight />
