@@ -12,10 +12,10 @@ export class RateLimitGuard implements CanActivate {
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request & { user?: { id: string } }>();
     const identity = request.user?.id ?? request.ip ?? "unknown";
-    const authRoute = request.path.startsWith("/api/v1/auth/");
-    const limit = authRoute ? 10 : 120;
-    const windowSeconds = authRoute ? 60 : 60;
-    const key = `ratelimit:${authRoute ? "auth" : "api"}:${identity}`;
+    const authAction = request.method === "POST" ? request.path.match(/\/auth\/(login|register)$/)?.[1] : undefined;
+    const limit = authAction ? 10 : 120;
+    const windowSeconds = 60;
+    const key = authAction ? `ratelimit:auth:${authAction}:${identity}` : `ratelimit:api:${identity}`;
 
     try {
       await this.redis.ensureConnected();
