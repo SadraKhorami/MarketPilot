@@ -212,7 +212,7 @@ export function WatchlistManager() {
                   : `${items.length} ${items.length === 1 ? "market" : "markets"} · prices refresh automatically`}
               </CardDescription>
             </div>
-            {items.length ? <Badge variant="outline">Coinbase Exchange</Badge> : null}
+            {items.length ? <Badge variant="outline">Market observations</Badge> : null}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -335,7 +335,7 @@ export function WatchlistManager() {
                       const ready = snapshot?.status === "ready" ? snapshot.snapshot : null;
                       const move = ready ? getMove(ready.data) : null;
                       let priceContent: React.ReactNode = "Loading…";
-                      if (ready) priceContent = formatPrice(ready.data.price);
+                      if (ready) priceContent = `${formatPrice(ready.data.price)} ${ready.data.symbol.split("-")[1]}`;
                       else if (snapshot?.status === "error")
                         priceContent = <span title={snapshot.message}>Unavailable</span>;
                       return (
@@ -354,7 +354,7 @@ export function WatchlistManager() {
                             <p className="mt-0.5 text-muted-foreground text-xs">
                               {ready
                                 ? `Observed ${new Date(ready.data.timestamp).toLocaleTimeString()}${ready.freshness === "stale" ? " · cached" : ""}${snapshot?.status === "ready" && snapshot.warning ? " · refresh failed" : ""}`
-                                : "Coinbase Exchange"}
+                                : "Waiting for market data"}
                             </p>
                           </TableCell>
                           <TableCell className="font-medium tabular-nums">{priceContent}</TableCell>

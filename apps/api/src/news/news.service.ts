@@ -1,3 +1,6 @@
+import { assetSearchTerms } from "@marketpilot/market-data";
+import type { Prisma } from "@marketpilot/db";
+import { MarketCatalogService } from "../market-data/market-catalog.service";
 import { Injectable } from "@nestjs/common";
 import { DatabaseService } from "../database.module";
 import { RedisService } from "../redis.service";
@@ -13,22 +16,38 @@ export class NewsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly redis: RedisService,
+    private readonly catalog: MarketCatalogService,
   ) {}
   async list(query: NewsQueryDto) {
     const search = query.search?.trim();
-    const where = {
-      ...(query.asset ? { affectedAssets: { has: query.asset.toUpperCase() } } : {}),
-      ...(query.category ? { sourceCategories: { has: query.category } } : {}),
-      ...(search
-        ? {
-            OR: [
-              { title: { contains: search, mode: "insensitive" as const } },
-              { description: { contains: search, mode: "insensitive" as const } },
-              { source: { contains: search, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-    };
+    const conditions: Prisma.NewsArticleWhereInput[] = [];
+    const asset = query.asset?.trim().toUpperCase().replace("/", "-");
+    let terms: string[] = [];
+    if (asset) {
+      const catalog = await this.catalog.list();
+      const instrument = catalog.instruments.find((item) => item.symbol === asset || item.baseAsset === asset);
+      terms = assetSearchTerms(asset, instrument?.name);
+      const base = asset.split("-")[0];
+      conditions.push({
+        OR: [
+          { affectedAssets: { hasSome: [asset, base] } },
+          ...terms.flatMap((term) => [
+            { title: { contains: term, mode: "insensitive" as const } },
+            { description: { contains: term, mode: "insensitive" as const } },
+          ]),
+        ],
+      });
+    }
+    if (query.category) conditions.push({ sourceCategories: { has: query.category } });
+    if (search)
+      conditions.push({
+        OR: [
+          { title: { contains: search, mode: "insensitive" } },
+          { description: { contains: search, mode: "insensitive" } },
+          { source: { contains: search, mode: "insensitive" } },
+        ],
+      });
+    const where: Prisma.NewsArticleWhereInput = { AND: conditions };
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const [articles, total, refreshState] = await Promise.all([
@@ -50,6 +69,7 @@ export class NewsService {
         totalPages: Math.ceil(total / pageSize),
         refreshState,
         sentiment: null as null,
+        assetFilter: asset ? { symbol: asset, terms, match: "tags_or_text" } : null,
       },
     };
   }

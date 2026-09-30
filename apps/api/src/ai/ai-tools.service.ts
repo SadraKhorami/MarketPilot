@@ -10,6 +10,7 @@ import {
   toolSchemas,
 } from "@marketpilot/ai";
 import {
+  normalizeInstrumentSymbol,
   calculateSupportResistance,
   calculateTechnicalIndicators,
   calculateTrend,
@@ -35,9 +36,7 @@ export interface ResearchContext {
   }) => Promise<ToolResult["proposal"]>;
 }
 export function resolveResearchSymbol(input: string) {
-  const normalized = input.trim().toUpperCase().replace("/", "-");
-  // Matches the current dashboard discovery convention. Existence is verified by the application's provider.
-  return /^[A-Z0-9]+$/.test(normalized) ? `${normalized}-USD` : normalized;
+  return normalizeInstrumentSymbol(input);
 }
 function baseSource(kind: Source["kind"], title: string, source: string): Source {
   return {
@@ -94,7 +93,6 @@ export class AiToolsService {
     if (tool === "getMarketNews") {
       const args = toolSchemas.getMarketNews.parse(input);
       const symbol = resolveResearchSymbol(args.symbol);
-      await this.snapshot(symbol, "1h", context); // Supported-product verification, also reused within this run.
       const response = await this.news.list({ asset: symbol.split("-")[0], pageSize: args.limit });
       result.sources = response.data.articles.map((article) =>
         SourceSchema.parse({
@@ -241,7 +239,11 @@ export class AiToolsService {
       windowEnd: candles.at(-1)?.time ?? null,
       history: candles.map((c) => ({ time: c.time, price: c.close })),
       facts: [
-        { label: "Observed trade price", value: data.price, unit: quote },
+        {
+          label: data.priceKind === "candle_close" ? "Latest candle close" : "Observed trade price",
+          value: data.price,
+          unit: quote,
+        },
         { label: "Observed candles", value: candles.length, unit: "candles" },
       ],
     };

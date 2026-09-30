@@ -1,36 +1,18 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-
-import { EllipsisVertical, LogOut, Settings2, UserRound } from "lucide-react";
-import { toast } from "sonner";
+import { EllipsisVertical } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
-import { apiRequest } from "@/lib/api/client";
+import { getInitials } from "@/lib/utils";
 
+import { AccountMenuContent } from "../account-menu-content";
 import { useSessionUser } from "../auth-gate";
 
 export function NavUser() {
   const user = useSessionUser();
   const { isMobile } = useSidebar();
-  const router = useRouter();
-  const logout = async () => {
-    try {
-      await apiRequest("/auth/logout", { method: "POST" });
-      router.replace("/auth/v2/login");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not sign out.");
-    }
-  };
 
   return (
     <SidebarMenu>
@@ -40,7 +22,7 @@ export function NavUser() {
             <SidebarMenuButton size="lg" aria-label="Open account menu">
               <Avatar className="size-8 rounded-lg">
                 <AvatarFallback className="rounded-lg">
-                  {(user?.name ?? user?.email ?? "MP").slice(0, 2).toUpperCase()}
+                  {getInitials(user?.name?.trim() || user?.email || "MP")}
                 </AvatarFallback>
               </Avatar>
               <span className="grid flex-1 text-left text-sm leading-tight">
@@ -50,22 +32,12 @@ export function NavUser() {
               <EllipsisVertical className="ml-auto size-4" aria-hidden="true" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="min-w-52" side={isMobile ? "bottom" : "right"} align="end">
-            <DropdownMenuGroup>
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/profile">
-                  <UserRound /> Profile
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/settings/appearance">
-                  <Settings2 /> Workspace settings
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void logout()}>
-                <LogOut /> Sign out
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
+          <DropdownMenuContent
+            className="w-72 max-w-[calc(100vw-2rem)]"
+            side={isMobile ? "bottom" : "right"}
+            align="end"
+          >
+            <AccountMenuContent />
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

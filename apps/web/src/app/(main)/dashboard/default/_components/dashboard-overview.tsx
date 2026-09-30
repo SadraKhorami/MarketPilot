@@ -217,7 +217,7 @@ export function DashboardOverview() {
         <CardHeader className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base">Your watchlist</CardTitle>
-            <CardDescription>Recent Coinbase Exchange observations for your saved markets.</CardDescription>
+            <CardDescription>Recent market observations for your saved markets.</CardDescription>
           </div>
           <Button variant="ghost" size="sm" asChild>
             <Link href="/dashboard/watchlist">

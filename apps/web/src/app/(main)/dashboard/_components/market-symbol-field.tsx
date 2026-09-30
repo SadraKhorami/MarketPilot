@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { marketSourceLabel, normalizeInstrumentSymbol, referenceMarkets } from "@marketpilot/market-data";
+import { useMarketCatalog } from "./market-catalog-provider";
 import { cn } from "cn";
 import { ChevronsUpDown } from "lucide-react";
 
@@ -22,7 +24,11 @@ export const marketOptions = [
 export const suggestedMarketSymbols = marketOptions.map((market) => market.symbol) as string[];
 
 export function marketName(symbol: string) {
-  return marketOptions.find((market) => market.symbol === symbol)?.name ?? symbol.split("-")[0];
+  return (
+    marketOptions.find((market) => market.symbol === symbol)?.name ??
+    referenceMarkets.find((market) => market.symbol === symbol)?.name ??
+    symbol.split("-")[0]
+  );
 }
 
 export function AssetMark({ symbol, small = false }: { symbol: string; small?: boolean }) {
@@ -41,13 +47,7 @@ export function AssetMark({ symbol, small = false }: { symbol: string; small?: b
 }
 
 export function normalizeMarketSymbol(value: string) {
-  const normalized = value
-    .trim()
-    .toUpperCase()
-    .replace(/\s*\/\s*/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-  return /^[A-Z0-9]+$/.test(normalized) ? `${normalized}-USD` : normalized;
+  return normalizeInstrumentSymbol(value);
 }
 
 export function MarketSymbolField({
@@ -59,6 +59,7 @@ export function MarketSymbolField({
   className,
   allowAll = false,
   excluded = [],
+  allowUnavailable = false,
 }: {
   id: string;
   value: string;
@@ -68,15 +69,37 @@ export function MarketSymbolField({
   className?: string;
   allowAll?: boolean;
   excluded?: string[];
+  allowUnavailable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const selected = marketOptions.find((market) => market.symbol === value);
+  const catalog = useMarketCatalog();
+  const [search, setSearch] = useState("");
+  const instruments = catalog.data?.instruments ?? [];
+  const selected = instruments.find((market) => market.symbol === value);
+  const query = search.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const matches = instruments.filter((market) =>
+    `${market.name}${market.symbol}${market.providerSymbol}${market.assetClass}`
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]/gu, "")
+      .includes(query),
+  );
+  const visible = query
+    ? matches.slice(0, 80)
+    : (["crypto", "forex", "commodity", "stock"] as const).flatMap((type) =>
+        matches.filter((item) => item.assetClass === type).slice(0, 20),
+      );
   const select = (symbol: string) => {
     onChange(symbol);
     setOpen(false);
   };
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(value) => {
+        setOpen(value);
+        if (value) setSearch("");
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           id={id}
@@ -103,38 +126,71 @@ export function MarketSymbolField({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-(--radix-popover-trigger-width) min-w-64 max-w-[calc(100vw-2rem)] p-0">
-        <Command>
-          <CommandInput placeholder="Search Bitcoin, Ethereum, BTC…" aria-label="Search markets by name or symbol" />
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Search name or symbol, e.g. Bitcoin, XAUUSD…"
+            aria-label="Search markets by name or symbol"
+          />
           <CommandList id={`${id}-list`} className="max-h-72 overflow-y-auto overscroll-contain">
-            <CommandEmpty>No matching asset. Try a name or symbol.</CommandEmpty>
-            <CommandGroup heading="USD markets">
-              {allowAll ? (
-                <CommandItem value="All assets" onSelect={() => select("")} data-checked={!value}>
+            <CommandEmpty>{catalog.loading ? "Loading market catalog…" : "No matching instrument."}</CommandEmpty>
+            {allowAll && !query ? (
+              <CommandGroup>
+                <CommandItem value="all" onSelect={() => select("")}>
                   All assets
                 </CommandItem>
-              ) : null}
-              {marketOptions.map((market) => (
-                <CommandItem
-                  key={market.symbol}
-                  value={market.symbol}
-                  keywords={[market.name, market.symbol.split("-")[0]]}
-                  disabled={excluded.includes(market.symbol)}
-                  onSelect={() => select(market.symbol)}
-                  data-checked={value === market.symbol}
-                  className="gap-3 py-2.5"
+              </CommandGroup>
+            ) : null}
+            {(["crypto", "forex", "commodity", "stock"] as const).map((assetClass) => {
+              const group = visible.filter((market) => market.assetClass === assetClass);
+              if (!group.length) return null;
+              return (
+                <CommandGroup
+                  key={assetClass}
+                  heading={{ crypto: "Crypto", forex: "Forex", commodity: "Metals", stock: "Stocks" }[assetClass]}
                 >
-                  <AssetMark symbol={market.symbol} small />
-                  <span className="flex flex-1 flex-col">
-                    <span className="font-medium">{market.name}</span>
-                    <span className="text-muted-foreground text-xs">
-                      {market.symbol}
-                      {excluded.includes(market.symbol) ? " · Already followed" : ""}
-                    </span>
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+                  {group.map((market) => (
+                    <CommandItem
+                      key={market.symbol}
+                      value={market.symbol}
+                      disabled={excluded.includes(market.symbol) || (!market.available && !allowUnavailable)}
+                      onSelect={() => select(market.symbol)}
+                    >
+                      <AssetMark symbol={market.symbol} small />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-medium">{market.name}</span>
+                        <span className="truncate text-muted-foreground text-xs">
+                          {market.symbol} · {marketSourceLabel(market.provider)}
+                        </span>
+                        {!market.available ? (
+                          <span className="text-muted-foreground text-xs">Market data needs a provider connection</span>
+                        ) : null}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              );
+            })}
           </CommandList>
+          {catalog.loading ? (
+            <p role="status" className="border-t p-2 text-muted-foreground text-xs">
+              Loading market catalog…
+            </p>
+          ) : null}
+          {matches.length > visible.length ? (
+            <p className="p-2 text-muted-foreground text-xs">
+              Showing {visible.length} of {matches.length}. Type to narrow the list.
+            </p>
+          ) : null}
+          {catalog.error || catalog.data?.error ? (
+            <div className="flex items-center justify-between gap-2 border-t p-2">
+              <span className="text-muted-foreground text-xs">{catalog.error || catalog.data?.error}</span>
+              <Button size="sm" variant="ghost" onClick={catalog.reload}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
         </Command>
       </PopoverContent>
     </Popover>

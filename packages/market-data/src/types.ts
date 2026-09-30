@@ -17,7 +17,7 @@ export const MarketCandleSchema = z.object({
 	high: z.number().positive().finite(),
 	low: z.number().positive().finite(),
 	close: z.number().positive().finite(),
-	volume: z.number().nonnegative().finite(),
+	volume: z.number().nonnegative().finite().nullable(),
 });
 export type MarketCandle = z.infer<typeof MarketCandleSchema>;
 
@@ -49,6 +49,8 @@ export type TechnicalIndicators = z.infer<typeof TechnicalIndicatorsSchema>;
 export const MarketObservationSchema = z.object({
 	symbol: z.string().min(1),
 	providerSymbol: z.string().min(1),
+	source: z.string().optional(),
+	priceKind: z.enum(["quote", "candle_close"]).optional(),
 	interval: MarketDataIntervalSchema,
 	price: z.number().positive().finite(),
 	timestamp: z.string().datetime({ offset: true }),
@@ -59,7 +61,7 @@ export const MarketObservationSchema = z.object({
 		support: z.array(z.number().positive()),
 		resistance: z.array(z.number().positive()),
 	}),
-	marketStatus: z.object({ isOpen: z.boolean() }),
+	marketStatus: z.object({ isOpen: z.boolean().nullable() }),
 	volatility: z.object({
 		atr: z.number().finite().nullable(),
 		atrPercentage: z.number().finite().nullable(),
@@ -69,6 +71,7 @@ export type MarketObservation = z.infer<typeof MarketObservationSchema>;
 
 export interface MarketDataProvider {
 	readonly id: string;
+	sourceFor?(symbol: string): string;
 	getMarketData(
 		symbol: string,
 		interval: MarketDataInterval,

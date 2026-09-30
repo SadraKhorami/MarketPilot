@@ -15,6 +15,7 @@ export interface NewsResponse {
   page: number;
   pageSize: number;
   totalPages: number;
+  assetFilter?: { symbol: string; terms: string[]; match: string } | null;
   refreshState: { enabled?: boolean; status?: string; checkedAt?: string };
 }
 

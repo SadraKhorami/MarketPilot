@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { MarketInstrumentSchema, type MarketInstrument } from "../catalog";
 import {
 	calculateSupportResistance,
 	calculateTechnicalIndicators,
@@ -36,6 +38,55 @@ export class CoinbaseExchangeProvider implements MarketDataProvider {
 		private readonly fetcher: typeof fetch = fetch,
 		private readonly timeoutMs = 8_000,
 	) {}
+
+	async listMarkets(): Promise<MarketInstrument[]> {
+		const [products, currencies] = await Promise.all([
+			this.request(`${API_BASE_URL}/products`),
+			this.request(`${API_BASE_URL}/currencies`),
+		]);
+		const parsedProducts = z
+			.array(
+				z.object({
+					id: z.string(),
+					base_currency: z.string(),
+					quote_currency: z.string(),
+					status: z.string(),
+					trading_disabled: z.boolean().optional(),
+				}),
+			)
+			.safeParse(products);
+		const parsedCurrencies = z
+			.array(z.object({ id: z.string(), name: z.string() }))
+			.safeParse(currencies);
+		if (!parsedProducts.success || !parsedCurrencies.success)
+			throw new MarketDataProviderError(
+				"Market catalog could not be validated.",
+				"INVALID_RESPONSE",
+			);
+		const names = new Map(
+			parsedCurrencies.data.map((currency) => [currency.id, currency.name]),
+		);
+		return parsedProducts.data
+			.filter(
+				(product) => product.status === "online" && !product.trading_disabled,
+			)
+			.map((product) =>
+				MarketInstrumentSchema.parse({
+					symbol: product.id,
+					name: names.get(product.base_currency) ?? product.base_currency,
+					baseAsset: product.base_currency,
+					quoteAsset: product.quote_currency,
+					assetClass: "crypto",
+					provider: this.id,
+					providerSymbol: product.id,
+					available: true,
+				}),
+			)
+			.sort(
+				(a, b) =>
+					a.name.localeCompare(b.name) || a.symbol.localeCompare(b.symbol),
+			);
+	}
 
 	async getMarketData(
 		symbol: string,
@@ -77,6 +128,8 @@ export class CoinbaseExchangeProvider implements MarketDataProvider {
 		const observation = {
 			symbol: productId,
 			providerSymbol: productId,
+			source: this.id,
+			priceKind: "quote",
 			interval,
 			price: parsePositiveNumber(ticker.price),
 			timestamp: parseTimestamp(ticker.time),

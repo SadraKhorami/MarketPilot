@@ -8,6 +8,14 @@ export const API_CATALOG = {
   endpoints: [
     {
       method: "GET",
+      path: "/market-data/catalog",
+      scope: "market:read",
+      title: "Market catalog",
+      description: "Active crypto instruments and configured multi-asset coverage, with source and availability.",
+      parameters: "None",
+    },
+    {
+      method: "GET",
       path: "/market-data/{symbol}",
       scope: "market:read",
       title: "Prices & analysis",

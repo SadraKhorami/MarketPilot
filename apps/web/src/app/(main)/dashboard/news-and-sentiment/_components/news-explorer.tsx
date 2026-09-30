@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { articleMatchesAsset } from "@marketpilot/market-data";
 import { cn } from "cn";
 import { Bookmark, Globe2, Newspaper, Search, X } from "lucide-react";
 
@@ -14,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
+import { useMarketCatalog } from "../../_components/market-catalog-provider";
 import { MarketSymbolField } from "../../_components/market-symbol-field";
 import { ResourceState } from "../../_components/resource-state";
 import { NewsArticlePreview } from "./news-article-preview";
@@ -25,6 +27,7 @@ import type { Article, NewsResponse } from "./news-types";
 const pageSize = 12;
 
 export function NewsExplorer() {
+  const catalog = useMarketCatalog();
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [asset, setAsset] = useState("");
@@ -88,7 +91,9 @@ export function NewsExplorer() {
   }, [load]);
 
   const savedArticles = Object.values(saved).filter((article) => {
-    const matchesAsset = !asset || article.affectedAssets.includes(asset);
+    const matchesAsset =
+      !asset ||
+      articleMatchesAsset(article, asset, catalog.data?.instruments.find((item) => item.symbol === asset)?.name);
     const text = `${article.title} ${article.source} ${article.description ?? ""}`.toLowerCase();
     return matchesAsset && (!search || text.includes(search.toLowerCase()));
   });
@@ -187,6 +192,7 @@ export function NewsExplorer() {
                   setPage(1);
                 }}
                 allowAll
+                allowUnavailable
               />
             </Field>
             {searchDraft || asset ? (
@@ -205,6 +211,12 @@ export function NewsExplorer() {
               </Button>
             ) : null}
           </FieldGroup>
+          {asset && response?.assetFilter?.symbol === asset ? (
+            <p className="mt-3 text-muted-foreground text-xs">
+              Matching asset tags or headline/excerpt keywords: {response.assetFilter.terms.join(" · ")}. Search
+              coverage narrows these results further.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
       {error ? (

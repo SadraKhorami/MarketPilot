@@ -2,7 +2,7 @@
 
 import { type ReactNode, useId, useMemo, useState } from "react";
 
-import type { MarketObservation } from "@marketpilot/market-data";
+import { referenceMarkets, marketSourceLabel, type MarketObservation } from "@marketpilot/market-data";
 import { cn } from "cn";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
@@ -47,18 +47,21 @@ export function MarketHistoryPanel({
     `${new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 1 ? 6 : 2 }).format(value)} ${quote}`;
   const first = data.candles[0];
   const last = data.candles.at(-1);
-  const volume = data.candles.reduce((total, candle) => total + candle.volume, 0);
+  const hasVolume = data.candles.every((candle) => candle.volume !== null);
+  const volume = hasVolume ? data.candles.reduce((total, candle) => total + (candle.volume ?? 0), 0) : null;
+  const chartView = hasVolume ? view : "price";
   return (
     <Card className={cn("min-w-0", className)}>
       <CardHeader>
         <CardTitle>Market history</CardTitle>
         <CardDescription>
-          {data.symbol} · {data.interval} candles · {stale ? "Cached observation" : "Coinbase Exchange"}
+          {data.symbol} · {data.interval} candles ·{" "}
+          {stale ? "Cached observation" : marketSourceLabel(data.source ?? "coinbase-exchange")}
         </CardDescription>
         <CardAction>
           <ToggleGroup
             type="single"
-            value={view}
+            value={chartView}
             onValueChange={(value) => {
               if (value) setView(value);
             }}
@@ -68,7 +71,9 @@ export function MarketHistoryPanel({
             aria-label="Chart view"
           >
             <ToggleGroupItem value="price">Price</ToggleGroupItem>
-            <ToggleGroupItem value="volume">Volume</ToggleGroupItem>
+            <ToggleGroupItem value="volume" disabled={!hasVolume}>
+              Volume
+            </ToggleGroupItem>
           </ToggleGroup>
         </CardAction>
         {toolbar ? <div className="col-span-full pt-3">{toolbar}</div> : null}
@@ -79,7 +84,7 @@ export function MarketHistoryPanel({
             <span className="size-2 rounded-full bg-emerald-500" />
             Candle close
           </span>
-          {view === "price" ? (
+          {chartView === "price" ? (
             <span className="flex items-center gap-2">
               <span className="h-0.5 w-3 bg-violet-500" />
               50-period average
@@ -114,7 +119,7 @@ export function MarketHistoryPanel({
               width={64}
               axisLine={false}
               tickLine={false}
-              domain={view === "price" ? ["auto", "auto"] : [0, "auto"]}
+              domain={chartView === "price" ? ["auto", "auto"] : [0, "auto"]}
               tickFormatter={(value: number) =>
                 new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 }).format(value)
               }
@@ -129,7 +134,7 @@ export function MarketHistoryPanel({
                         {{ close: "Close", average: "SMA 50", volume: "Volume" }[String(name)] ?? String(name)}
                       </span>
                       <span className="font-medium tabular-nums">
-                        {view === "price"
+                        {chartView === "price"
                           ? formatPrice(Number(value))
                           : Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </span>
@@ -138,7 +143,7 @@ export function MarketHistoryPanel({
                 />
               }
             />
-            {view === "price" ? (
+            {chartView === "price" ? (
               <>
                 <Area
                   dataKey="close"
@@ -171,7 +176,10 @@ export function MarketHistoryPanel({
             { label: "Window low", value: formatPrice(Math.min(...data.candles.map((candle) => candle.low))) },
             {
               label: "Traded volume",
-              value: `${volume.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 2 })} ${data.symbol.split("-")[0]}`,
+              value:
+                volume === null
+                  ? "Not supplied by this source"
+                  : `${volume.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 2 })} ${referenceMarkets.find((market) => market.symbol === data.symbol)?.assetClass === "stock" ? "shares" : data.symbol.split("-")[0]}`,
             },
           ].map((item) => (
             <div key={item.label} className="flex flex-col gap-1">

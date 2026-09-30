@@ -32,7 +32,8 @@ export class MarketDataService {
 
   async getMarketData(symbol: string, interval: MarketDataInterval): Promise<MarketSnapshot> {
     const normalizedSymbol = symbol.trim().toUpperCase();
-    const cacheKey = `marketpilot:market-data:v1:${this.provider.id}:${encodeURIComponent(normalizedSymbol)}:${interval}`;
+    const source = this.provider.sourceFor?.(normalizedSymbol) ?? this.provider.id;
+    const cacheKey = `marketpilot:market-data:v1:${source}:${encodeURIComponent(normalizedSymbol)}:${interval}`;
     let cached: string | null = null;
 
     try {
@@ -49,7 +50,7 @@ export class MarketDataService {
     try {
       const data = await this.provider.getMarketData(normalizedSymbol, interval);
       const record: MarketSnapshot = {
-        source: this.provider.id,
+        source,
         requestedSymbol: normalizedSymbol,
         data,
         freshness: "fresh",

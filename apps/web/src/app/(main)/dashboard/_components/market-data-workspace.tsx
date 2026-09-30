@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import Link from "next/link";
 
-import type { MarketDataInterval, MarketObservation } from "@marketpilot/market-data";
+import { marketSourceLabel, type MarketDataInterval, type MarketObservation } from "@marketpilot/market-data";
 import { ArrowLeft, ArrowUpRight, CircleAlert } from "lucide-react";
 
 import { MarketSymbolField } from "@/app/(main)/dashboard/_components/market-symbol-field";
@@ -133,7 +133,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
       {loading && !data ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground text-sm" role="status">
-            Loading verified Coinbase Exchange data…
+            Loading market observations…
           </CardContent>
         </Card>
       ) : null}
@@ -156,7 +156,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
       {!loading && !error && !data ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground text-sm">
-            No Coinbase Exchange observation is available for this market.
+            No observation is available from this market’s data source.
           </CardContent>
         </Card>
       ) : null}
@@ -164,7 +164,11 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
       {data ? (
         <>
           <section className="grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Market summary">
-            <MetricCard label="Latest price" value={formatPrice(data.price, data.symbol)} detail={data.symbol} />
+            <MetricCard
+              label={data.priceKind === "candle_close" ? "Latest candle close" : "Latest price"}
+              value={formatPrice(data.price, data.symbol)}
+              detail={data.symbol}
+            />
             <MetricCard
               label="History window move"
               value={formatChange(relativeChange)}
@@ -238,7 +242,10 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-muted-foreground text-xs">
-            <span>Source: Coinbase Exchange · Provider observation {new Date(data.timestamp).toLocaleString()}</span>
+            <span>
+              Source: {marketSourceLabel(snapshot.source)} · Provider observation{" "}
+              {new Date(data.timestamp).toLocaleString()}
+            </span>
             <span>
               Retrieved {fetchedAt?.toLocaleTimeString() ?? "Unavailable"}
               {snapshot?.freshness === "stale" || isStale ? " · Cached" : ""}

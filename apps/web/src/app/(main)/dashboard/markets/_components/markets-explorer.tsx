@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Link from "next/link";
 
-import type { MarketObservation } from "@marketpilot/market-data";
+import { marketSourceLabel, type MarketObservation } from "@marketpilot/market-data";
 import { ArrowUpRight, CandlestickChart, CircleAlert } from "lucide-react";
 
 import {
@@ -21,6 +21,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
+import { useMarketCatalog } from "../../_components/market-catalog-provider";
 import { MarketSparkline } from "../../_components/market-sparkline";
 
 type Snapshot = { source: string; freshness: "fresh" | "stale"; fetchedAt: string; data: MarketObservation };
@@ -30,6 +31,7 @@ type LookupState =
   | { status: "error"; message: string };
 
 export function MarketsExplorer() {
+  const catalog = useMarketCatalog();
   const [query, setQuery] = useState("");
   const [symbols, setSymbols] = useState(suggestedMarketSymbols);
   const [lookups, setLookups] = useState<Record<string, LookupState>>({});
@@ -119,10 +121,10 @@ export function MarketsExplorer() {
           </FieldGroup>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex flex-col gap-1">
-              <span className="font-medium">Coinbase Exchange</span>
+              <span className="font-medium">Crypto · Forex · Metals · Stocks</span>
               <span className="text-muted-foreground text-xs">Automatic updates · 15m candles</span>
             </div>
-            <Badge variant="secondary">{quoteCount} quotes</Badge>
+            <Badge variant="secondary">{quoteCount} observations</Badge>
           </div>
         </CardContent>
       </Card>
@@ -131,7 +133,9 @@ export function MarketsExplorer() {
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 id="markets-list-title" className="font-semibold text-lg tracking-tight">
-              {query ? `${marketName(query)} market` : "Market explorer"}
+              {query
+                ? `${catalog.data?.instruments.find((item) => item.symbol === query)?.name ?? marketName(query)} market`
+                : "Market explorer"}
             </h2>
             <p className="text-muted-foreground text-sm">Price, momentum and recent candle history at a glance.</p>
           </div>
@@ -150,7 +154,7 @@ export function MarketsExplorer() {
               <CandlestickChart className="size-6 text-muted-foreground" aria-hidden="true" />
               <p className="font-medium">No matching market in this list</p>
               <p className="max-w-md text-muted-foreground text-sm">
-                Search for a symbol above to ask Coinbase Exchange for a verified quote.
+                Choose a market above to load observations from its data source.
               </p>
             </CardContent>
           </Card>
@@ -212,6 +216,8 @@ function MarketSnapshotCard({
   warning?: string;
   onRetry: () => void;
 }) {
+  const catalog = useMarketCatalog();
+  const displayName = catalog.data?.instruments.find((item) => item.symbol === symbol)?.name ?? marketName(symbol);
   let freshnessLabel = snapshot.freshness === "fresh" ? "Recent" : "Cached";
   if (updating) freshnessLabel = "Updating";
   const firstOpen = snapshot.data.candles[0]?.open;
@@ -224,7 +230,7 @@ function MarketSnapshotCard({
             <div className="flex items-center gap-3">
               <AssetMark symbol={symbol} />
               <div>
-                <p className="font-semibold">{marketName(symbol)}</p>
+                <p className="font-semibold">{displayName}</p>
                 <p className="text-muted-foreground text-xs">{symbol}</p>
               </div>
             </div>
@@ -233,7 +239,9 @@ function MarketSnapshotCard({
         </div>
         <div className="flex flex-col gap-2">
           <div className="min-w-0">
-            <p className="text-muted-foreground text-xs">Price · USD</p>
+            <p className="text-muted-foreground text-xs">
+              {snapshot.data.priceKind === "candle_close" ? "Candle close" : "Price"} · {symbol.split("-")[1]}
+            </p>
             <p className="mt-1 font-semibold text-2xl tabular-nums tracking-tight">
               {formatPrice(snapshot.data.price)}
             </p>
@@ -263,7 +271,8 @@ function MarketSnapshotCard({
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Observed {new Date(snapshot.data.timestamp).toLocaleTimeString()}
+          {marketSourceLabel(snapshot.source)} · {snapshot.data.priceKind === "candle_close" ? "Candle" : "Observed"}{" "}
+          {new Date(snapshot.data.timestamp).toLocaleString()}
           {snapshot.freshness === "stale" ? " · cached" : ""}
         </p>
         {warning ? (
