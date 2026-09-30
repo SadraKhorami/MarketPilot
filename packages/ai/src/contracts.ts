@@ -10,7 +10,14 @@ const marketArgs = z
   .object({
     symbol,
     interval: IntervalSchema,
-    window: z.number().int().min(30).max(300),
+    window: z
+      .number()
+      .int()
+      .min(30)
+      .max(300)
+      .describe(
+        "Displayed candle window and support/resistance range. Indicators use available earlier candles for initialization; calculationHistory reports their actual window.",
+      ),
   })
   .strict();
 export const AlertInputSchema = z
@@ -30,14 +37,28 @@ export const toolSchemas = {
     .object({
       watchlistId: z.string().uuid().nullable(),
       interval: IntervalSchema,
-      window: z.number().int().min(30).max(300),
+      window: z
+        .number()
+        .int()
+        .min(30)
+        .max(300)
+        .describe(
+          "Displayed candle window and support/resistance range. Indicators use available earlier candles for initialization; calculationHistory reports their actual window.",
+        ),
     })
     .strict(),
   compareAssets: z
     .object({
       symbols: z.array(symbol).min(2).max(4),
       interval: IntervalSchema,
-      window: z.number().int().min(30).max(300),
+      window: z
+        .number()
+        .int()
+        .min(30)
+        .max(300)
+        .describe(
+          "Displayed candle window and support/resistance range. Indicators use available earlier candles for initialization; calculationHistory reports their actual window.",
+        ),
     })
     .strict(),
   createAlert: AlertInputSchema,
@@ -109,6 +130,10 @@ export const SourceSchema = z
     interval: IntervalSchema.nullable(),
     windowStart: timestamp.nullable(),
     windowEnd: timestamp.nullable(),
+    calculationHistory: z
+      .object({ windowStart: timestamp, windowEnd: timestamp, candles: z.number().int().min(1).max(300) })
+      .strict()
+      .optional(),
     excerpt: z.string().max(600).nullable(),
     error: z.string().max(160).nullable(),
   })

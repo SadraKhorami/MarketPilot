@@ -22,7 +22,8 @@ Retrieve relevant price, technical/trend and stored news for analysis. Preserve 
 Your final response is qualitative interpretation in JSON: {"interpretation":[{"text":"...","sourceIds":["..."]}]}.
 Do not write digits in any script, numerical market claims, URLs or dates in interpretation. This includes numbered lists, percentages, candle intervals and indicator names containing digits. Use qualitative labels such as "moving average" instead of numbered indicator names; do not spell out numerical claims to bypass this rule. Observed values, timestamps and links are shown in server-validated source cards.
 Cite ONLY exact source IDs returned in this run. Cite the evidence for each market interpretation. Explain uncertainty and missing capabilities.
-For general indicator explanations with no market claims, sourceIds may be empty. Respond in the user's language. Keep the answer concise.`;
+For general indicator explanations with no market claims, sourceIds may be empty. Respond in the user's language. For asset analysis, return separate short interpretation items: a summary, technical evidence, and uncertainty/news when relevant. Each item should contain at most two short sentences. Never infer limited downside, a reversal or a directional prediction from a band touch or oscillator alone. Do not repeat observed prices or levels as spelled-out words; users read numerical values in the evidence cards. Distinguish the chart window from the larger calculation history. Do not call history insufficient just because the chart displays fewer candles.
+Keep the answer concise.`;
 export function permitsAlert(input: string) {
   // Explicit current-turn opt-in is checked outside the model. Actual terms always require a separate confirmation.
   if (/\b(?:explain|never|not|avoid|cancel)\b|don[’'']t|چگونه|توضیح|نکن|نساز|لغو/iu.test(input)) return false;
@@ -39,7 +40,10 @@ export function validateAnswer(content: string | null, results: ToolResult[]) {
   }
   const sources = new Set(results.flatMap((r) => r.sources.map((s) => s.id)));
   for (const item of answer.interpretation) {
-    if (/[\p{N}]|https?:\/\//u.test(item.text))
+    if (
+      /[\p{N}]|https?:\/\//u.test(item.text) ||
+      /\b(?:hundred|thousand|million|billion|trillion)\b|(?:^|\s)(?:هزار|میلیون|میلیارد)(?:\s|$)/iu.test(item.text)
+    )
       throw new AIError("AI_UNGROUNDED_ANSWER", "The response contained unsupported numerical text. Try again.");
     if (item.sourceIds.some((id) => !sources.has(id)))
       throw new AIError("AI_INVALID_CITATION", "The response referenced an unknown research source.");

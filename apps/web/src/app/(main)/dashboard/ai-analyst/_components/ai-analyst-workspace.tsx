@@ -38,8 +38,8 @@ interface Watchlist {
   name: string;
   items: Array<{ assetId: string }>;
 }
-function activityLabel(event: { state: string; status?: string }) {
-  if (event.state === "running") return "Working";
+function activityLabel(event: { state: string; status?: string }, running: boolean) {
+  if (event.state === "running") return running ? "Working" : "Interrupted";
   return event.status === "ok" ? "Received" : "Limited";
 }
 export function AIAnalystWorkspace() {
@@ -250,7 +250,7 @@ export function AIAnalystWorkspace() {
                   .map((event) => (
                     <li key={event.tool} className="flex items-center justify-between gap-2 text-xs">
                       <span>{toolLabels[event.tool]}</span>
-                      <Badge variant="outline">{activityLabel(event)}</Badge>
+                      <Badge variant="outline">{activityLabel(event, research.running)}</Badge>
                     </li>
                   ))}
               </ul>

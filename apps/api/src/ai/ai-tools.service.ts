@@ -11,6 +11,7 @@ import {
 } from "@marketpilot/ai";
 import {
   normalizeInstrumentSymbol,
+  referenceMarkets,
   calculateSupportResistance,
   calculateTechnicalIndicators,
   calculateTrend,
@@ -198,7 +199,17 @@ export class AiToolsService {
     }
     const snapshot = await promise;
     const data = MarketObservationSchema.parse(snapshot.data);
-    if (data.symbol !== symbol || data.providerSymbol !== symbol || data.interval !== interval)
+    const instrument = referenceMarkets.find((market) => market.symbol === symbol);
+    const expectedSource = instrument?.provider ?? "coinbase-exchange";
+    const expectedProviderSymbol = instrument?.providerSymbol ?? symbol;
+    if (
+      snapshot.requestedSymbol !== symbol ||
+      data.symbol !== symbol ||
+      data.providerSymbol !== expectedProviderSymbol ||
+      snapshot.source !== expectedSource ||
+      (data.source !== undefined && data.source !== expectedSource) ||
+      data.interval !== interval
+    )
       throw new AIError("AI_INVALID_TOOL_RESULT", "The market observation did not match the request.");
     return { ...snapshot, data };
   }
@@ -227,24 +238,37 @@ export class AiToolsService {
     const data = snapshot.data;
     const candles = aligned ?? data.candles.slice(-window);
     const quote = data.symbol.split("-")[1];
-    const indicators = calculateTechnicalIndicators(candles);
+    const end = candles.at(-1);
+    if (!end) return this.unavailable(data.symbol);
+    // Earlier candles initialize indicators; comparison calculations never include bars after the shared endpoint.
+    const calculationCandles = data.candles.filter((candle) => Date.parse(candle.time) <= Date.parse(end.time));
+    const indicators = calculateTechnicalIndicators(calculationCandles);
+    const price = aligned ? end.close : data.price;
     const source: Source = {
       ...baseSource("market", data.symbol, snapshot.source),
       symbol: data.symbol,
-      observedAt: data.timestamp,
+      observedAt: aligned ? end.time : data.timestamp,
       fetchedAt: snapshot.fetchedAt,
       freshness: snapshot.freshness,
       interval: data.interval,
       windowStart: candles[0]?.time ?? null,
-      windowEnd: candles.at(-1)?.time ?? null,
+      windowEnd: end.time,
+      calculationHistory:
+        tool === "getMarketPrice"
+          ? undefined
+          : {
+              windowStart: calculationCandles[0].time,
+              windowEnd: end.time,
+              candles: calculationCandles.length,
+            },
       history: candles.map((c) => ({ time: c.time, price: c.close })),
       facts: [
         {
           label: data.priceKind === "candle_close" ? "Latest candle close" : "Observed trade price",
-          value: data.price,
+          value: price,
           unit: quote,
         },
-        { label: "Observed candles", value: candles.length, unit: "candles" },
+        { label: "Chart candles", value: candles.length, unit: "candles" },
       ],
     };
     if (tool !== "getMarketPrice") {
@@ -266,14 +290,21 @@ export class AiToolsService {
     if (tool === "getTrendAnalysis" || tool === "compareAssets" || tool === "getWatchlist") {
       const levels = calculateSupportResistance(candles);
       source.facts.push(
-        { label: "Deterministic trend", value: calculateTrend(data.price, indicators), unit: "classification" },
+        { label: "Deterministic trend", value: calculateTrend(price, indicators), unit: "classification" },
         ...levels.support.slice(0, 3).map((value, i) => ({ label: `Support ${i + 1}`, value, unit: quote })),
         ...levels.resistance.slice(0, 3).map((value, i) => ({ label: `Resistance ${i + 1}`, value, unit: quote })),
       );
     }
     if (candles.length < window || source.facts.some((f) => f.value === null)) {
       source.status = "partial";
-      source.error = "Available history is limited; missing indicators remain unavailable.";
+      const missing = source.facts.filter((fact) => fact.value === null).map((fact) => fact.label);
+      const reasons = [];
+      if (candles.length < window) reasons.push(`Chart: ${candles.length}/${window} candles`);
+      if (missing.length)
+        reasons.push(
+          `${calculationCandles.length} calculation candles; missing ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? " and others" : ""}`,
+        );
+      source.error = reasons.join(". ").slice(0, 160);
     }
     return SourceSchema.parse(source);
   }

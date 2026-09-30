@@ -1,4 +1,5 @@
 "use client";
+import { marketSourceLabel } from "@marketpilot/market-data";
 import type { Source } from "@marketpilot/ai/contracts";
 import { ExternalLink } from "lucide-react";
 
@@ -9,7 +10,7 @@ import { PriceHistoryChart } from "../../_components/price-history-chart";
 
 function display(value: string | number | null, unit: string) {
   if (value === null) return "Unavailable";
-  return `${typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : value}${unit && unit !== "classification" ? ` ${unit}` : ""}`;
+  return `${typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: unit === "candles" ? 0 : unit === "index" ? 2 : Math.abs(value) < 1 ? 6 : 2 }) : value}${unit && unit !== "classification" ? ` ${unit}` : ""}`;
 }
 export function ResearchSources({ sources }: { sources: Source[] }) {
   // Price and indicator lookups may reference the same observation. Keep the most informative card for it.
@@ -30,13 +31,13 @@ export function ResearchSources({ sources }: { sources: Source[] }) {
           <CardHeader>
             <CardTitle>{source.title}</CardTitle>
             <CardDescription>
-              {source.source} · {source.interval ? `${source.interval} candles` : "Stored source"}
+              {marketSourceLabel(source.source)} · {source.interval ? `${source.interval} candles` : "Stored source"}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-3">
             <div className="flex flex-wrap gap-2">
               <Badge variant={source.status === "unavailable" ? "destructive" : "outline"}>
-                {{ ok: "Observed", partial: "Limited history", unavailable: "Unavailable" }[source.status]}
+                {{ ok: "Observed", partial: "Partial data", unavailable: "Unavailable" }[source.status]}
               </Badge>
               {source.freshness !== "not_applicable" ? (
                 <Badge variant="secondary">
@@ -56,11 +57,17 @@ export function ResearchSources({ sources }: { sources: Source[] }) {
                 ))}
               </dl>
             ) : null}
+            {source.calculationHistory ? (
+              <p className="text-muted-foreground text-xs">
+                Indicators use {source.calculationHistory.candles} candles; chart shows {source.history.length}. Moving
+                averages require 50 / 200 candles; MACD requires 34.
+              </p>
+            ) : null}
             {source.error ? <p className="text-muted-foreground text-xs">{source.error}</p> : null}
             {source.excerpt ? <p className="text-muted-foreground text-sm">{source.excerpt}</p> : null}
             {source.observedAt ? (
               <p className="text-muted-foreground text-xs">
-                {source.kind === "news" ? "Published" : "Observed trade"}:{" "}
+                {source.kind === "news" ? "Published" : "Observation time"}:{" "}
                 {new Date(source.observedAt).toLocaleString()}
               </p>
             ) : null}

@@ -197,11 +197,15 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
               <Card className="shadow-none">
                 <CardHeader>
                   <CardTitle className="text-base">Signals and key levels</CardTitle>
-                  <CardDescription>Derived from candle history.</CardDescription>
+                  <CardDescription>
+                    Calculated from all {data.candles.length} available {data.interval} candles.
+                    {data.candles.length < 200 ? " The long-term average and trend require 200 candles." : ""}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="divide-y">
                   <Indicator
                     label="MACD"
+                    unavailableReason={`Requires 34 candles; ${data.candles.length} available.`}
                     value={
                       data.indicators.macd
                         ? `${formatPrice(data.indicators.macd.value, data.symbol)} · signal ${formatPrice(data.indicators.macd.signal, data.symbol)}`
@@ -210,10 +214,12 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
                   />
                   <Indicator
                     label="50 period average"
+                    unavailableReason={`Requires 50 candles; ${data.candles.length} available.`}
                     value={data.indicators.sma50 === null ? null : formatPrice(data.indicators.sma50, data.symbol)}
                   />
                   <Indicator
                     label="200 period average"
+                    unavailableReason={`Requires 200 candles; ${data.candles.length} available.`}
                     value={data.indicators.sma200 === null ? null : formatPrice(data.indicators.sma200, data.symbol)}
                   />
                   <Indicator
@@ -298,24 +304,38 @@ function MetricCard({
   );
 }
 
-function Indicator({ label, value }: { label: string; value: number | string | null }) {
+function Indicator({
+  label,
+  value,
+  unavailableReason,
+}: {
+  label: string;
+  value: number | string | null;
+  unavailableReason?: string;
+}) {
   let display = value ?? "Unavailable";
-  if (typeof value === "number") display = value.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  if (typeof value === "number") display = value.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return (
     <div className="flex justify-between gap-3 py-2.5 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium tabular-nums">{display}</span>
+      <span className="flex min-w-0 flex-col items-end gap-1 text-right font-medium tabular-nums">
+        {display}
+        {value === null && unavailableReason ? (
+          <span className="text-muted-foreground text-xs">{unavailableReason}</span>
+        ) : null}
+      </span>
     </div>
   );
 }
 
 function formatPrice(value: number, symbol: string) {
   const currency = symbol.split("-").at(-1);
-  return new Intl.NumberFormat(undefined, {
-    style: currency ? "currency" : "decimal",
-    currency,
-    maximumFractionDigits: Math.abs(value) < 1 ? 6 : 2,
-  }).format(value);
+  const maximumFractionDigits = Math.abs(value) < 1 ? 6 : 2;
+  if (currency && /^[A-Z]{3}$/.test(currency)) {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits }).format(value);
+  }
+  const formatted = new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value);
+  return currency ? `${formatted} ${currency}` : formatted;
 }
 
 function formatChange(value: number | null) {

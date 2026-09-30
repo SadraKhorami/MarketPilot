@@ -53,16 +53,23 @@ export function ResearchConversation({
                           <Bubble variant="ghost">
                             <BubbleContent>
                               <div className="flex flex-col gap-3">
-                                {turn.result.answer.interpretation.map((item) => (
-                                  <div key={item.text}>
+                                {turn.result.answer.interpretation.map((item, index) => (
+                                  <div key={item.text} className="flex flex-col gap-1">
+                                    <p className="font-medium text-sm">
+                                      {["Summary", "Technical interpretation", "Context & limitations"][index] ??
+                                        "Additional analysis"}
+                                    </p>
                                     <p className="whitespace-pre-wrap">{item.text}</p>
                                     {item.sourceIds.length ? (
                                       <p className="mt-1 text-muted-foreground text-xs">
                                         Sources:{" "}
-                                        {item.sourceIds
-                                          .map((id) => turn.result?.sources.find((s) => s.id === id)?.title)
-                                          .filter(Boolean)
-                                          .join(" · ")}
+                                        {[
+                                          ...new Set(
+                                            item.sourceIds
+                                              .map((id) => turn.result?.sources.find((s) => s.id === id)?.title)
+                                              .filter(Boolean),
+                                          ),
+                                        ].join(" · ")}
                                       </p>
                                     ) : null}
                                   </div>
@@ -70,6 +77,7 @@ export function ResearchConversation({
                               </div>
                             </BubbleContent>
                           </Bubble>
+                          <h3 className="font-medium text-sm">Retrieved evidence</h3>
                           <ResearchSources sources={turn.result.sources} />
                           {turn.result.proposals.map((proposal) => (
                             <AlertProposal
