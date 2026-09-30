@@ -8,7 +8,7 @@ MarketPilot is a market intelligence SaaS application. It presents provider-back
 
 - A user signs in, reviews the market overview, and creates a personal watchlist.
 - A user explores a supported Coinbase Exchange product's current price, candles, calculated indicators, and trend with source timestamps.
-- A user configures an alert and selects dashboard, Telegram, or Discord delivery.
+- A user saves an alert rule; AI-proposed rules require separate explicit confirmation. Background evaluation and delivery destinations remain unavailable.
 - A user asks the AI Analyst a question; the assistant calls authorized read tools and explains the returned data with timestamps and source context.
 - A user manages linked notification channels, API keys, API usage, account sessions, and an activity history.
 
@@ -32,3 +32,7 @@ Keep the existing dashboard as the frontend foundation. Retain useful shell, the
 ## Acceptance direction
 
 Each feature must have an explicit API/data source, authorization scope, failure state, and audit behavior. A screen is not considered complete merely because it renders sample values. CI should run repeatable formatting/lint, type checking, automated tests for important business rules, and production builds for affected workspaces.
+
+## Implemented Phase 4
+
+The AI Analyst supports sourced price/indicator/trend research, bounded asset comparisons, owned-watchlist summaries and stored-news reads through OpenRouter. The workspace shows actual tool progress, validated source cards and candle charts, independent observation/retrieval times, freshness, partial errors, recovery/retry and separate alert confirmation. Bare assets resolve through the existing USD convention; explicit quotes are preserved. Sentiment scores and retrospective watchlist-change analysis are unavailable. AI interpretation is fallible and distinct from observed facts; the product does not claim hallucination is impossible. AI cannot place trades or silently persist actions. Operational metrics are ADMIN-only and separate from developer-key Usage.

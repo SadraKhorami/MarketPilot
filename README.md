@@ -2,13 +2,13 @@
 
 **AI-powered market intelligence**
 
-MarketPilot is a market intelligence SaaS for monitoring assets, trends, news, sentiment, alerts, and integrations. The Next.js dashboard connects to a NestJS API. MarketPilot fetches Coinbase Exchange product prices and candles through its own provider adapter, validates the response, and calculates technical indicators in a shared TypeScript package. Unsupported products and unavailable observations are shown as unavailable. AI and bot integrations are not connected.
+MarketPilot is a market intelligence SaaS for monitoring assets, trends, news, sentiment, alerts, and integrations. The Next.js dashboard connects to a NestJS API. MarketPilot fetches Coinbase Exchange product prices and candles through its own provider adapter, validates the response, and calculates technical indicators in a shared TypeScript package. Unsupported products and unavailable observations are shown as unavailable. The AI Analyst is implemented using OpenRouter and authenticated application tools; a server key and compatible model are required. Bot integrations are not connected.
 
 ## Workspace
 
 The web app is based on the completed [Next.js shadcn admin dashboard](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), substantially adapted for MarketPilot. The source dashboard's MIT notice is retained at `apps/web/LICENSE`; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The repository contains a Next.js app in `apps/web`, a NestJS REST API in `apps/api`, a controlled RSS ingestion worker in `apps/worker`, and shared packages for the database, market-data providers and calculations, and news source parsing. The Desktop MarketFeed repository is an inspection reference only; MarketPilot does not call or depend on it. AI, Telegram, and Discord are not connected.
+The repository contains a Next.js app in `apps/web`, a NestJS REST API in `apps/api`, a controlled RSS ingestion worker in `apps/worker`, and shared packages for the database, market-data providers and calculations, news source parsing, and validated AI provider contracts. The Desktop MarketFeed repository is an inspection reference only; MarketPilot does not call or depend on it. OpenRouter AI research is implemented; Telegram and Discord remain unavailable.
 
 ## Run locally
 
@@ -62,3 +62,11 @@ GitHub Actions runs the same checks on pull requests and pushes to `main`.
 ## Notification center
 
 The navbar bell and `/dashboard/notifications` use a real personal inbox with unread counts, filters, pagination, read/unread, archive/restore and related-page shortcuts. Administrators manage reviewed announcements at `/dashboard/admin/notifications`; publishing respects account preferences and provides aggregate delivery/read counts. Security and registration notices are generated from current events. Email, bot, device-push and market-alert delivery remain unavailable. See [notification center](docs/notification-center.md).
+
+## AI Analyst (Phase 4)
+
+Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` on the server and restart the API. Leave secrets empty in examples. The configured model must appear in OpenRouter's catalog and support `tools`, `tool_choice` and `structured_outputs`. `OPENROUTER_BASE_URL` defaults to the fixed official HTTPS API; alternate hosts are rejected. Apply the checked-in migrations with `pnpm --filter @marketpilot/db migrate:deploy` before starting the updated API. Without configuration the workspace shows a compact unavailable state; there is no fake provider or fallback model in the product.
+
+Research uses the current browser session and owned watchlist, streams honest progress, and returns validated observation/source cards with a separate qualitative interpretation. Cancellation stops application orchestration; non-streaming upstream inference may still be billed. Private turns are retained for seven days, with bounded request-triggered cleanup and the latest twenty turns displayed. AI metrics appear in Administration → System; API-key Usage remains separate. See [AI Analyst API and limits](docs/ai-analyst.md).
+
+Alert proposals require an expiring, separate confirmation. Saved rules are not evaluated or delivered yet. Sentiment scoring, historical watchlist changes, bots, payments and deployment are outside this phase.

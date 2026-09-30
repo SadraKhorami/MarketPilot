@@ -9,7 +9,7 @@ export default function AIAnalystPage() {
   return (
     <MarketPilotPage
       title="AI Analyst"
-      description="Turn market data into better questions. Explore prices, compare assets and prepare your next research brief."
+      description="Research assets and your watchlist with sourced market observations and AI interpretation."
     >
       <AIAnalystWorkspace />
     </MarketPilotPage>

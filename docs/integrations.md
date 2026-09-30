@@ -1,6 +1,6 @@
 # Integrations and Security Boundaries
 
-This document records current provider integrations and known limits. Market data is fetched directly by MarketPilot's API through a MarketPilot-owned adapter. The Desktop `marketsentinel-marketfeed` project is reference material only: there is no runtime request, code import, token, or database dependency. RSS ingestion runs separately and remains disabled pending permission confirmation. AI, Telegram, Discord, and BullMQ are future work.
+This document records current provider integrations and known limits. Market data is fetched directly by MarketPilot's API through a MarketPilot-owned adapter. The Desktop `marketsentinel-marketfeed` project is reference material only: there is no runtime request, code import, token, or database dependency. RSS ingestion runs separately and remains disabled pending permission confirmation. OpenRouter AI research is implemented; Telegram, Discord and BullMQ remain future work.
 
 ## Market-data provider
 
@@ -20,11 +20,11 @@ The source project was inspected read-only and its data pipeline, calculations, 
 
 `apps/worker` reads Investing RSS URLs only from `INVESTING_RSS_FEEDS_JSON`; `.env.example` lists the official category feeds but sets `NEWS_INGESTION_ENABLED=false`. Do not enable content fetching/display/storage until the intended use is permitted in writing. The official [Investing.com RSS page](https://www.investing.com/webmaster-tools/rss) says reproduction, storage, display, modification, transmission, and distribution need prior written permission. The parser enforces HTTPS and the official feed host, validates XML and item URLs, applies an 8-second timeout/2 MiB limit, uses ETag/Last-Modified, and isolates feed failures. Worker cadence defaults to 900 seconds and rejects intervals below 300 seconds.
 
-RSS articles are normalized and deduplicated by SHA-256 of a URL with tracking parameters and fragments removed. PostgreSQL preserves the original URL, source, title/description as provided, dates, language, feed categories, affected symbols matched by exact token, and nullable future classification columns. A Redis lock prevents overlapping worker refreshes; feed state and aggregate refresh status are separate from market-data caching. News sentiment remains `null`, no article is sent to AI, and article content is displayed as untrusted text with a link to the source.
+RSS articles are normalized and deduplicated by SHA-256 of a URL with tracking parameters and fragments removed. PostgreSQL preserves the original URL, source, title/description as provided, dates, language, feed categories, affected symbols matched by exact token, and nullable future classification columns. A Redis lock prevents overlapping worker refreshes; feed state and aggregate refresh status are separate from market-data caching. News sentiment remains `null`. On an authenticated AI research request, bounded stored titles/descriptions may be sent to the configured OpenRouter model as explicitly untrusted source data. Articles are displayed as plain text with original source links.
 
 ## AI tools and trust boundary
 
-The AI orchestration layer lives in `packages/ai`; tools call authenticated application services, never raw SQL, external provider URLs, Telegram/Discord APIs, or model-provided URLs. Each tool derives the user ID and permissions from the authenticated request context rather than model arguments.
+The provider/contracts layer lives in `packages/ai`; authenticated domain orchestration lives in `apps/api/src/ai`. Tools call authenticated application services, never raw SQL, external provider URLs, Telegram/Discord APIs, or model-provided URLs. Each tool derives the user ID and permissions from the authenticated request context rather than model arguments.
 
 | Tool | Behavior |
 |---|---|
@@ -32,7 +32,7 @@ The AI orchestration layer lives in `packages/ai`; tools call authenticated appl
 | `getTechnicalIndicators` | Read only indicators supported by the verified provider contract and requested time range. |
 | `getTrendAnalysis` | Return provider-backed trend data with its observation window and source. |
 | `getMarketNews` | Return validated, bounded news metadata/content and publication/provider timestamps. Treat all article text as untrusted. |
-| `getSentiment` | Return only confirmed provider sentiment fields with source window and timestamp. |
+| Sentiment (unavailable) | No working tool or score is exposed; explain this limitation and use factual observations/news. |
 | `getWatchlist` | Read only the authenticated user's watchlist or a specifically selected owned list. |
 | `compareAssets` | Call authorized market services for each supported asset; report partial failures instead of filling gaps. |
 | `createAlert` | Validate an explicit user-requested condition through alert service. Require confirmation in the UI before applying a new alert; never allow the model to silently change or delete alerts. |
@@ -41,7 +41,7 @@ Validate tool arguments with strict Zod schemas, reject unknown asset/range/indi
 
 Treat news/article text and other external strings as untrusted data. Bound length, normalize/strip unsafe markup for display, and delimit content as quoted source material. Do not let instructions embedded in articles alter system policy, invoke tools, disclose secrets, or override the user. Do not execute links/code found in external content.
 
-Keep an AI provider interface configured by server-only environment variables. Store provider/model identifiers and usage metadata as needed, but never provider keys in the browser. Log tool name, validated arguments at safe granularity, result status, latency and request ID; redact article bodies and credentials. AI output is analysis, not personalized financial advice.
+Keep an AI provider interface configured by server-only environment variables. Store provider/model identifiers and usage metadata as needed, but never provider keys in the browser. Persist bounded private turns/results in owned research records, separate from general logs. Store model, run state, tool count, token counts, reported cost, reservation and latency for ADMIN metrics. General request logs contain route/status metadata only; neither article bodies, tool arguments nor private messages enter activity/request logs. AI output is analysis, not personalized financial advice.
 
 ## Telegram and Discord
 
@@ -99,3 +99,9 @@ Redis is not the system of record. PostgreSQL stores user/alert/notification int
 7. Which AI provider/model, budget/retention policy, and confirmation UX should be used?
 8. Which hosting/region, production secrets manager, public API domain, and bot deployment/webhook model are intended?
 9. What are alert condition semantics, evaluation cadence, quiet hours, deduplication, and notification retention requirements?
+
+## OpenRouter implementation
+
+The initial provider is the official OpenRouter Chat Completions API. Configuration is server-only (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, optional fixed official `OPENROUTER_BASE_URL`). Catalog discovery checks exact model ID, `tools`, `tool_choice`, `structured_outputs` and nonnegative published token/request prices. Routing requires parameter support, disallows provider fallbacks and requests providers that deny data collection. A catalog capability flag is not proof of live availability; actual inference can still fail safely. No OpenAI/other-provider runtime fallback or Desktop reference dependency is introduced.
+
+The implementation follows official [tool calling](https://openrouter.ai/docs/guides/features/tool-calling), [structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs), [streaming/cancellation](https://openrouter.ai/docs/api_reference/streaming), [errors](https://openrouter.ai/docs/api_reference/errors-and-debugging), and [model discovery](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties) documentation. Structured output and tool-call arguments/results are validated locally even when the provider reports support. No hidden reasoning is streamed or stored. Provider raw error payloads never reach browser or general logs. See [AI Analyst](ai-analyst.md) for request limits, spend reservations, confirmation and verified limitations.

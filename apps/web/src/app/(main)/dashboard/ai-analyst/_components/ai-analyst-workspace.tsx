@@ -1,276 +1,278 @@
 "use client";
+import { useState } from "react";
 
-import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Plus, Sparkles, Square } from "lucide-react";
 
-import Link from "next/link";
-
-import type { MarketObservation } from "@marketpilot/market-data";
-import {
-  ArrowUp,
-  ArrowUpRight,
-  BookOpen,
-  CandlestickChart,
-  Check,
-  FileText,
-  GitCompareArrows,
-  ListFilter,
-  LockKeyhole,
-  Sparkles,
-} from "lucide-react";
-
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
+import { useApiResource } from "@/hooks/use-api-resource";
 
-import { AssetMark, MarketSymbolField, marketName } from "../../_components/market-symbol-field";
+import { MarketSymbolField } from "../../_components/market-symbol-field";
+import { ResearchConversation } from "./research-conversation";
+import { toolLabels } from "./research-stream";
+import { useResearch } from "./use-research";
 
-const prompts = [
-  {
-    title: "Analyze an asset",
-    description: "Price action, momentum and key levels",
-    prompt: "Analyze BTC",
-    icon: CandlestickChart,
-  },
-  {
-    title: "Compare two markets",
-    description: "Explore relative strength and volatility",
-    prompt: "Compare BTC and ETH",
-    icon: GitCompareArrows,
-  },
-  {
-    title: "Get the market brief",
-    description: "A focused overview of today’s market",
-    prompt: "Summarize today's market",
-    icon: BookOpen,
-  },
-  {
-    title: "Review my watchlist",
-    description: "Understand changes in the assets you follow",
-    prompt: "What changed in my watchlist?",
-    icon: ListFilter,
-  },
-];
-type Context = {
-  market: { data: MarketObservation; freshness: string } | null;
-  news: Array<{ id: string; title: string; source: string; originalUrl: string }>;
-};
-
+interface AiStatus {
+  configured: boolean;
+  status: string;
+  message: string;
+}
+interface Watchlist {
+  id: string;
+  name: string;
+  items: Array<{ assetId: string }>;
+}
+function activityLabel(event: { state: string; status?: string }) {
+  if (event.state === "running") return "Working";
+  return event.status === "ok" ? "Received" : "Limited";
+}
 export function AIAnalystWorkspace() {
-  const [draft, setDraft] = useState("");
-  const [savedDrafts, setSavedDrafts] = useState<string[]>([]);
+  const status = useApiResource<AiStatus>("/ai/status");
+  const lists = useApiResource<Watchlist[]>("/watchlists");
+  const research = useResearch();
+  const [input, setInput] = useState("");
   const [symbol, setSymbol] = useState("BTC-USD");
-  const [context, setContext] = useState<Context | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [contextError, setContextError] = useState(false);
-  const composer = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    let disposed = false;
-    setContext(null);
-    setLoading(true);
-    setContextError(false);
-    const load = async () => {
-      const results = await Promise.allSettled([
-        apiRequest<ApiEnvelope<NonNullable<Context["market"]>>>(`/market-data/${symbol}?interval=15m`),
-        apiRequest<ApiEnvelope<{ articles: Context["news"] }>>(`/news?asset=${symbol}&pageSize=3`),
-      ]);
-      if (disposed) return;
-      setContext({
-        market: results[0].status === "fulfilled" ? results[0].value.data : null,
-        news: results[1].status === "fulfilled" ? results[1].value.data.articles : [],
-      });
-      setContextError(results.some((result) => result.status === "rejected"));
-      setLoading(false);
-    };
-    void load();
-    return () => {
-      disposed = true;
-    };
-  }, [symbol]);
-
-  const choosePrompt = (prompt: string) => {
-    setDraft(prompt);
-    composer.current?.focus();
-  };
-  const saveDraft = () => {
-    if (draft.trim()) setSavedDrafts((current) => [...new Set([draft.trim(), ...current])].slice(0, 3));
-  };
-  const market = context?.market?.data;
-
+  const [watchlistId, setWatchlistId] = useState("default");
+  const disabled = !status.data?.configured || !research.ready || research.running;
+  const suggestions = [
+    {
+      title: "Analyze BTC",
+      prompt: "Analyze BTC using current price, technical indicators, trend and available stored news.",
+    },
+    { title: "Compare BTC and ETH", prompt: "Compare BTC and ETH using the same hourly candle window." },
+    {
+      title: "Summarize my watchlist",
+      prompt: "Summarize my selected watchlist with actual market observations and their limitations.",
+    },
+    {
+      title: "Explain the technical indicators",
+      prompt: `Explain the current technical indicators for ${symbol} and their limitations.`,
+    },
+  ];
+  function submit(value: string) {
+    if (disabled || !value.trim()) return;
+    setInput("");
+    void research.send(value, watchlistId === "default" ? undefined : watchlistId);
+  }
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
       <Card className="min-w-0">
-        <CardHeader className="border-b">
+        <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Sparkles className="size-4 text-primary" />
-            MarketPilot Analyst
+            <Sparkles className="size-4" />
+            Market research
           </CardTitle>
-          <CardDescription>Your workspace for evidence-based market research</CardDescription>
+          <CardDescription>Observed facts and cited interpretation, using your MarketPilot sources.</CardDescription>
           <CardAction>
-            <Badge variant="outline">Preview</Badge>
+            <Button variant="ghost" size="sm" disabled={research.running} onClick={research.newConversation}>
+              <Plus data-icon="inline-start" />
+              New
+            </Button>
           </CardAction>
         </CardHeader>
-        <CardContent className="flex flex-col gap-7">
-          <div className="flex flex-col items-center gap-3 pt-5 text-center">
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <Sparkles className="size-7" />
-            </span>
-            <h2 className="font-semibold text-2xl tracking-tight">What would you like to explore?</h2>
-            <p className="max-w-md text-muted-foreground text-sm leading-6">
-              Build a research question, choose an asset and review its sources. AI answers will become available when
-              the analyst service is connected.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {prompts.map((item) => (
-              <Button
-                key={item.title}
-                type="button"
-                variant="outline"
-                className="h-auto justify-start whitespace-normal p-4 text-left"
-                onClick={() => choosePrompt(item.prompt)}
-              >
-                <item.icon data-icon="inline-start" className="self-start text-primary" />
-                <span className="flex flex-col gap-1">
-                  <span>{item.title}</span>
-                  <span className="font-normal text-muted-foreground text-xs leading-5">{item.description}</span>
-                </span>
-              </Button>
-            ))}
-          </div>
-          <Field>
-            <FieldLabel htmlFor="analyst-draft">Your research question</FieldLabel>
-            <InputGroup className="has-disabled:bg-transparent has-disabled:opacity-100 dark:has-disabled:bg-input/30">
-              <InputGroupTextarea
-                id="analyst-draft"
-                ref={composer}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="Ask about an asset, compare markets or explore your watchlist…"
-                className="max-h-48 min-h-24"
-              />
-              <InputGroupAddon
-                align="block-end"
-                className="flex-col items-start justify-between sm:flex-row sm:items-center"
-              >
-                <span className="flex items-center gap-1.5 text-xs">
-                  <LockKeyhole className="size-3" />
-                  Draft only · no AI request sent
-                </span>
-                <div className="flex items-center gap-2 self-end">
-                  <InputGroupButton variant="outline" disabled={!draft.trim()} onClick={saveDraft}>
-                    Save draft
-                  </InputGroupButton>
-                  <InputGroupButton size="icon-sm" disabled aria-label="Send question — AI service not connected">
-                    <ArrowUp />
-                  </InputGroupButton>
-                </div>
-              </InputGroupAddon>
-            </InputGroup>
-          </Field>
-          {savedDrafts.length ? (
-            <div className="flex flex-col gap-2">
-              <p className="flex items-center gap-1.5 font-medium text-xs">
-                <Check className="size-3" />
-                Saved for this visit
-              </p>
-              {savedDrafts.map((item) => (
-                <Button
-                  key={item}
-                  variant="ghost"
-                  className="h-auto justify-start truncate py-2"
-                  onClick={() => choosePrompt(item)}
-                >
-                  <FileText data-icon="inline-start" />
-                  <span className="truncate">{item}</span>
+        <CardContent className="flex min-w-0 flex-col gap-4">
+          {status.loading ? <Skeleton className="h-12 w-full" /> : null}
+          {!status.loading && status.error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Research unavailable</AlertTitle>
+              <AlertDescription>
+                {status.error}
+                <Button variant="outline" size="sm" onClick={status.reload}>
+                  Retry connection
                 </Button>
-              ))}
-            </div>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {!status.loading && !status.error && !status.data?.configured ? (
+            <Alert>
+              <AlertTitle>AI research is not configured</AlertTitle>
+              <AlertDescription>{status.data?.message}</AlertDescription>
+            </Alert>
+          ) : null}
+          {research.historyError ? (
+            <Alert variant="destructive">
+              <AlertTitle>History unavailable</AlertTitle>
+              <AlertDescription>
+                {research.historyError}
+                <Button variant="outline" size="sm" onClick={research.recover}>
+                  Recover history
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {!research.turns.length ? (
+            <>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Sparkles />
+                  </EmptyMedia>
+                  <EmptyTitle>Start with a market question</EmptyTitle>
+                  <EmptyDescription>
+                    Explore a supported asset, compare market observations or research your watchlist. Each lookup
+                    preserves its source, time and missing data.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {suggestions.map((suggestion) => (
+                  <Button
+                    key={suggestion.title}
+                    variant="outline"
+                    className="h-auto justify-start whitespace-normal py-3 text-left"
+                    disabled={disabled}
+                    onClick={() => submit(suggestion.prompt)}
+                  >
+                    {suggestion.title}
+                  </Button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <ResearchConversation research={research} disabled={disabled} watchlistId={watchlistId} />
+          )}
+          {research.running ? (
+            <p role="status" aria-live="polite" className="text-muted-foreground text-sm">
+              {research.progress}
+            </p>
           ) : null}
         </CardContent>
+        <CardFooter>
+          <form
+            className="w-full"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit(input);
+            }}
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="research-question" className="sr-only">
+                  Research question
+                </FieldLabel>
+                <InputGroup>
+                  <InputGroupTextarea
+                    id="research-question"
+                    placeholder="Ask about a market, your watchlist or an alert rule…"
+                    maxLength={2000}
+                    value={input}
+                    disabled={!status.data?.configured || research.running}
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        submit(input);
+                      }
+                    }}
+                  />
+                  <InputGroupAddon align="block-end">
+                    <span className="mr-auto text-xs">{input.length}/2000 · Shift+Enter for a new line</span>
+                    {research.running ? (
+                      <Button type="button" size="sm" variant="outline" onClick={research.cancel}>
+                        <Square data-icon="inline-start" />
+                        Cancel
+                      </Button>
+                    ) : (
+                      <Button type="submit" size="sm" disabled={disabled || !input.trim()}>
+                        <ArrowUp data-icon="inline-start" />
+                        Research
+                      </Button>
+                    )}
+                  </InputGroupAddon>
+                </InputGroup>
+              </Field>
+            </FieldGroup>
+          </form>
+        </CardFooter>
       </Card>
       <aside className="flex min-w-0 flex-col gap-4">
-        <Card>
+        <Card size="sm">
           <CardHeader>
             <CardTitle>Research context</CardTitle>
-            <CardDescription>Actual data for your selected market</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <Field>
-              <FieldLabel htmlFor="analyst-market">Asset</FieldLabel>
-              <MarketSymbolField id="analyst-market" value={symbol} onChange={setSymbol} />
-            </Field>
-            {loading ? <Skeleton className="h-24 w-full" /> : null}
-            {!loading && market ? (
-              <div className="flex flex-col gap-3 rounded-lg border p-3">
-                <div className="flex items-center gap-2">
-                  <AssetMark symbol={symbol} small />
-                  <span className="font-medium text-sm">{marketName(symbol)}</span>
-                  <Badge variant="outline" className="ml-auto">
-                    {context?.market?.freshness === "stale" ? "Cached" : "Observed"}
-                  </Badge>
-                </div>
-                <p className="font-semibold text-xl tabular-nums">
-                  ${market.price.toLocaleString(undefined, { maximumFractionDigits: market.price < 1 ? 6 : 2 })}
-                </p>
-                <p className="text-muted-foreground text-xs">
-                  Coinbase Exchange · {new Date(market.timestamp).toLocaleTimeString()}
-                </p>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href={`/dashboard/markets/${symbol}`}>
-                    Explore data <ArrowUpRight data-icon="inline-end" />
-                  </Link>
-                </Button>
-              </div>
-            ) : null}
-            {!loading && !market ? (
-              <p className="text-muted-foreground text-sm">Market data is currently unavailable.</p>
-            ) : null}
-            <div className="flex flex-col gap-2">
-              <p className="font-medium text-xs">Related coverage</p>
-              {context?.news.length ? (
-                context.news.map((article) => (
-                  <a
-                    key={article.id}
-                    href={article.originalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex flex-col gap-1 rounded-md border p-3 text-sm hover:bg-muted/50"
-                  >
-                    <span className="line-clamp-2">{article.title}</span>
-                    <span className="text-muted-foreground text-xs">{article.source} ↗</span>
-                  </a>
-                ))
-              ) : (
-                <p className="text-muted-foreground text-xs">
-                  {loading ? "Loading headlines…" : "No matching headlines for this asset."}
-                </p>
-              )}
-            </div>
-            {contextError ? (
-              <p role="status" className="text-destructive text-xs">
-                Some research sources could not be loaded.
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Research activity</CardTitle>
-            <CardAction>
-              <Badge variant="secondary">Idle</Badge>
-            </CardAction>
+            <CardDescription>Choose context for the suggested questions.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground text-sm leading-6">
-              No AI tools have run. When research is enabled, data lookups and cited sources will appear here.
-            </p>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="research-market">Market</FieldLabel>
+                <MarketSymbolField
+                  id="research-market"
+                  value={symbol}
+                  onChange={setSymbol}
+                  disabled={research.running}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="research-watchlist">Watchlist</FieldLabel>
+                <Select
+                  value={watchlistId}
+                  onValueChange={setWatchlistId}
+                  disabled={research.running || lists.loading || !!lists.error}
+                >
+                  <SelectTrigger id="research-watchlist" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="default">First watchlist</SelectItem>
+                      {lists.data?.map((list) => (
+                        <SelectItem key={list.id} value={list.id}>
+                          {list.name} · {list.items.length} assets
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {lists.error ? <p className="text-muted-foreground text-xs">Watchlists could not be loaded.</p> : null}
+                {!lists.error && lists.data?.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">You have no watchlists yet.</p>
+                ) : null}
+              </Field>
+            </FieldGroup>
           </CardContent>
         </Card>
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Source activity</CardTitle>
+            <CardDescription>{research.running ? "Lookups in progress" : "Latest research request"}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {research.activity.length ? (
+              <ul className="flex flex-col gap-2">
+                {research.activity
+                  .filter((event, i, all) => all.findLastIndex((entry) => entry.tool === event.tool) === i)
+                  .map((event) => (
+                    <li key={event.tool} className="flex items-center justify-between gap-2 text-xs">
+                      <span>{toolLabels[event.tool]}</span>
+                      <Badge variant="outline">{activityLabel(event)}</Badge>
+                    </li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground text-xs">Actual lookups appear when research begins.</p>
+            )}
+          </CardContent>
+        </Card>
+        <p className="text-muted-foreground text-xs leading-relaxed">
+          Bare asset names use USD pairs. Sentiment scoring and historical watchlist changes are unavailable. Private
+          research is retained for seven days; the conversation shows the latest twenty turns. Alert rules require your
+          confirmation.
+        </p>
       </aside>
     </div>
   );

@@ -1,8 +1,8 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
-
 import { ActivityController } from "./activity/activity.controller";
 import { AdminModule } from "./admin/admin.module";
+import { AiModule } from "./ai/ai.module";
 import { AlertsController } from "./alerts/alerts.controller";
 import { AlertsService } from "./alerts/alerts.service";
 import { ApiKeysController } from "./api-keys/api-keys.controller";
@@ -21,6 +21,7 @@ import { DatabaseModule } from "./database.module";
 import { HealthController } from "./health.controller";
 import { MarketDataModule } from "./market-data/market-data.module";
 import { NewsController } from "./news/news.controller";
+import { NewsService } from "./news/news.service";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { RedisModule } from "./redis.module";
 import { SettingsController } from "./settings/settings.controller";
@@ -29,7 +30,7 @@ import { WatchlistsController } from "./watchlists/watchlists.controller";
 import { WatchlistsService } from "./watchlists/watchlists.service";
 
 @Module({
-  imports: [DatabaseModule, RedisModule, MarketDataModule, AdminModule, NotificationsModule],
+  imports: [DatabaseModule, RedisModule, MarketDataModule, AdminModule, NotificationsModule, AiModule],
   controllers: [
     AuthController,
     UsersController,
@@ -43,6 +44,7 @@ import { WatchlistsService } from "./watchlists/watchlists.service";
   ],
   providers: [
     AuthService,
+    NewsService,
     ActivityService,
     WatchlistsService,
     AlertsService,

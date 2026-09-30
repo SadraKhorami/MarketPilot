@@ -42,3 +42,7 @@ The local development process was restarted after it was found serving an older 
 ## Remaining production work
 
 Notification retention/export policy, durable outbox/retries for event notices, asynchronous large-audience delivery, market-trigger evaluation, and external channels belong to subsequent backend phases. Those capabilities are not presented as active.
+
+## Phase 4 boundary
+
+An AI alert confirmation saves an owned rule and its existing alert audit event. It does not create an inbox message, evaluate prices or deliver notifications. Alert engine/background work remains Phase 5; Telegram/Discord remains Phase 6.

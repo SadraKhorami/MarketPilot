@@ -1,5 +1,6 @@
 import { Prisma } from "@marketpilot/db";
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { aiConfiguration } from "../ai/ai.service";
 
 import { AdminQueryDto, pageResult, sinceDays } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
@@ -262,7 +263,12 @@ export class AdminService {
           detail:
             "Personal inbox, security/account notices and administrative announcements. Email delivery is not connected.",
         },
-        { name: "AI analyst", status: "not implemented", detail: "OpenRouter is the planned provider." },
+        {
+          name: "AI analyst",
+          status: aiConfiguration().configured ? "configured" : "unavailable",
+          detail:
+            "OpenRouter research with validated application tools and confirmed alert proposals. Model capability and live availability are checked per request.",
+        },
         {
           name: "Alert delivery",
           status: "not implemented",

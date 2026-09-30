@@ -16,8 +16,9 @@ export class AlertsService {
     return this.db.alert.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
   }
 
-  async create(userId: string, input: CreateAlertDto) {
-    const alert = await this.db.alert.create({
+  async create(userId: string, input: CreateAlertDto, transaction?: Prisma.TransactionClient) {
+    const store = transaction ?? this.db;
+    const alert = await store.alert.create({
       data: {
         userId,
         name: input.name.trim(),
@@ -28,10 +29,14 @@ export class AlertsService {
         cooldownMinutes: input.cooldownMinutes ?? 60,
       },
     });
-    await this.activity.record(userId, "ALERT_CREATED", `Created alert ${alert.name}`, {
-      alertId: alert.id,
-      assetId: alert.assetId,
-    });
+    const metadata = { alertId: alert.id, assetId: alert.assetId };
+    if (transaction) {
+      await transaction.activityLog.create({
+        data: { userId, eventType: "ALERT_CREATED", description: `Created alert ${alert.name}`, metadata },
+      });
+    } else {
+      await this.activity.record(userId, "ALERT_CREATED", `Created alert ${alert.name}`, metadata);
+    }
     return alert;
   }
 

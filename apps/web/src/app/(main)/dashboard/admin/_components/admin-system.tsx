@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useApiResource } from "@/hooks/use-api-resource";
 
 import { ResourceState } from "../../_components/resource-state";
+import { AdminAiMetrics } from "./admin-ai-metrics";
 import type { SystemState } from "./admin-types";
 export function AdminSystem() {
   const resource = useApiResource<SystemState>("/admin/system");
@@ -13,6 +14,7 @@ export function AdminSystem() {
   if (resource.loading || resource.error || !data) return <ResourceState {...resource} retry={resource.reload} />;
   return (
     <div className="flex flex-col gap-5">
+      <AdminAiMetrics />
       <div className="grid gap-4 md:grid-cols-2">
         {[
           { name: "PostgreSQL", icon: Database, check: data.database },

@@ -77,6 +77,7 @@ model User {
   apiKeys       ApiKey[]
   apiUsage      ApiUsage[]
   activity      ActivityLog[]
+  aiRuns        AiRun[]
   notifications Notification[]
   announcements NotificationAnnouncement[] @relation("AnnouncementAuthor")
 
@@ -293,4 +294,47 @@ model NotificationAnnouncement {
 
   @@index([status, createdAt])
   @@index([authorId, createdAt])
+}
+
+model AiRun {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  requestId      String   @db.Uuid
+  conversationId String   @db.Uuid
+  input          String   @db.VarChar(2000)
+  inputHash      String   @db.Char(64)
+  status         String   @db.VarChar(20)
+  result         Json?
+  errorCode      String?  @db.VarChar(80)
+  model          String   @db.VarChar(160)
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  costUsd        Float?
+  reservedUsd    Float    @default(0)
+  toolCount      Int      @default(0)
+  latencyMs      Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt      DateTime @db.Timestamptz(3)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  proposals      AiAlertProposal[]
+
+  @@unique([userId, requestId])
+  @@index([userId, conversationId, createdAt])
+  @@index([createdAt, status])
+  @@index([expiresAt])
+}
+
+model AiAlertProposal {
+  id        String    @id @default(uuid()) @db.Uuid
+  runId     String    @unique @db.Uuid
+  symbol    String    @db.VarChar(32)
+  condition AlertCondition
+  threshold Decimal   @db.Decimal(24, 10)
+  state     String    @default("pending") @db.VarChar(20)
+  alertId   String?   @db.Uuid
+  expiresAt DateTime  @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  run       AiRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }

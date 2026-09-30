@@ -34,3 +34,7 @@ The requested additional administrator was provisioned in the local database wit
 - Actual HTTP checks against PostgreSQL/Redis: ADMIN/USER boundaries for every admin endpoint, anonymous news rejection, working market/news key reads, wrong scopes, account/key ownership, key-only accounting (including 403), revoked-key history, invalid pagination/scopes and logout.
 - Browser: ordinary user visibility/direct-route redirect, key creation form, activity search/empty state, persisted notification preferences, sessions, administrator login, users/detail/role filter, request pagination, audit, keys, system, payments and API documentation. Desktop dark/light and 375px mobile layouts inspected. Temporary verification data was removed.
 - Visual evidence: `docs/screenshots/admin-refresh/`. Payments and other future integrations remain intentionally unavailable.
+
+## Phase 4 AI operations
+
+Administration → System displays seven-day AI run states, tool counts, input/output tokens, average latency, reported provider cost and conservative budget reservations. These are actual server metadata, never private questions/answers or invented billing. `GET /ai/metrics` requires an ADMIN browser session. All `/ai/*` endpoints deny developer API keys even if the owner is an administrator; existing read scopes and API-key Usage are unchanged. Browser request records remain in Administration. Details and endpoint contracts are in [AI Analyst](ai-analyst.md).
