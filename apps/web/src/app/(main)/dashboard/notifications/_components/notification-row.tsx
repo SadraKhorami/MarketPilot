@@ -1,10 +1,10 @@
 "use client";
 import { cn } from "cn";
-import { Archive, ArchiveRestore, Check, Mail, Megaphone, ShieldCheck, UserRound } from "lucide-react";
+import { Archive, ArchiveRestore, Check, Eye, Mail, Megaphone, ShieldCheck, UserRound } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia } from "@/components/ui/item";
+import { Item, ItemActions, ItemContent, ItemMedia } from "@/components/ui/item";
 
 import { useNotifications } from "./notification-provider";
 import { categoryLabels, type NotificationRecord } from "./notification-types";
@@ -37,30 +37,37 @@ export function NotificationRow({
         <button
           type="button"
           onClick={() => onSelect(item)}
-          className="flex flex-col gap-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Read notification: ${item.title}`}
+          className="flex w-full cursor-pointer flex-col gap-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="break-words font-medium text-sm">{item.title}</span>
+          <span className="font-medium text-sm [overflow-wrap:anywhere]">{item.title}</span>
+          <span className="line-clamp-2 text-muted-foreground text-sm leading-normal [overflow-wrap:anywhere]">
+            {item.body}
+          </span>
+          <span className="flex flex-wrap items-center gap-2">
+            {!item.readAt && <Badge variant="secondary">New</Badge>}
+            {!compact && <Badge variant="outline">{categoryLabels[item.category]}</Badge>}
+            {item.severity !== "INFO" && (
+              <Badge variant={item.severity === "CRITICAL" ? "destructive" : "outline"}>
+                {item.severity === "CRITICAL" ? "Urgent" : "Important"}
+              </Badge>
+            )}
+            <time
+              className="text-muted-foreground text-xs"
+              dateTime={item.createdAt}
+              title={new Date(item.createdAt).toLocaleString()}
+            >
+              {relativeTime(item.createdAt)}
+            </time>
+          </span>
         </button>
-        <ItemDescription>{item.body}</ItemDescription>
-        <div className="flex flex-wrap items-center gap-2">
-          {!item.readAt && <Badge variant="secondary">New</Badge>}
-          {!compact && <Badge variant="outline">{categoryLabels[item.category]}</Badge>}
-          {item.severity !== "INFO" && (
-            <Badge variant={item.severity === "CRITICAL" ? "destructive" : "outline"}>
-              {item.severity === "CRITICAL" ? "Urgent" : "Important"}
-            </Badge>
-          )}
-          <time
-            className="text-muted-foreground text-xs"
-            dateTime={item.createdAt}
-            title={new Date(item.createdAt).toLocaleString()}
-          >
-            {relativeTime(item.createdAt)}
-          </time>
-        </div>
       </ItemContent>
       {!compact && (
-        <ItemActions className="ml-auto">
+        <ItemActions className="ml-auto flex-wrap">
+          <Button variant="ghost" size="sm" onClick={() => onSelect(item)} aria-label={`Details for ${item.title}`}>
+            <Eye data-icon="inline-start" />
+            Details
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"

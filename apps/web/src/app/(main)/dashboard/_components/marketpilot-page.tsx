@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { cn } from "cn";
+
 import { Badge } from "@/components/ui/badge";
 
 export function MarketPilotPage({
@@ -7,15 +9,23 @@ export function MarketPilotPage({
   description,
   actions,
   children,
+  viewport = false,
 }: {
   title: string;
   description: string;
   actions?: ReactNode;
   children: ReactNode;
+  viewport?: boolean;
 }) {
   return (
-    <div className="@container/main mx-auto flex w-full max-w-screen-2xl flex-col gap-5 md:gap-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div
+      data-viewport-layout={viewport ? "true" : undefined}
+      className={cn(
+        "@container/main mx-auto flex w-full max-w-screen-2xl flex-col gap-5 md:gap-6",
+        viewport && "xl:min-h-0 xl:flex-1",
+      )}
+    >
+      <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1.5">
           <h1 className="font-semibold text-2xl tracking-tight sm:text-3xl">{title}</h1>
           <p className="max-w-3xl text-muted-foreground text-sm">{description}</p>

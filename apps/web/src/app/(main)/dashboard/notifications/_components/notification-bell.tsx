@@ -53,7 +53,10 @@ export function NotificationBell() {
           <Button variant="ghost" size="icon" className="relative" aria-label={triggerLabel} aria-busy={loading}>
             <Bell />
             {unread > 0 && !error && (
-              <Badge className="absolute -top-1 -right-1 min-w-4 justify-center px-1 text-[10px]" aria-hidden="true">
+              <Badge
+                className="absolute -top-1 -right-1 size-4.5 rounded-full p-0 text-[8px] tabular-nums leading-none"
+                aria-hidden="true"
+              >
                 {unread > 99 ? "99+" : unread}
               </Badge>
             )}

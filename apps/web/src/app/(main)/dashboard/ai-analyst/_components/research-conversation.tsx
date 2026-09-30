@@ -27,7 +27,7 @@ export function ResearchConversation({
 }) {
   return (
     <MessageScrollerProvider autoScroll>
-      <div className="h-[min(65vh,48rem)] min-h-64 min-w-0">
+      <div className="min-h-0 min-w-0 flex-1">
         <MessageScroller>
           <MessageScrollerViewport>
             <MessageScrollerContent className="gap-6 py-2">
@@ -100,26 +100,29 @@ export function ResearchConversation({
                       </Message>
                     ) : null}
                     {turn.error ? (
-                      <Alert variant="destructive">
-                        <AlertTitle>Research did not complete</AlertTitle>
-                        <AlertDescription>
-                          {turn.error}
-                          <div className="flex flex-wrap gap-2">
-                            <Button variant="outline" size="sm" disabled={research.running} onClick={research.recover}>
-                              Recover result
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={disabled || turn.status === "running"}
-                              onClick={() =>
-                                research.send(turn.input, watchlistId === "default" ? undefined : watchlistId)
-                              }
-                            >
-                              Retry question
-                            </Button>
-                          </div>
-                        </AlertDescription>
+                      <Alert
+                        variant="destructive"
+                        className="@2xl/main:grid-cols-[minmax(0,1fr)_auto] @2xl/main:items-center gap-3"
+                      >
+                        <div className="min-w-0">
+                          <AlertTitle>Research did not complete</AlertTitle>
+                          <AlertDescription className="mt-1 [overflow-wrap:anywhere]">{turn.error}</AlertDescription>
+                        </div>
+                        <div className="flex flex-wrap items-center @2xl/main:justify-end gap-2">
+                          <Button variant="outline" size="sm" disabled={research.running} onClick={research.recover}>
+                            Recover result
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={disabled || turn.status === "running"}
+                            onClick={() =>
+                              research.send(turn.input, watchlistId === "default" ? undefined : watchlistId)
+                            }
+                          >
+                            Retry question
+                          </Button>
+                        </div>
                       </Alert>
                     ) : null}
                   </div>

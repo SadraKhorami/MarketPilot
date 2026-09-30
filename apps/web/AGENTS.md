@@ -79,7 +79,8 @@ Keep a component inside its route until it is reused by another feature. Do not 
 10. Match nearby screens in card density, borders, radius, spacing, content width, and responsive behavior.
 11. Use semantic theme tokens so new screens work with light mode, dark mode, and the existing theme presets.
 12. Handle relevant loading, empty, error, disabled, and overflow states.
-13. Keep screens accessible with semantic HTML, keyboard support, visible focus states, labels, and appropriate ARIA attributes.
+13. Put action groups opposite their related content or error message when the container is wide enough; stack deliberately in narrow containers. Bound filter columns, allow children to shrink, and check for clipping or overflow in the running layout when browser verification is authorized.
+14. Keep screens accessible with semantic HTML, keyboard support, visible focus states, labels, and appropriate ARIA attributes.
 
 ## Code conventions
 

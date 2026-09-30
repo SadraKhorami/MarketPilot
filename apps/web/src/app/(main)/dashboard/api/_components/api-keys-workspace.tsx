@@ -79,21 +79,25 @@ export function ApiKeysWorkspace() {
   return (
     <div className="flex flex-col gap-5">
       {newSecret && (
-        <Alert>
-          <KeyRound />
-          <AlertTitle>Save your key — it is shown once</AlertTitle>
-          <AlertDescription>
-            <code className="break-all font-mono text-xs">{newSecret}</code>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => void copy()}>
-                <Copy data-icon="inline-start" />
-                Copy key
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setNewSecret(null)}>
-                Dismiss
-              </Button>
+        <Alert className="gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="flex min-w-0 items-start gap-2">
+            <KeyRound className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0">
+              <AlertTitle>Save your key — it is shown once</AlertTitle>
+              <AlertDescription className="mt-1">
+                <code className="block break-all font-mono text-xs">{newSecret}</code>
+              </AlertDescription>
             </div>
-          </AlertDescription>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+            <Button size="sm" variant="outline" onClick={() => void copy()}>
+              <Copy data-icon="inline-start" />
+              Copy key
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setNewSecret(null)}>
+              Dismiss
+            </Button>
+          </div>
         </Alert>
       )}
       <Card>

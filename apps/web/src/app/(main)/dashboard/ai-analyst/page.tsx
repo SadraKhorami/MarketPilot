@@ -8,6 +8,7 @@ export const metadata: Metadata = { title: "AI Analyst · MarketPilot" };
 export default function AIAnalystPage() {
   return (
     <MarketPilotPage
+      viewport
       title="AI Analyst"
       description="Research assets and your watchlist with sourced market observations and AI interpretation."
     >

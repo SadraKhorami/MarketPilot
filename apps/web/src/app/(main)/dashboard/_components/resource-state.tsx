@@ -8,10 +8,12 @@ export function ResourceState({
   loading,
   error,
   retry,
+  title = "Could not load this view",
 }: {
   loading: boolean;
   error: string | null;
   retry: () => void;
+  title?: string;
 }) {
   if (loading)
     return (
@@ -23,15 +25,17 @@ export function ResourceState({
     );
   if (error)
     return (
-      <Alert variant="destructive">
-        <CircleAlert />
-        <AlertTitle>Could not load this view</AlertTitle>
-        <AlertDescription>
-          {error}
-          <Button variant="outline" size="sm" onClick={retry}>
-            Try again
-          </Button>
-        </AlertDescription>
+      <Alert variant="destructive" className="shrink-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="flex min-w-0 items-start gap-2">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0">
+            <AlertTitle>{title}</AlertTitle>
+            <AlertDescription className="mt-1 [overflow-wrap:anywhere]">{error}</AlertDescription>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" className="justify-self-start sm:justify-self-end" onClick={retry}>
+          Try again
+        </Button>
       </Alert>
     );
   return null;

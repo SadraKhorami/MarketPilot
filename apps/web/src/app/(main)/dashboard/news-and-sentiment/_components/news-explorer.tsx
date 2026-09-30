@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Bookmark, FileText, Globe2, Newspaper, Search, X } from "lucide-react";
+import { cn } from "cn";
+import { Bookmark, Globe2, Newspaper, Search, X } from "lucide-react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -15,6 +15,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
 import { MarketSymbolField } from "../../_components/market-symbol-field";
+import { ResourceState } from "../../_components/resource-state";
 import { NewsArticlePreview } from "./news-article-preview";
 import { NewsCoverageSidebar } from "./news-coverage-sidebar";
 import { NewsPagination } from "./news-pagination";
@@ -154,8 +155,15 @@ export function NewsExplorer() {
       </section>
       <Card>
         <CardContent>
-          <FieldGroup className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <Field className="sm:max-w-md">
+          <FieldGroup
+            className={cn(
+              "grid min-w-0 grid-cols-1 items-end gap-3",
+              searchDraft || asset
+                ? "@2xl/main:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto]"
+                : "@2xl/main:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]",
+            )}
+          >
+            <Field className="min-w-0 @2xl/main:max-w-md">
               <FieldLabel htmlFor="news-search">Search coverage</FieldLabel>
               <InputGroup className="h-10">
                 <InputGroupAddon>
@@ -169,7 +177,7 @@ export function NewsExplorer() {
                 />
               </InputGroup>
             </Field>
-            <Field className="sm:max-w-xs">
+            <Field className="min-w-0">
               <FieldLabel htmlFor="news-asset">Asset</FieldLabel>
               <MarketSymbolField
                 id="news-asset"
@@ -200,16 +208,7 @@ export function NewsExplorer() {
         </CardContent>
       </Card>
       {error ? (
-        <Alert variant="destructive">
-          <FileText />
-          <AlertTitle>Coverage could not be updated</AlertTitle>
-          <AlertDescription>
-            {error}{" "}
-            <Button variant="link" onClick={() => void load()}>
-              Try again
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <ResourceState loading={false} error={error} title="Coverage could not be updated" retry={() => void load()} />
       ) : null}
       <div className={`grid items-start gap-5 ${view === "all" ? "xl:grid-cols-[minmax(0,1fr)_280px]" : ""}`}>
         <section

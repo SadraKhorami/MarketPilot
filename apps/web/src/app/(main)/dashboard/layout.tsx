@@ -43,6 +43,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
               "peer-data-[variant=inset]:border",
               "[--dashboard-header-height:--spacing(12)]",
               "min-w-0 overflow-x-clip",
+              "xl:has-data-[viewport-layout=true]:h-dvh xl:peer-data-[variant=inset]:has-data-[viewport-layout=true]:h-[calc(100dvh-var(--spacing)*4)]",
             )}
           >
             <header
@@ -68,7 +69,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
               </div>
             </header>
             {/* Pages can set data-content-padding="false" to render full-bleed app layouts. */}
-            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
+            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0 xl:has-data-[viewport-layout=true]:flex xl:has-data-[viewport-layout=true]:flex-col xl:has-data-[viewport-layout=true]:overflow-hidden">
               {children}
             </div>
           </SidebarInset>

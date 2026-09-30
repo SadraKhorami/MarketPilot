@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useApiResource } from "@/hooks/use-api-resource";
 
 import { MarketSymbolField } from "../../_components/market-symbol-field";
+import { ResourceState } from "../../_components/resource-state";
 import { ResearchConversation } from "./research-conversation";
 import { toolLabels } from "./research-stream";
 import { useResearch } from "./use-research";
@@ -70,9 +71,9 @@ export function AIAnalystWorkspace() {
     void research.send(value, watchlistId === "default" ? undefined : watchlistId);
   }
   return (
-    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <Card className="min-w-0">
-        <CardHeader>
+    <div className="grid min-h-0 min-w-0 flex-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:grid-rows-[minmax(0,1fr)]">
+      <Card className="h-[70dvh] min-h-0 min-w-0 xl:h-full">
+        <CardHeader className="shrink-0">
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="size-4" />
             Market research
@@ -85,38 +86,27 @@ export function AIAnalystWorkspace() {
             </Button>
           </CardAction>
         </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-4">
+        <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden">
           {status.loading ? <Skeleton className="h-12 w-full" /> : null}
           {!status.loading && status.error ? (
-            <Alert variant="destructive">
-              <AlertTitle>Research unavailable</AlertTitle>
-              <AlertDescription>
-                {status.error}
-                <Button variant="outline" size="sm" onClick={status.reload}>
-                  Retry connection
-                </Button>
-              </AlertDescription>
-            </Alert>
+            <ResourceState loading={false} error={status.error} title="Research unavailable" retry={status.reload} />
           ) : null}
           {!status.loading && !status.error && !status.data?.configured ? (
-            <Alert>
+            <Alert className="shrink-0">
               <AlertTitle>AI research is not configured</AlertTitle>
               <AlertDescription>{status.data?.message}</AlertDescription>
             </Alert>
           ) : null}
           {research.historyError ? (
-            <Alert variant="destructive">
-              <AlertTitle>History unavailable</AlertTitle>
-              <AlertDescription>
-                {research.historyError}
-                <Button variant="outline" size="sm" onClick={research.recover}>
-                  Recover history
-                </Button>
-              </AlertDescription>
-            </Alert>
+            <ResourceState
+              loading={false}
+              error={research.historyError}
+              title="History unavailable"
+              retry={research.recover}
+            />
           ) : null}
           {!research.turns.length ? (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
               <Empty>
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
@@ -142,17 +132,17 @@ export function AIAnalystWorkspace() {
                   </Button>
                 ))}
               </div>
-            </>
+            </div>
           ) : (
             <ResearchConversation research={research} disabled={disabled} watchlistId={watchlistId} />
           )}
           {research.running ? (
-            <p role="status" aria-live="polite" className="text-muted-foreground text-sm">
+            <p role="status" aria-live="polite" className="shrink-0 text-muted-foreground text-sm">
               {research.progress}
             </p>
           ) : null}
         </CardContent>
-        <CardFooter>
+        <CardFooter className="shrink-0">
           <form
             className="w-full"
             onSubmit={(event) => {
@@ -167,6 +157,7 @@ export function AIAnalystWorkspace() {
                 </FieldLabel>
                 <InputGroup>
                   <InputGroupTextarea
+                    className="max-h-32 overflow-y-auto"
                     id="research-question"
                     placeholder="Ask about a market, your watchlist or an alert rule…"
                     maxLength={2000}
@@ -180,7 +171,7 @@ export function AIAnalystWorkspace() {
                       }
                     }}
                   />
-                  <InputGroupAddon align="block-end">
+                  <InputGroupAddon align="block-end" className="flex-wrap">
                     <span className="mr-auto text-xs">{input.length}/2000 · Shift+Enter for a new line</span>
                     {research.running ? (
                       <Button type="button" size="sm" variant="outline" onClick={research.cancel}>
@@ -200,7 +191,7 @@ export function AIAnalystWorkspace() {
           </form>
         </CardFooter>
       </Card>
-      <aside className="flex min-w-0 flex-col gap-4">
+      <aside className="flex min-w-0 flex-col gap-4 xl:max-h-full xl:overflow-y-auto">
         <Card size="sm">
           <CardHeader>
             <CardTitle>Research context</CardTitle>
