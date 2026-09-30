@@ -25,6 +25,9 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   }
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event("marketpilot:session-expired"));
+    }
     const body: unknown = await response.json().catch(() => null);
     const error =
       typeof body === "object" && body !== null && "error" in body ? (body as { error?: unknown }).error : null;

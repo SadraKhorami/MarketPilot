@@ -8,8 +8,8 @@ import { SettingsPanel, type SettingsSection } from "../_components/settings-pan
 type SettingsPageProps = { params: Promise<{ section: string }> };
 const sections: SettingsSection[] = ["security", "notifications", "appearance"];
 const descriptions: Record<SettingsSection, string> = {
-  security: "Security controls and session status for the future authenticated workspace.",
-  notifications: "Choose which updates would be enabled after notification services are connected.",
+  security: "Manage your active sign-ins and account protection.",
+  notifications: "Save your preferred notification destinations.",
   appearance: "Choose a theme for the MarketPilot workspace.",
 };
 

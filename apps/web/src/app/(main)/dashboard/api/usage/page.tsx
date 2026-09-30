@@ -9,7 +9,7 @@ export default function ApiUsagePage() {
   return (
     <MarketPilotPage
       title="API usage"
-      description="Inspect authenticated API requests and performance for your account."
+      description="Track requests made with your API keys, response outcomes and performance."
     >
       <ApiUsageWorkspace />
     </MarketPilotPage>

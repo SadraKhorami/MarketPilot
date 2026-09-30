@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -8,12 +10,11 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { apiRequest, type ApiEnvelope } from "@/lib/api/client";
-import { useRouter } from "next/navigation";
+import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
 const formSchema = z.object({
   email: z.email({ message: "Please enter a valid email address." }),
-  password: z.string().min(12, { message: "Password must be at least 12 characters." }).max(72),
+  password: z.string().min(1, { message: "Enter your password." }).max(72),
 });
 
 export function LoginForm() {

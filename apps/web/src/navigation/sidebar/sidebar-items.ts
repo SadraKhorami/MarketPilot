@@ -1,21 +1,27 @@
 import {
   Activity,
+  Bell,
   BellRing,
   Bookmark,
+  BookOpen,
   Bot,
   CandlestickChart,
   ChartNoAxesCombined,
+  CreditCard,
   KeyRound,
   LayoutDashboard,
   type LucideIcon,
   MessageCircle,
   Newspaper,
   Palette,
+  ScrollText,
   Send,
+  Server,
   Settings2,
   ShieldCheck,
   Sparkles,
   UserRound,
+  Users,
 } from "lucide-react";
 
 export type NavBadge = "new" | "soon";
@@ -97,6 +103,7 @@ export const sidebarItems: NavGroup[] = [
         subItems: [
           { id: "api-keys", title: "API Keys", url: "/dashboard/api/keys", icon: KeyRound },
           { id: "api-usage", title: "Usage", url: "/dashboard/api/usage", icon: Activity },
+          { id: "api-docs", title: "Documentation", url: "/dashboard/api/documentation", icon: BookOpen },
         ],
       },
     ],
@@ -106,6 +113,7 @@ export const sidebarItems: NavGroup[] = [
     label: "Account",
     items: [
       { id: "profile", title: "Profile", url: "/dashboard/profile", icon: UserRound },
+      { id: "notifications", title: "Notifications", url: "/dashboard/notifications", icon: Bell },
       { id: "activity", title: "Activity", url: "/dashboard/activity", icon: Activity },
       {
         id: "settings",
@@ -125,3 +133,18 @@ export const sidebarItems: NavGroup[] = [
     ],
   },
 ];
+
+export const adminSidebarGroup: NavGroup = {
+  id: 4,
+  label: "Administration",
+  items: [
+    { id: "admin-overview", title: "Admin overview", url: "/dashboard/admin", icon: ShieldCheck },
+    { id: "admin-users", title: "Users", url: "/dashboard/admin/users", icon: Users },
+    { id: "admin-requests", title: "Request logs", url: "/dashboard/admin/requests", icon: Activity },
+    { id: "admin-audit", title: "Audit log", url: "/dashboard/admin/activity", icon: ScrollText },
+    { id: "admin-keys", title: "API management", url: "/dashboard/admin/api-keys", icon: KeyRound },
+    { id: "admin-notifications", title: "Notifications", url: "/dashboard/admin/notifications", icon: Bell },
+    { id: "admin-payments", title: "Payments", url: "/dashboard/admin/payments", icon: CreditCard },
+    { id: "admin-system", title: "System", url: "/dashboard/admin/system", icon: Server },
+  ],
+};

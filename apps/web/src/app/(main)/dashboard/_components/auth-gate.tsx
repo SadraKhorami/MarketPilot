@@ -1,51 +1,72 @@
 "use client";
-
-import { type ReactNode, useEffect, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect } from "react";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
-import { type ApiEnvelope, ApiError, apiRequest } from "@/lib/api/client";
+import { ShieldCheck } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { useApiResource } from "@/hooks/use-api-resource";
+
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string | null;
+  roles: Array<"ADMIN" | "USER">;
+}
+const SessionContext = createContext<SessionUser | null>(null);
+export const useSessionUser = () => useContext(SessionContext);
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<"checking" | "ready" | "unavailable">("checking");
+  const { data: user, loading, error, status, reload } = useApiResource<SessionUser>("/auth/me");
   const pathname = usePathname();
   const router = useRouter();
-
   useEffect(() => {
-    let active = true;
-    apiRequest<ApiEnvelope<unknown>>("/auth/me")
-      .then(() => {
-        if (active) setState("ready");
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        if (error instanceof ApiError && error.status === 401)
-          router.replace(`/auth/v2/login?next=${encodeURIComponent(pathname)}`);
-        else setState("unavailable");
-      });
-    return () => {
-      active = false;
-    };
-  }, [pathname, router]);
-
-  if (state === "checking")
+    if (status === 401) router.replace("/auth/v2/login");
+    const expired = () => router.replace("/auth/v2/login");
+    window.addEventListener("marketpilot:session-expired", expired);
+    return () => window.removeEventListener("marketpilot:session-expired", expired);
+  }, [router, status]);
+  // Navigation uses one shared identity. Authorization is enforced on every backend request.
+  useEffect(() => {
+    if (user && pathname.startsWith("/dashboard/admin") && !user.roles.includes("ADMIN"))
+      router.replace("/dashboard/default");
+  }, [user, pathname, router]);
+  if (error && status !== 401)
     return (
-      <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground" role="status">
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>Could not check your session</EmptyTitle>
+          <EmptyDescription>The service is temporarily unavailable. Try again in a moment.</EmptyDescription>
+        </EmptyHeader>
+        <Button onClick={reload}>Try again</Button>
+      </Empty>
+    );
+  if (loading || !user)
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground text-sm" role="status">
         Checking your session…
       </div>
     );
-  if (state === "unavailable")
+  return <SessionContext.Provider value={user}>{children}</SessionContext.Provider>;
+}
+export function AdminGate({ children }: { children: ReactNode }) {
+  const user = useSessionUser();
+  if (!user?.roles.includes("ADMIN"))
     return (
-      <div className="mx-auto mt-16 max-w-lg rounded-xl border p-6 text-center">
-        <h2 className="font-semibold text-lg">MarketPilot API unavailable</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The dashboard requires an authenticated API session. Start the API and database, then try again.
-        </p>
-        <Link className="mt-4 inline-flex text-sm underline" href="/auth/v2/login">
-          Return to sign in
-        </Link>
-      </div>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ShieldCheck />
+          </EmptyMedia>
+          <EmptyTitle>Administrator access required</EmptyTitle>
+        </EmptyHeader>
+        <Button asChild variant="outline">
+          <Link href="/dashboard/default">Return to dashboard</Link>
+        </Button>
+      </Empty>
     );
   return children;
 }

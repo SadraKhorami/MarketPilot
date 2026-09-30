@@ -1,8 +1,10 @@
 import { Controller, Get, Query } from "@nestjs/common";
-import { ApiCookieAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
+import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
+import { ApiScopes } from "../common/auth";
 import { DatabaseService } from "../database.module";
 import { RedisService } from "../redis.service";
 
@@ -37,7 +39,8 @@ class NewsQueryDto {
 }
 
 @ApiTags("news")
-@ApiCookieAuth("sessionCookie")
+@ApiSessionAuth()
+@ApiStandardResponses()
 @Controller("news")
 export class NewsController {
   constructor(
@@ -45,6 +48,7 @@ export class NewsController {
     private readonly redis: RedisService,
   ) {}
 
+  @ApiScopes("news:read")
   @Get()
   @ApiOperation({ summary: "List normalized RSS articles with source provenance." })
   async list(@Query() query: NewsQueryDto) {

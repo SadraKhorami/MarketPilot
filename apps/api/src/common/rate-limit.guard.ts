@@ -1,6 +1,7 @@
 import { type CanActivate, type ExecutionContext, HttpException, HttpStatus, Injectable } from "@nestjs/common";
 import type { Request } from "express";
 
+import { API_KEY_RATE_LIMIT, API_RATE_WINDOW_SECONDS } from "../api-keys/api-catalog";
 import { RedisService } from "../redis.service";
 
 @Injectable()
@@ -10,12 +11,15 @@ export class RateLimitGuard implements CanActivate {
   constructor(private readonly redis: RedisService) {}
 
   async canActivate(context: ExecutionContext) {
-    const request = context.switchToHttp().getRequest<Request & { user?: { id: string } }>();
-    const identity = request.user?.id ?? request.ip ?? "unknown";
+    const request = context.switchToHttp().getRequest<Request & { user?: { id: string; apiKeyId?: string } }>();
+    if (request.method === "POST" && request.path.endsWith("/auth/logout")) return true;
+    const identity = request.user?.apiKeyId ?? request.user?.id ?? request.ip ?? "unknown";
     const authAction = request.method === "POST" ? request.path.match(/\/auth\/(login|register)$/)?.[1] : undefined;
-    const limit = authAction ? 10 : 120;
-    const windowSeconds = 60;
-    const key = authAction ? `ratelimit:auth:${authAction}:${identity}` : `ratelimit:api:${identity}`;
+    const limit = authAction ? 10 : request.user?.apiKeyId ? API_KEY_RATE_LIMIT : request.user ? 300 : 120;
+    const windowSeconds = API_RATE_WINDOW_SECONDS;
+    const key = authAction
+      ? `ratelimit:auth:${authAction}:${identity}`
+      : `ratelimit:${request.user?.apiKeyId ? "key" : "session"}:${identity}`;
 
     try {
       await this.redis.ensureConnected();

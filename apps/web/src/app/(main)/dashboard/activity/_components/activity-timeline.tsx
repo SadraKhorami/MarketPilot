@@ -1,88 +1,136 @@
 "use client";
-
 import { useEffect, useState } from "react";
 
-import { Activity, BellRing, KeyRound, ListChecks, UserRound } from "lucide-react";
+import { Activity, BellRing, Bookmark, KeyRound, LogIn, Settings2, UserRound } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { useApiResource } from "@/hooks/use-api-resource";
 
-type Event = { id: string; eventType: string; description: string; occurredAt: string };
-const iconFor = (eventType: string) =>
-  eventType.startsWith("ALERT")
-    ? BellRing
-    : eventType.startsWith("API_KEY")
-      ? KeyRound
-      : eventType.startsWith("WATCHLIST")
-        ? ListChecks
-        : UserRound;
+import { CollectionSearch, FilterSelect, rangeOptions } from "../../_components/collection-filters";
+import { CollectionPagination, type PagedResult } from "../../_components/collection-pagination";
+import { ResourceState } from "../../_components/resource-state";
 
+interface ActivityEvent {
+  id: string;
+  description: string;
+  eventType: string;
+  occurredAt: string;
+}
+function category(event: string) {
+  if (event.startsWith("API_KEY")) return { label: "API key", icon: KeyRound };
+  if (event.startsWith("WATCHLIST")) return { label: "Watchlist", icon: Bookmark };
+  if (event.startsWith("ALERT")) return { label: "Alert", icon: BellRing };
+  if (event.includes("SIGNED") || event.includes("SESSION")) return { label: "Security", icon: LogIn };
+  if (event.includes("PREFERENCES")) return { label: "Settings", icon: Settings2 };
+  return { label: "Account", icon: UserRound };
+}
 export function ActivityTimeline() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [days, setDays] = useState("30");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   useEffect(() => {
-    apiRequest<ApiEnvelope<Event[]>>("/activity?limit=50")
-      .then(({ data }) => setEvents(data))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load activity."))
-      .finally(() => setLoading(false));
-  }, []);
-
+    const timer = setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const resource = useApiResource<PagedResult<ActivityEvent>>(
+    `/activity/history?${new URLSearchParams({ search: query, days, page: String(page), pageSize: String(pageSize) })}`,
+  );
+  const groups = new Map<string, ActivityEvent[]>();
+  for (const event of resource.data?.items ?? []) {
+    const day = new Date(event.occurredAt).toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    groups.set(day, [...(groups.get(day) ?? []), event]);
+  }
   return (
-    <Card className="shadow-none">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <div>
-          <CardTitle className="text-base">Recent activity</CardTitle>
-          <CardDescription>Events are stored with your account and scoped to your user.</CardDescription>
+    <Card>
+      <CardHeader>
+        <CardTitle>Your account history</CardTitle>
+        <CardDescription>Security events, saved resources and preference changes in one timeline.</CardDescription>
+        <div className="flex flex-wrap gap-2 pt-2">
+          <CollectionSearch value={search} onChange={setSearch} placeholder="Search your activity" />
+          <FilterSelect
+            label="Activity period"
+            value={days}
+            options={rangeOptions}
+            onChange={(value) => {
+              setDays(value);
+              setPage(1);
+            }}
+          />
         </div>
-        <Activity className="size-4 text-muted-foreground" aria-hidden="true" />
       </CardHeader>
-      <CardContent className="space-y-0">
-        {loading ? (
-          <p className="p-8 text-center text-sm text-muted-foreground" role="status">
-            Loading activity…
-          </p>
-        ) : error ? (
-          <p className="p-8 text-center text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : events.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-8 text-center">
-            <p className="font-medium">No activity yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Account events will appear here as you use MarketPilot.
-            </p>
-          </div>
-        ) : (
-          events.map((event, index) => {
-            const Icon = iconFor(event.eventType);
-            return (
-              <div key={event.id} className="relative flex gap-4 pb-7 last:pb-0">
-                <div className="relative flex flex-col items-center">
-                  <span className="z-10 flex size-9 items-center justify-center rounded-full border bg-background">
-                    <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-                  </span>
-                  {index < events.length - 1 ? <span className="absolute top-9 bottom-0 w-px bg-border" /> : null}
-                </div>
-                <div className="min-w-0 flex-1 pt-1">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="font-medium text-sm">
-                      {event.description}
-                      <Badge variant="secondary" className="ml-2">
-                        {event.eventType.toLowerCase().replaceAll("_", " ")}
-                      </Badge>
-                    </p>
-                    <time className="text-xs text-muted-foreground" dateTime={event.occurredAt}>
-                      {new Date(event.occurredAt).toLocaleString()}
-                    </time>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
+      <CardContent>
+        <ResourceState {...resource} retry={resource.reload} />
+        {!resource.loading &&
+          !resource.error &&
+          (groups.size ? (
+            <div className="flex flex-col gap-6">
+              {Array.from(groups, ([day, events]) => (
+                <section key={day} className="flex flex-col gap-3">
+                  <h2 className="font-medium text-muted-foreground text-sm">{day}</h2>
+                  <ol className="flex flex-col">
+                    {events.map((event) => {
+                      const { label, icon: Icon } = category(event.eventType);
+                      return (
+                        <li key={event.id} className="group relative flex gap-3 pb-5 last:pb-0">
+                          <span
+                            aria-hidden="true"
+                            className="absolute top-8 bottom-0 left-4 border-l group-last:hidden"
+                          />
+                          <div className="relative flex size-8 shrink-0 items-center justify-center rounded-full border bg-background">
+                            <Icon className="size-4 text-muted-foreground" />
+                          </div>
+                          <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-2">
+                            <div className="flex flex-col gap-1">
+                              <p className="font-medium text-sm">{event.description}</p>
+                              <time dateTime={event.occurredAt} className="text-muted-foreground text-xs">
+                                {new Date(event.occurredAt).toLocaleTimeString(undefined, {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </time>
+                            </div>
+                            <Badge variant="outline">{label}</Badge>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Activity />
+                </EmptyMedia>
+                <EmptyTitle>No activity in this view</EmptyTitle>
+                <EmptyDescription>Try a broader search or a different date range.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ))}
       </CardContent>
+      <CollectionPagination
+        page={page}
+        pageSize={pageSize}
+        total={resource.data?.total ?? 0}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
     </Card>
   );
 }

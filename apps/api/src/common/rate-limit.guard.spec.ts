@@ -3,7 +3,7 @@ import { HttpException } from "@nestjs/common";
 import { RateLimitGuard } from "./rate-limit.guard";
 
 describe("RateLimitGuard", () => {
-  const requestContext = (path: string, method = "GET", user?: { id: string }) =>
+  const requestContext = (path: string, method = "GET", user?: { id: string; apiKeyId?: string }) =>
     ({
       switchToHttp: () => ({ getRequest: () => ({ path, method, ip: "127.0.0.1", user }) }),
     }) as never;
@@ -31,5 +31,20 @@ describe("RateLimitGuard", () => {
     await expect(guard.canActivate(requestContext("/api/v1/auth/login", "POST", undefined))).rejects.toBeInstanceOf(
       HttpException,
     );
+  });
+  it("isolates API key buckets from browser traffic and always permits logout", async () => {
+    const guard = createGuard();
+    for (let index = 0; index < 120; index++)
+      await guard.canActivate(requestContext("/api/v1/news", "GET", { id: "owner", apiKeyId: "one" }));
+    await expect(
+      guard.canActivate(requestContext("/api/v1/news", "GET", { id: "owner", apiKeyId: "one" })),
+    ).rejects.toBeInstanceOf(HttpException);
+    await expect(
+      guard.canActivate(requestContext("/api/v1/news", "GET", { id: "owner", apiKeyId: "two" })),
+    ).resolves.toBe(true);
+    await expect(guard.canActivate(requestContext("/api/v1/auth/me", "GET", { id: "owner" }))).resolves.toBe(true);
+    await expect(
+      guard.canActivate(requestContext("/api/v1/auth/logout", "POST", { id: "owner", apiKeyId: "one" })),
+    ).resolves.toBe(true);
   });
 });

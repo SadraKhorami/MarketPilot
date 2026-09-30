@@ -7,6 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum RequestAuthType {
+  SESSION
+  API_KEY
+}
+
 enum UserStatus {
   ACTIVE
   DISABLED
@@ -32,22 +37,48 @@ enum ChannelProvider {
   DISCORD
 }
 
+enum NotificationCategory {
+  SECURITY
+  ACCOUNT
+  ANNOUNCEMENT
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AnnouncementAudience {
+  ALL
+  USERS
+  ADMINS
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
 model User {
-  id           String                @id @default(uuid()) @db.Uuid
-  email        String                @unique @db.VarChar(320)
-  passwordHash String                @db.VarChar(255)
-  name         String?               @db.VarChar(120)
-  status       UserStatus            @default(ACTIVE)
-  createdAt    DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime              @updatedAt @db.Timestamptz(3)
-  roles        UserRole[]
-  sessions     Session[]
-  watchlists   Watchlist[]
-  alerts       Alert[]
-  channels     NotificationChannel[]
-  apiKeys      ApiKey[]
-  apiUsage     ApiUsage[]
-  activity     ActivityLog[]
+  id            String                     @id @default(uuid()) @db.Uuid
+  email         String                     @unique @db.VarChar(320)
+  passwordHash  String                     @db.VarChar(255)
+  name          String?                    @db.VarChar(120)
+  status        UserStatus                 @default(ACTIVE)
+  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
+  roles         UserRole[]
+  sessions      Session[]
+  watchlists    Watchlist[]
+  alerts        Alert[]
+  channels      NotificationChannel[]
+  apiKeys       ApiKey[]
+  apiUsage      ApiUsage[]
+  activity      ActivityLog[]
+  notifications Notification[]
+  announcements NotificationAnnouncement[] @relation("AnnouncementAuthor")
 
   @@index([status, createdAt])
 }
@@ -164,21 +195,24 @@ model ApiKey {
 }
 
 model ApiUsage {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @db.Uuid
-  apiKeyId   String?  @db.Uuid
-  requestId  String   @db.VarChar(80)
-  route      String   @db.VarChar(160)
-  method     String   @db.VarChar(12)
+  id         String          @id @default(uuid()) @db.Uuid
+  userId     String          @db.Uuid
+  apiKeyId   String?         @db.Uuid
+  authType   RequestAuthType @default(SESSION)
+  requestId  String          @db.VarChar(80)
+  route      String          @db.VarChar(160)
+  method     String          @db.VarChar(12)
   statusCode Int
   latencyMs  Int
-  occurredAt DateTime @default(now()) @db.Timestamptz(3)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  apiKey     ApiKey?  @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  occurredAt DateTime        @default(now()) @db.Timestamptz(3)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey     ApiKey?         @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
 
   @@index([userId, occurredAt])
   @@index([apiKeyId, occurredAt])
   @@index([requestId])
+  @@index([authType, occurredAt])
+  @@index([occurredAt])
 }
 
 model ActivityLog {
@@ -218,4 +252,45 @@ model NewsArticle {
   @@index([publishedAt, source])
   @@index([category, publishedAt])
   @@index([fetchedAt])
+}
+
+model Notification {
+  id             String                    @id @default(uuid()) @db.Uuid
+  userId         String                    @db.Uuid
+  category       NotificationCategory
+  severity       NotificationSeverity      @default(INFO)
+  title          String                    @db.VarChar(120)
+  body           String                    @db.VarChar(2000)
+  actionPath     String?                   @db.VarChar(160)
+  readAt         DateTime?                 @db.Timestamptz(3)
+  archivedAt     DateTime?                 @db.Timestamptz(3)
+  createdAt      DateTime                  @default(now()) @db.Timestamptz(3)
+  announcementId String?                   @db.Uuid
+  user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcement   NotificationAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: Restrict)
+
+  @@unique([announcementId, userId])
+  @@index([userId, archivedAt, readAt, createdAt])
+  @@index([userId, category, createdAt])
+}
+
+model NotificationAnnouncement {
+  id             String               @id @default(uuid()) @db.Uuid
+  authorId       String?              @db.Uuid
+  title          String               @db.VarChar(120)
+  body           String               @db.VarChar(2000)
+  actionPath     String?              @db.VarChar(160)
+  severity       NotificationSeverity @default(INFO)
+  audience       AnnouncementAudience @default(ALL)
+  status         AnnouncementStatus   @default(DRAFT)
+  recipientCount Int                  @default(0)
+  excludedCount  Int                  @default(0)
+  publishedAt    DateTime?            @db.Timestamptz(3)
+  createdAt      DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime             @updatedAt @db.Timestamptz(3)
+  author         User?                @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  notifications  Notification[]
+
+  @@index([status, createdAt])
+  @@index([authorId, createdAt])
 }

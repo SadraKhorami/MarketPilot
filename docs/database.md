@@ -16,18 +16,20 @@ Phase 3 adds `NewsArticle` as provider-owned normalized news metadata. It stores
 | `Alert` | `userId`, name, asset ID, typed condition enum, decimal threshold, enabled flag, cooldown, evaluation/trigger timestamps | `(userId, enabled, createdAt)`; `(enabled, assetId)` | All operations scope by owner. CRUD is active; background evaluation and notification delivery are not implemented. |
 | `NotificationChannel` | `userId`, provider enum (`WEB`, `TELEGRAM`, `DISCORD`), external account, verification/active state, JSON preferences, timestamps | Unique `(provider, externalAccountId)` and `(userId, provider)`; `(userId, active)` | Current registration creates an active WEB preference row. Bot linking is not implemented; never store bot tokens in this model. |
 | `ApiKey` | `userId`, name, unique lookup prefix, SHA-256 `secretHash`, string scopes, last-used/expiry/revocation/creation timestamps | Unique prefix; `(userId, revokedAt, createdAt)` | High-entropy secret is returned once and never stored. Prefix is 24 characters; scope checks guard API-key reads. |
-| `ApiUsage` | `userId`, optional `apiKeyId`, request ID, route/method/status/latency, occurrence time | `(userId, occurredAt)`, `(apiKeyId, occurredAt)`, request ID | Stores request metadata only, no request bodies or credentials. Retention policy remains to be set. |
+| `ApiUsage` | `userId`, optional `apiKeyId`, `authType` (SESSION/API_KEY), request ID, route/method/status/latency, occurrence time | `(userId, occurredAt)`, `(apiKeyId, occurredAt)`, `(authType, occurredAt)`, occurrence time, request ID | Stores request metadata only, no request bodies or credentials. Retention policy remains to be set. |
+| `Notification` | Owner, category/severity, plain-text title/body, allowlisted related page, read/archive/creation timestamps, optional announcement | Unique `(announcementId, userId)`; owner/archive/read/time and owner/category/time indexes | Personal inbox queries and mutations always include owner. User deletion cascades; archive is reversible. No credentials or tracking pixels. |
+| `NotificationAnnouncement` | Optional admin author, content, audience, draft/published/cancelled status, recipient/exclusion counts, publication and update timestamps | Status/time and author/time indexes | ADMIN browser sessions only. Version checks protect review/edit/publish; atomic publication prevents duplicate messages. Author deletion sets null; recipient references restrict announcement deletion. |
 | `ActivityLog` | `userId`, event type, description, safe JSON metadata, optional request ID, occurrence time | `(userId, occurredAt)`, `(eventType, occurredAt)` | Records registration, sign-in, watchlist, alert, API-key, and profile changes. User deletion cascades to its activity. |
 
 ## Justified supporting entities
 
 - `UserRole` is required to implement the proposed `User`–`Role` many-to-many relationship with database-enforced uniqueness.
-- `OutboxEvent` is deferred until a worker/notification pipeline is implemented. It should store a typed event, aggregate ID, creation/dispatch time, retry count, and status so queue publication can be recovered.
+- `OutboxEvent` is deferred until durable asynchronous delivery is implemented. It should store a typed event, aggregate ID, creation/dispatch time, retry count, and status so queue publication can be recovered.
 - A one-time bot-link challenge may be stored as a short-lived hashed token in a dedicated `AccountLinkChallenge` table or a tightly bounded Redis record. Prefer PostgreSQL when link completion must survive cache restart; delete/expire after use.
 
 ## Relationship sketch
 
-`User` 1—N `Session`, `Watchlist`, `Alert`, `NotificationChannel`, `ApiKey`, `ApiUsage`, `ActivityLog`; `User` N—N `Role`; `Watchlist` 1—N `WatchlistItem`; alert changes may enqueue `OutboxEvent` records. Bot identities are represented by verified `NotificationChannel` rows, not by duplicate user accounts.
+`User` 1—N `Session`, `Watchlist`, `Alert`, `NotificationChannel`, `ApiKey`, `ApiUsage`, `ActivityLog`, `Notification`; `NotificationAnnouncement` 1—N `Notification`; `User` N—N `Role`; `Watchlist` 1—N `WatchlistItem`; alert changes may enqueue `OutboxEvent` records. Bot identities are represented by verified `NotificationChannel` rows, not by duplicate user accounts.
 
 ## Remaining data decisions
 

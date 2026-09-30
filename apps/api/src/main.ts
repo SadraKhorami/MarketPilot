@@ -1,15 +1,16 @@
 import "reflect-metadata";
-import dotenv from "dotenv";
+
 import { randomUUID } from "node:crypto";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
+import dotenv from "dotenv";
 import helmet from "helmet";
-
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./common/api-exception.filter";
+import { RequestUsageMiddleware } from "./common/request-usage.middleware";
 
 dotenv.config({ path: "../../.env" });
 
@@ -41,6 +42,8 @@ async function bootstrap() {
       next();
     },
   );
+  const usage = app.get(RequestUsageMiddleware);
+  app.use(usage.use.bind(usage));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

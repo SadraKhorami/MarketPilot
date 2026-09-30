@@ -28,6 +28,14 @@ The dashboard opens at `http://localhost:3000`; the API listens at `http://local
 
 Market-data requests use Coinbase Exchange public product endpoints directly from the MarketPilot API; no Desktop service or provider token is required for this adapter. Use exact product identifiers such as `BTC-USD`; a USDT pair is never silently converted to a USD pair. Investing.com RSS ingestion is disabled by default. Enable it only after written permission for the intended storage/display use, as described in [integration notes](docs/integrations.md).
 
+## Account and administration workspaces
+
+Developer API keys provide scoped read access to market data, sourced news, watchlists and alert rules. The Usage page counts API-key requests only; browser traffic is visible separately in Administration. The in-app API guide lists supported endpoints and request examples.
+
+Administrators have a separate protected sidebar for overview metrics, account directory/details, request logs, audit events, API key inventory and system checks. Payments displays an unavailable state until billing is implemented. No financial records or integrations are simulated.
+
+See [administration and developer API](docs/administration-and-developer-api.md) for boundaries and verification.
+
 ## Workspace commands
 
 ```bash
@@ -50,3 +58,7 @@ GitHub Actions runs the same checks on pull requests and pushes to `main`.
 - [Database proposal](docs/database.md)
 - [Integration and security design](docs/integrations.md)
 - [Desktop MarketFeed source audit](docs/marketfeed-audit.md) (reference only)
+
+## Notification center
+
+The navbar bell and `/dashboard/notifications` use a real personal inbox with unread counts, filters, pagination, read/unread, archive/restore and related-page shortcuts. Administrators manage reviewed announcements at `/dashboard/admin/notifications`; publishing respects account preferences and provides aggregate delivery/read counts. Security and registration notices are generated from current events. Email, bot, device-push and market-alert delivery remain unavailable. See [notification center](docs/notification-center.md).

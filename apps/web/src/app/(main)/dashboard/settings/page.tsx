@@ -1,5 +1,5 @@
 import { permanentRedirect } from "next/navigation";
 
 export default function SettingsIndexPage() {
-  permanentRedirect("/dashboard/profile");
+  permanentRedirect("/dashboard/settings/security");
 }

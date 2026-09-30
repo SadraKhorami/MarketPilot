@@ -7,14 +7,18 @@ export class CredentialsDto {
   @MaxLength(320)
   email!: string;
 
-  @ApiProperty({ minLength: 12, maxLength: 72, description: "Maximum 72 UTF-8 bytes" })
+  @ApiProperty({ minLength: 1, maxLength: 72, description: "Maximum 72 UTF-8 bytes" })
   @IsString()
-  @MinLength(12)
+  @MinLength(1)
   @MaxLength(72)
   password!: string;
 }
 
 export class RegisterDto extends CredentialsDto {
+  @ApiProperty({ minLength: 12, maxLength: 72 })
+  @MinLength(12)
+  declare password: string;
+
   @ApiProperty({ required: false, maxLength: 120 })
   @IsOptional()
   @IsString()

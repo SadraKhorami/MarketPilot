@@ -59,6 +59,10 @@ Start with a small allowlist: `/link`, `/unlink`, `/watchlist`, `/price`, `/news
 
 ### Notification flow
 
+Implemented in-app delivery stores personal notifications in PostgreSQL. The navbar polls once per minute while visible, refreshes on focus/actions, and synchronizes local tabs. ADMIN announcements use a reviewed draft and atomic fan-out; security/account notices come from actual events. See [notification center](notification-center.md) for current boundaries.
+
+The following external delivery flow remains planned:
+
 API commits the domain change and an `OutboxEvent` in one PostgreSQL transaction. A dispatcher publishes a BullMQ notification job; a worker loads the active, verified channel and renders a bounded message; the platform adapter sends it; delivery attempt/result is recorded with retry classification and idempotency key. Retry transient errors with backoff, dead-letter permanent failures, cap attempts, and allow channel disable/revoke. Never include API keys, sessions, or sensitive account information in messages/logs.
 
 ## Background queues
@@ -74,10 +78,10 @@ Redis is not the system of record. PostgreSQL stores user/alert/notification int
 
 ## Security baseline
 
-- Authentication (implemented): NestJS email/password sessions; bcrypt cost 12 with a 12-character minimum and a 72-byte UTF-8 maximum. Random opaque session tokens are stored only as SHA-256 hashes. The cookie is HTTP-only, `SameSite=Lax`, secure in production, and expires after 14 days. Logout and session revocation invalidate tokens.
+- Authentication (implemented): NestJS email/password sessions; bcrypt cost 12 with a 12-character minimum for new registrations and a 72-byte UTF-8 maximum. Login validates existing credentials without applying the new-password minimum. Random opaque session tokens are stored only as SHA-256 hashes. The cookie is HTTP-only, `SameSite=Lax`, secure in production, and expires after 14 days. Logout and session revocation invalidate tokens.
 - Authorization (implemented): global authentication and role guards; server-assigned `ADMIN`/`USER` roles; user-owned service queries; API-key scope checks. Mutating requests with an `Origin` header must match `WEB_ORIGIN` or the API's own origin. Credentialed CORS uses the configured web-origin allowlist.
-- API keys (implemented): 256-bit random secret plus a 64-bit random lookup prefix; SHA-256 hash only is stored; the secret is shown once and verification uses constant-time comparison. Keys support watchlist-read and alert-read scopes, revocation, and last-used tracking.
-- Rate limits (implemented): Redis-backed fixed windows allow 10 auth-route requests and 120 other API requests per minute, keyed by IP before authentication and user ID afterward. A bounded per-process fallback runs if Redis is unavailable; this fallback is not distributed across replicas.
+- API keys (implemented): 256-bit random secret plus a 64-bit random lookup prefix; SHA-256 hash only is stored; the secret is shown once and verification uses constant-time comparison. Keys support `market:read`, `news:read`, `watchlists:read`, and `alerts:read`, revocation, and last-used tracking. Keys cannot access account management or administration endpoints.
+- Rate limits (implemented): Redis-backed 60-second fixed windows allow 10 login/register attempts per IP, 120 requests per API key, and 300 authenticated browser requests per user. Key and browser buckets are independent. Authenticated logout remains available after a request bucket is exhausted. A bounded per-process fallback runs if Redis is unavailable; this fallback is not distributed across replicas.
 - Secret management: local values load from a root `.env` file ignored by Git; deployments should inject separate environment-specific credentials. Never log passwords, session/API-key secrets, or authorization headers. Market-data provider selection is server-side and never comes from user input.
 - Bot security (planned): verify Telegram webhook secrets; verify Discord Ed25519 signatures against raw request bytes and timestamps; deduplicate provider delivery IDs; allowlist commands; keep bot tokens server-side.
 - Bot security: verify Telegram webhook secret when using webhooks; verify Discord Ed25519 signatures on exact raw bytes and timestamp; deduplicate provider delivery IDs; allowlist commands; use least-privilege bot permissions; store bot tokens only server-side.
@@ -91,7 +95,7 @@ Redis is not the system of record. PostgreSQL stores user/alert/notification int
 3. What market-data freshness and stale-data policy should apply to watchlists and alert evaluation?
 4. Is email verification, password reset, or social login required at launch?
 5. Are teams/workspaces, role customization, or multiple seats in scope, or only individual users plus an administrator role?
-6. What API key scopes, quotas, pricing, and retention should API usage expose?
+6. What commercial API quotas/pricing and request-log retention policy should be adopted? The current developer API is read-only; usage counts key traffic only.
 7. Which AI provider/model, budget/retention policy, and confirmation UX should be used?
 8. Which hosting/region, production secrets manager, public API domain, and bot deployment/webhook model are intended?
 9. What are alert condition semantics, evaluation cadence, quiet hours, deduplication, and notification retention requirements?

@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 
 import { ActivityService } from "../common/activity.service";
 import { DatabaseService } from "../database.module";
+import { NotificationEventsService } from "../notifications/notification-events.service";
 
 const SESSION_DAYS = 14;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -14,6 +15,7 @@ export class AuthService {
   constructor(
     private readonly db: DatabaseService,
     private readonly activity: ActivityService,
+    private readonly notifications: NotificationEventsService,
   ) {}
 
   async register(input: { email: string; password: string; name?: string }) {
@@ -39,6 +41,7 @@ export class AuthService {
       });
 
       await this.activity.record(user.id, "USER_REGISTERED", "Account created");
+      await this.notifications.registered(user.id, user.name ?? user.email);
       return this.createSession(
         user.id,
         user.email,
@@ -66,12 +69,19 @@ export class AuthService {
       });
     }
     await this.activity.record(user.id, "USER_SIGNED_IN", "Signed in");
-    return this.createSession(
+    const session = await this.createSession(
       user.id,
       user.email,
       user.name,
       user.roles.map((item) => item.role.name),
     );
+    await this.notifications.security(
+      user.id,
+      "New sign-in",
+      "A new browser sign-in was completed. If this was not you, review and revoke unfamiliar sessions.",
+      "/dashboard/settings/security",
+    );
+    return session;
   }
 
   async validateSession(rawToken: string) {
@@ -111,6 +121,15 @@ export class AuthService {
       where: { id: sessionId, userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (result.count) {
+      await this.activity.record(userId, "SESSION_REVOKED", "Revoked a browser session");
+      await this.notifications.security(
+        userId,
+        "Browser session signed out",
+        "A browser session was revoked from your security settings.",
+        "/dashboard/settings/security",
+      );
+    }
     return result.count > 0;
   }
 

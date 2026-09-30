@@ -1,216 +1,121 @@
 "use client";
+import { useState } from "react";
 
-import { useCallback, useEffect, useState } from "react";
-
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
-import { Controller, useForm } from "react-hook-form";
+import { Copy, KeyRound, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { type ApiEnvelope, ApiError, apiRequest } from "@/lib/api/client";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
-const schema = z.object({ name: z.string().trim().min(2).max(80), scope: z.enum(["read", "watchlists", "alerts"]) });
-type ApiKeyFormValues = z.infer<typeof schema>;
-type KeyRecord = {
-  id: string;
-  name: string;
-  prefix: string;
-  scopes: string[];
-  createdAt: string;
-  lastUsedAt: string | null;
-  revokedAt: string | null;
-};
-
+import { CollectionPagination } from "../../_components/collection-pagination";
+import { ResourceState } from "../../_components/resource-state";
+import { ApiCapabilities } from "./api-capabilities";
+import type { KeyRecord } from "./api-types";
+import { CreateKeyDialog, type CreateKeyInput } from "./create-key-dialog";
+import { getKeyStatus } from "./key-status";
 export function ApiKeysWorkspace() {
-  const [rows, setRows] = useState<KeyRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const resource = useApiResource<KeyRecord[]>("/api-keys");
   const [newSecret, setNewSecret] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const form = useForm<ApiKeyFormValues>({ resolver: zodResolver(schema), defaultValues: { name: "", scope: "read" } });
-
-  const refresh = useCallback(async () => {
-    try {
-      const { data } = await apiRequest<ApiEnvelope<KeyRecord[]>>("/api-keys");
-      setRows(data);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not load API keys.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const createKey = async (input: ApiKeyFormValues) => {
-    const scopes = input.scope === "read" ? ["watchlists:read", "alerts:read"] : [`${input.scope}:read`];
+  const [revokeTarget, setRevokeTarget] = useState<KeyRecord | null>(null);
+  const [revoking, setRevoking] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const rows = resource.data ?? [];
+  const create = async (input: CreateKeyInput) => {
     try {
       const { data } = await apiRequest<ApiEnvelope<KeyRecord & { secret: string }>>("/api-keys", {
         method: "POST",
-        body: JSON.stringify({ name: input.name, scopes }),
+        body: JSON.stringify(input),
       });
       setNewSecret(data.secret);
-      setRows((current) => [{ ...data, revokedAt: null, lastUsedAt: null }, ...current]);
-      form.reset();
-      setDialogOpen(false);
-      toast.success("API key created. Copy the secret now; it will not be shown again.");
+      resource.reload();
+      setPage(1);
+      toast.success("Key created. Save your secret now.");
+      return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create an API key.");
+      toast.error(error instanceof Error ? error.message : "Could not create key.");
+      return false;
     }
   };
-
-  const revoke = async (id: string) => {
+  const revoke = async () => {
+    if (!revokeTarget) return;
+    setRevoking(true);
     try {
-      await apiRequest(`/api-keys/${id}`, { method: "DELETE" });
-      setRows((current) =>
-        current.map((item) => (item.id === id ? { ...item, revokedAt: new Date().toISOString() } : item)),
-      );
-      toast.success("API key revoked.");
+      await apiRequest(`/api-keys/${revokeTarget.id}`, { method: "DELETE" });
+      resource.reload();
+      setRevokeTarget(null);
+      toast.success("Key revoked.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not revoke the API key.");
+      toast.error(error instanceof Error ? error.message : "Could not revoke key.");
+    } finally {
+      setRevoking(false);
     }
   };
-
-  const copySecret = async () => {
+  const copy = async () => {
     if (!newSecret) return;
-    await navigator.clipboard.writeText(newSecret);
-    toast.success("API key copied to clipboard.");
+    try {
+      await navigator.clipboard.writeText(newSecret);
+      toast.success("Key copied.");
+    } catch {
+      toast.error("Clipboard unavailable. Select and copy your key manually.");
+    }
   };
-
-  const activeCount = rows.filter((row) => !row.revokedAt).length;
-
   return (
-    <div className="space-y-4">
-      {newSecret ? (
+    <div className="flex flex-col gap-5">
+      {newSecret && (
         <Alert>
           <KeyRound />
-          <AlertTitle>Copy your new key now</AlertTitle>
-          <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <AlertTitle>Save your key — it is shown once</AlertTitle>
+          <AlertDescription>
             <code className="break-all font-mono text-xs">{newSecret}</code>
-            <Button variant="outline" size="sm" onClick={() => void copySecret()}>
-              <Copy /> Copy key
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setNewSecret(null)}>
-              Dismiss
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => void copy()}>
+                <Copy data-icon="inline-start" />
+                Copy key
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setNewSecret(null)}>
+                Dismiss
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
-      ) : null}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          ["Active keys", String(activeCount), "Scoped credentials"],
-          ["Default scope", "Least privilege", "Read access only"],
-          ["Key rotation", "Available", "Revoke at any time"],
-        ].map(([label, value, detail]) => (
-          <Card key={label} className="shadow-none">
-            <CardContent className="p-4">
-              <p className="text-muted-foreground text-sm">{label}</p>
-              <p className="mt-2 font-semibold text-xl">{value}</p>
-              <p className="mt-1 text-muted-foreground text-xs">{detail}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <Card className="shadow-none">
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <div>
-            <CardTitle className="text-base">API keys</CardTitle>
-            <CardDescription>Create, review, or revoke programmatic credentials.</CardDescription>
-          </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus /> Create API key
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create API key</DialogTitle>
-                <DialogDescription>
-                  The secret is shown once. Store it in a password manager or secret vault.
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={form.handleSubmit(createKey)} className="space-y-4">
-                <Controller
-                  control={form.control}
-                  name="name"
-                  render={({ field, fieldState }) => (
-                    <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="key-name">Key name</FieldLabel>
-                      <Input {...field} id="key-name" autoComplete="off" aria-invalid={fieldState.invalid} />
-                      {fieldState.invalid ? <FieldError errors={[fieldState.error]} /> : null}
-                    </Field>
-                  )}
-                />
-                <Controller
-                  control={form.control}
-                  name="scope"
-                  render={({ field, fieldState }) => (
-                    <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="key-scope">Scope</FieldLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger id="key-scope" aria-invalid={fieldState.invalid}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="read">Watchlist + alert reads</SelectItem>
-                          <SelectItem value="watchlists">Watchlist reads</SelectItem>
-                          <SelectItem value="alerts">Alert reads</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {fieldState.invalid ? <FieldError errors={[fieldState.error]} /> : null}
-                    </Field>
-                  )}
-                />
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting ? "Creating…" : "Create key"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Your API keys</CardTitle>
+          <CardDescription>
+            Read-only credentials for scripts and integrations. Revoke a key to stop its access immediately.
+          </CardDescription>
+          <CardAction>
+            <CreateKeyDialog onCreate={create} />
+          </CardAction>
         </CardHeader>
-        <CardContent className="px-0 sm:px-6">
-          {loading ? (
-            <p className="p-8 text-center text-muted-foreground" role="status">
-              Loading API keys…
-            </p>
-          ) : rows.length === 0 ? (
-            <div className="m-4 rounded-lg border border-dashed p-8 text-center sm:m-0">
-              <KeyRound className="mx-auto size-6 text-muted-foreground" />
-              <p className="mt-2 font-medium">No API keys yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">Create a scoped key for a trusted integration.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
+        <CardContent className="px-0">
+          <ResourceState {...resource} retry={resource.reload} />
+          {!resource.loading &&
+            !resource.error &&
+            (rows.length ? (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Prefix</TableHead>
-                    <TableHead>Scope</TableHead>
+                    <TableHead className="pl-6">Integration</TableHead>
+                    <TableHead>Permissions</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Last used</TableHead>
                     <TableHead>Status</TableHead>
@@ -220,33 +125,35 @@ export function ApiKeysWorkspace() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell>
-                        <code className="font-mono text-xs">{row.prefix}••••</code>
+                  {rows.slice((page - 1) * pageSize, page * pageSize).map((key) => (
+                    <TableRow key={key.id}>
+                      <TableCell className="py-4 pl-6">
+                        <p className="font-medium">{key.name}</p>
+                        <code className="text-muted-foreground text-xs">{key.prefix}••••</code>
                       </TableCell>
                       <TableCell>
-                        {row.scopes.map((scope) => (
-                          <Badge key={scope} variant="secondary" className="mr-1">
-                            {scope}
-                          </Badge>
-                        ))}
+                        <div className="flex max-w-xs flex-wrap gap-1">
+                          {key.scopes.map((scope) => (
+                            <Badge key={scope} variant="secondary">
+                              {scope}
+                            </Badge>
+                          ))}
+                        </div>
                       </TableCell>
-                      <TableCell>{new Date(row.createdAt).toLocaleDateString()}</TableCell>
-                      <TableCell>{row.lastUsedAt ? new Date(row.lastUsedAt).toLocaleString() : "Never"}</TableCell>
-                      <TableCell>
-                        <Badge variant={row.revokedAt ? "outline" : "default"}>
-                          {row.revokedAt ? "Revoked" : "Active"}
-                        </Badge>
+                      <TableCell className="text-xs">{new Date(key.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : "Never used"}
                       </TableCell>
                       <TableCell>
-                        {row.revokedAt ? null : (
+                        <Badge variant="outline">{getKeyStatus(key)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {!key.revokedAt && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            aria-label={`Revoke ${row.name}`}
-                            onClick={() => void revoke(row.id)}
+                            aria-label={`Revoke ${key.name}`}
+                            onClick={() => setRevokeTarget(key)}
                           >
                             <Trash2 />
                           </Button>
@@ -256,13 +163,61 @@ export function ApiKeysWorkspace() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-          )}
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <KeyRound />
+                  </EmptyMedia>
+                  <EmptyTitle>Connect your first integration</EmptyTitle>
+                  <EmptyDescription>
+                    Create a scoped key to read prices, candles, news or your saved resources from another application.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ))}
         </CardContent>
+        {rows.length > 0 && (
+          <CollectionPagination
+            page={page}
+            pageSize={pageSize}
+            total={rows.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+          />
+        )}
       </Card>
-      <p className="text-muted-foreground text-xs">
-        API key secrets are never stored in plaintext and cannot be retrieved after creation.
-      </p>
+      <ApiCapabilities />
+      <AlertDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => {
+          if (!open && !revoking) setRevokeTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke {revokeTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Applications using this key will lose access immediately. Historical usage will remain available.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revoking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={revoking}
+              onClick={(event) => {
+                event.preventDefault();
+                void revoke();
+              }}
+            >
+              {revoking ? "Revoking…" : "Revoke key"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

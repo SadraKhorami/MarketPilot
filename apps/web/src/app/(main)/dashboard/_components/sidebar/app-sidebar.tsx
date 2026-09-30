@@ -15,13 +15,16 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { APP_CONFIG } from "@/config/app-config";
-import { sidebarItems } from "@/navigation/sidebar/sidebar-items";
+import { adminSidebarGroup, sidebarItems } from "@/navigation/sidebar/sidebar-items";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
+import { useSessionUser } from "../auth-gate";
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const user = useSessionUser();
+  const navigation = user?.roles.includes("ADMIN") ? [...sidebarItems, adminSidebarGroup] : sidebarItems;
   const { sidebarVariant, sidebarCollapsible, isSynced } = usePreferencesStore(
     useShallow((s) => ({
       sidebarVariant: s.values.sidebar_variant,
@@ -48,7 +51,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={sidebarItems} />
+        <NavMain items={navigation} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser />

@@ -29,7 +29,11 @@ describe("AuthService", () => {
       },
     };
     const activity = { record: jest.fn().mockResolvedValue(undefined) };
-    const service = new AuthService(db as never, activity as never);
+    const service = new AuthService(
+      db as never,
+      activity as never,
+      { security: jest.fn(), registered: jest.fn() } as never,
+    );
 
     const result = await service.register({ email: " User@Example.com ", password: "a-long-enough-password" });
 
@@ -45,14 +49,18 @@ describe("AuthService", () => {
 
   it("rejects invalid credentials with a generic response", async () => {
     const db = { user: { findUnique: jest.fn().mockResolvedValue(null) } };
-    const service = new AuthService(db as never, { record: jest.fn() } as never);
+    const service = new AuthService(
+      db as never,
+      { record: jest.fn() } as never,
+      { security: jest.fn(), registered: jest.fn() } as never,
+    );
     await expect(service.login({ email: "unknown@example.com", password: "wrong-password" })).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
   });
 
   it("rejects passwords that bcrypt would truncate", async () => {
-    const service = new AuthService({} as never, {} as never);
+    const service = new AuthService({} as never, {} as never, { security: jest.fn(), registered: jest.fn() } as never);
     await expect(service.register({ email: "user@example.com", password: "é".repeat(37) })).rejects.toBeInstanceOf(
       BadRequestException,
     );

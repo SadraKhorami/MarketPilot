@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Patch } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { IsBoolean, IsOptional } from "class-validator";
-import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
 
+import { ActivityService } from "../common/activity.service";
+import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
 import { type AuthenticatedUser, CurrentUser } from "../common/auth";
 import { DatabaseService } from "../database.module";
 
@@ -16,7 +17,10 @@ class NotificationPreferencesDto {
 @ApiStandardResponses()
 @Controller("settings")
 export class SettingsController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly activity: ActivityService,
+  ) {}
 
   @Get() async get(@CurrentUser() user: AuthenticatedUser) {
     const [profile, channels] = await Promise.all([
@@ -50,6 +54,7 @@ export class SettingsController {
       update: { preferences },
       select: { id: true, provider: true, active: true, preferences: true, updatedAt: true },
     });
+    await this.activity.record(user.id, "NOTIFICATION_PREFERENCES_UPDATED", "Updated notification preferences");
     return { data: channel };
   }
 }
