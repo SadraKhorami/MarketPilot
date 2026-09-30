@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 
 import type { Metadata } from "next";
 
@@ -6,9 +6,8 @@ import { MarketPilotPage } from "../../_components/marketpilot-page";
 import { SettingsPanel, type SettingsSection } from "../_components/settings-panel";
 
 type SettingsPageProps = { params: Promise<{ section: string }> };
-const sections: SettingsSection[] = ["profile", "security", "notifications", "appearance"];
+const sections: SettingsSection[] = ["security", "notifications", "appearance"];
 const descriptions: Record<SettingsSection, string> = {
-  profile: "Profile information for your MarketPilot account.",
   security: "Security controls and session status for the future authenticated workspace.",
   notifications: "Choose which updates would be enabled after notification services are connected.",
   appearance: "Choose a theme for the MarketPilot workspace.",
@@ -21,6 +20,7 @@ export async function generateMetadata({ params }: SettingsPageProps): Promise<M
 
 export default async function SettingsPage({ params }: SettingsPageProps) {
   const { section } = await params;
+  if (section === "profile") permanentRedirect("/dashboard/profile");
   if (!sections.includes(section as SettingsSection)) notFound();
   const active = section as SettingsSection;
   return (

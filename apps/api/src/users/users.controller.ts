@@ -21,8 +21,12 @@ export class UsersController {
     private readonly activity: ActivityService,
   ) {}
 
-  @Get("me") me(@CurrentUser() user: AuthenticatedUser) {
-    return { data: user };
+  @Get("me") async me(@CurrentUser() user: AuthenticatedUser) {
+    const profile = await this.db.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: { id: true, email: true, name: true, status: true, createdAt: true },
+    });
+    return { data: profile };
   }
 
   @Patch("me") async updateMe(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateProfileDto) {

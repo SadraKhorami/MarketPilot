@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { EllipsisVertical, LogOut, Settings2 } from "lucide-react";
+import { EllipsisVertical, LogOut, Settings2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -46,7 +46,12 @@ export function NavUser() {
           </DropdownMenuTrigger>
           <DropdownMenuContent className="min-w-52" side={isMobile ? "bottom" : "right"} align="end">
             <DropdownMenuItem asChild>
-              <Link href="/dashboard/settings/profile">
+              <Link href="/dashboard/profile">
+                <UserRound /> Profile
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard/settings/appearance">
                 <Settings2 /> Workspace settings
               </Link>
             </DropdownMenuItem>

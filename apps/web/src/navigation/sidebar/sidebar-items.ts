@@ -67,7 +67,7 @@ export const sidebarItems: NavGroup[] = [
         title: "Markets",
         icon: CandlestickChart,
         subItems: [
-          { id: "markets-overview", title: "Overview", url: "/dashboard/markets" },
+          { id: "markets-overview", title: "Overview", url: "/dashboard/markets", icon: ChartNoAxesCombined },
           { id: "watchlist", title: "Watchlist", url: "/dashboard/watchlist", icon: Bookmark },
         ],
       },
@@ -105,13 +105,13 @@ export const sidebarItems: NavGroup[] = [
     id: 3,
     label: "Account",
     items: [
+      { id: "profile", title: "Profile", url: "/dashboard/profile", icon: UserRound },
       { id: "activity", title: "Activity", url: "/dashboard/activity", icon: Activity },
       {
         id: "settings",
         title: "Settings",
         icon: Settings2,
         subItems: [
-          { id: "settings-profile", title: "Profile", url: "/dashboard/settings/profile", icon: UserRound },
           { id: "settings-security", title: "Security", url: "/dashboard/settings/security", icon: ShieldCheck },
           {
             id: "settings-notifications",

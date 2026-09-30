@@ -5,7 +5,6 @@ import { cookies } from "next/headers";
 import { cn } from "cn";
 
 import { AuthGate } from "@/app/(main)/dashboard/_components/auth-gate";
-import { DemoDataNotice } from "@/app/(main)/dashboard/_components/demo-data-notice";
 import { AppSidebar } from "@/app/(main)/dashboard/_components/sidebar/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -65,9 +64,6 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
         </header>
         {/* Pages can set data-content-padding="false" to render full-bleed app layouts. */}
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
-          <div className="mx-auto mb-5 w-full max-w-screen-2xl">
-            <DemoDataNotice />
-          </div>
           <AuthGate>{children}</AuthGate>
         </div>
       </SidebarInset>

@@ -130,7 +130,7 @@ export function ApiKeysWorkspace() {
         ))}
       </div>
       <Card className="shadow-none">
-        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
           <div>
             <CardTitle className="text-base">API keys</CardTitle>
             <CardDescription>Create, review, or revoke programmatic credentials.</CardDescription>

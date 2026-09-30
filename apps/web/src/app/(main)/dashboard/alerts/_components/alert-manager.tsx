@@ -24,6 +24,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { MarketSymbolField, normalizeMarketSymbol } from "@/app/(main)/dashboard/_components/market-symbol-field";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
 const conditions = {
@@ -59,6 +60,7 @@ const conditionNames = Object.fromEntries(Object.entries(conditions).map(([label
 export function AlertManager() {
   const [alerts, setAlerts] = useState<AlertRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<AlertRecord | null>(null);
   const form = useForm<Draft>({
@@ -69,17 +71,21 @@ export function AlertManager() {
   useEffect(() => {
     apiRequest<ApiEnvelope<AlertRecord[]>>("/alerts")
       .then(({ data }) => setAlerts(data))
-      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not load alerts."))
+      .catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "Could not load alerts."))
       .finally(() => setLoading(false));
   }, []);
 
   const createAlert = async (draft: Draft) => {
     try {
+      const normalizedAsset = normalizeMarketSymbol(draft.asset);
+      const { data: market } = await apiRequest<ApiEnvelope<{ data: { symbol: string } }>>(
+        `/market-data/${encodeURIComponent(normalizedAsset)}?interval=15m`,
+      );
       const { data } = await apiRequest<ApiEnvelope<AlertRecord>>("/alerts", {
         method: "POST",
         body: JSON.stringify({
           name: draft.name,
-          assetId: draft.asset,
+          assetId: market.data.symbol,
           condition: conditions[draft.condition],
           threshold: Number(draft.threshold),
         }),
@@ -100,7 +106,7 @@ export function AlertManager() {
         body: JSON.stringify({ enabled: !alert.enabled }),
       });
       setAlerts((current) => current.map((item) => (item.id === alert.id ? data : item)));
-      toast.success(data.enabled ? "Alert enabled." : "Alert paused.");
+      toast.success(data.enabled ? "Rule marked active. Evaluation is still unavailable." : "Rule paused.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update the alert.");
     }
@@ -119,32 +125,18 @@ export function AlertManager() {
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          ["Total rules", alerts.length, "Saved to your account"],
-          ["Active", alerts.filter((alert) => alert.enabled).length, "Not evaluated yet"],
-          ["Delivery channels", "In-app", "External channels are not connected"],
-        ].map(([label, value, caption]) => (
-          <Card key={String(label)} className="shadow-none">
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">{label}</p>
-              <p className="mt-2 text-2xl font-semibold">{value}</p>
-              <p className="text-xs text-muted-foreground">{caption}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
       <Card className="shadow-none">
-        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-          <div>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base">Alert rules</CardTitle>
             <CardDescription>
-              Rules are stored securely; background evaluation and delivery are not implemented.
+              {alerts.length} saved {alerts.length === 1 ? "rule" : "rules"} · Evaluation and notifications are not
+              connected.
             </CardDescription>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button className="w-full shrink-0 sm:w-auto">
                 <CirclePlus /> Create alert
               </Button>
             </DialogTrigger>
@@ -172,8 +164,13 @@ export function AlertManager() {
                   name="asset"
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor="alert-asset">Asset symbol</FieldLabel>
-                      <Input {...field} id="alert-asset" placeholder="BTC-USD" aria-invalid={fieldState.invalid} />
+                      <FieldLabel htmlFor="alert-asset">Market</FieldLabel>
+                      <MarketSymbolField
+                        id="alert-asset"
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="Search by symbol, e.g. BTC"
+                      />
                       {fieldState.invalid ? <FieldError errors={[fieldState.error]} /> : null}
                     </Field>
                   )}
@@ -233,15 +230,30 @@ export function AlertManager() {
           </Dialog>
         </CardHeader>
         <CardContent className="px-0 sm:px-6">
+          {loadError ? (
+            <div
+              className="mx-4 mb-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm sm:mx-0"
+              role="alert"
+            >
+              <p className="font-medium">Alerts could not be loaded</p>
+              <p className="mt-1 text-muted-foreground">{loadError}</p>
+            </div>
+          ) : null}
           {loading ? (
-            <p className="p-8 text-center text-muted-foreground" role="status">
+            <p className="p-5 text-center text-muted-foreground text-sm" role="status">
               Loading alerts…
             </p>
           ) : alerts.length === 0 ? (
-            <div className="m-4 rounded-lg border border-dashed p-8 text-center sm:m-0">
-              <BellRing className="mx-auto size-6 text-muted-foreground" />
-              <p className="mt-2 font-medium">No alert rules</p>
-              <p className="mt-1 text-sm text-muted-foreground">Create a rule to save an alert condition.</p>
+            <div className="mx-4 flex flex-col gap-3 rounded-lg border border-dashed bg-muted/20 p-4 sm:mx-0 sm:flex-row sm:items-center">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background ring-1 ring-border">
+                <BellRing className="size-4 text-muted-foreground" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-medium text-sm">No saved rules yet</p>
+                <p className="mt-1 text-muted-foreground text-sm">
+                  Create a condition to keep it with your account. It will not run or send a notification yet.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -266,7 +278,7 @@ export function AlertManager() {
                       <TableCell className="tabular-nums">{alert.threshold}</TableCell>
                       <TableCell>
                         <Badge variant={alert.enabled ? "default" : "outline"}>
-                          {alert.enabled ? "Active" : "Paused"}
+                          {alert.enabled ? "Marked active" : "Paused"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -305,8 +317,10 @@ export function AlertManager() {
           )}
         </CardContent>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 sm:px-6">
-          <span className="text-xs text-muted-foreground">Alert evaluation and notifications are not connected.</span>
-          <Badge variant="outline">Rules stored</Badge>
+          <span className="text-xs text-muted-foreground">
+            Saved rules are account data. They do not trigger alerts yet.
+          </span>
+          <Badge variant="outline">Saved only</Badge>
         </div>
       </Card>
       <Dialog

@@ -4,107 +4,178 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Link from "next/link";
 
-import { Plus, Trash2 } from "lucide-react";
+import type { MarketObservation } from "@marketpilot/market-data";
+import { ArrowRight, CandlestickChart, CircleAlert, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AssetMark,
+  MarketSymbolField,
+  marketName,
+  normalizeMarketSymbol,
+} from "@/app/(main)/dashboard/_components/market-symbol-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { apiRequest, type ApiEnvelope } from "@/lib/api/client";
-import type { MarketObservation } from "@marketpilot/market-data";
+import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
+
+import { MarketSparkline } from "../../_components/market-sparkline";
 
 type Watchlist = { id: string; name: string; items: { id: string; assetId: string }[] };
-type MarketSnapshot = { data: MarketObservation; freshness: "fresh" | "stale" };
+type MarketSnapshot = { data: MarketObservation; freshness: "fresh" | "stale"; fetchedAt: string };
+type SnapshotState =
+  | { status: "loading"; snapshot?: MarketSnapshot }
+  | { status: "ready"; snapshot: MarketSnapshot; warning?: string }
+  | { status: "error"; message: string };
 
 export function WatchlistManager() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  const [snapshots, setSnapshots] = useState<Record<string, MarketSnapshot | null>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const requestedSymbols = useRef(new Set<string>());
+  const [snapshots, setSnapshots] = useState<Record<string, SnapshotState>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"symbol" | "price-desc" | "change-desc">("symbol");
-  const [addSymbol, setAddSymbol] = useState("");
+  const [addQuery, setAddQuery] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const lastSnapshotRequest = useRef(0);
   const current = watchlists[0];
   const items = current?.items ?? [];
+  const itemsRef = useRef(items);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const loadWatchlists = useCallback(async () => {
-    setLoading(true);
     try {
       const { data } = await apiRequest<ApiEnvelope<Watchlist[]>>("/watchlists");
       setWatchlists(data);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not load watchlists.");
+      setError(null);
+      return data[0]?.items ?? [];
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not load your watchlist.");
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    void loadWatchlists();
-  }, [loadWatchlists]);
-  const loadMarketData = useCallback((assets: Watchlist["items"]) => {
-    for (const item of assets) {
-      if (requestedSymbols.current.has(item.assetId)) continue;
-      requestedSymbols.current.add(item.assetId);
-      apiRequest<ApiEnvelope<MarketSnapshot>>(`/market-data/${encodeURIComponent(item.assetId)}?interval=15m`)
-        .then(({ data }) => {
-          setSnapshots((previous) => ({ ...previous, [item.assetId]: data }));
-        })
-        .catch((error: unknown) => {
-          requestedSymbols.current.delete(item.assetId);
-          setSnapshots((previous) => ({ ...previous, [item.assetId]: null }));
-          setErrors((previous) => ({
-            ...previous,
-            [item.assetId]: error instanceof Error ? error.message : "Unavailable",
-          }));
-        });
-    }
+  const loadSnapshots = useCallback(async (assets: Watchlist["items"]) => {
+    if (!assets.length) return;
+    lastSnapshotRequest.current = Date.now();
+    setSnapshots((currentSnapshots) => {
+      const next = { ...currentSnapshots };
+      for (const { assetId } of assets) {
+        const existing = next[assetId];
+        const snapshot = existing && existing.status !== "error" ? existing.snapshot : undefined;
+        next[assetId] = { status: "loading", snapshot };
+      }
+      return next;
+    });
+    const results = await Promise.allSettled(
+      assets.map(async ({ assetId }) => {
+        const { data } = await apiRequest<ApiEnvelope<MarketSnapshot>>(
+          `/market-data/${encodeURIComponent(assetId)}?interval=15m`,
+        );
+        return [assetId, data] as const;
+      }),
+    );
+    setSnapshots((currentSnapshots) => {
+      const next = { ...currentSnapshots };
+      results.forEach((result, index) => {
+        const symbol = assets[index].assetId;
+        if (result.status === "fulfilled") {
+          next[symbol] = { status: "ready", snapshot: result.value[1] };
+        } else {
+          const previous = next[symbol];
+          next[symbol] =
+            previous?.status === "loading" && previous.snapshot
+              ? {
+                  status: "ready",
+                  snapshot: { ...previous.snapshot, freshness: "stale" },
+                  warning: "Latest refresh failed.",
+                }
+              : {
+                  status: "error",
+                  message: result.reason instanceof Error ? result.reason.message : "Market data unavailable.",
+                };
+        }
+      });
+      return next;
+    });
   }, []);
-  useEffect(() => loadMarketData(items), [items, loadMarketData]);
+
+  useEffect(() => {
+    let disposed = false;
+    const initial = async () => {
+      const assets = await loadWatchlists();
+      if (!disposed && assets) await loadSnapshots(assets);
+    };
+    void initial();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible" && itemsRef.current.length) void loadSnapshots(itemsRef.current);
+    }, 65_000);
+    const resume = () => {
+      if (
+        document.visibilityState === "visible" &&
+        itemsRef.current.length &&
+        Date.now() - lastSnapshotRequest.current >= 65_000
+      )
+        void loadSnapshots(itemsRef.current);
+    };
+    document.addEventListener("visibilitychange", resume);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", resume);
+    };
+  }, [loadSnapshots, loadWatchlists]);
 
   const visibleItems = useMemo(
     () =>
       items
         .filter((item) => item.assetId.toLowerCase().includes(query.trim().toLowerCase()))
         .toSorted((left, right) => {
-          if (sort === "price-desc")
-            return (
-              (snapshots[right.assetId]?.data.price ?? -Infinity) - (snapshots[left.assetId]?.data.price ?? -Infinity)
-            );
-          if (sort === "change-desc") {
-            const change = (symbol: string) => {
-              const data = snapshots[symbol]?.data;
-              const firstOpen = data?.candles.at(-1)?.open;
-              return data && firstOpen ? ((data.price - firstOpen) / firstOpen) * 100 : -Infinity;
-            };
-            return change(right.assetId) - change(left.assetId);
-          }
+          const leftSnapshot = snapshots[left.assetId];
+          const rightSnapshot = snapshots[right.assetId];
+          const leftData = leftSnapshot?.status === "ready" ? leftSnapshot.snapshot.data : null;
+          const rightData = rightSnapshot?.status === "ready" ? rightSnapshot.snapshot.data : null;
+          if (sort === "price-desc") return (rightData?.price ?? -Infinity) - (leftData?.price ?? -Infinity);
+          if (sort === "change-desc") return (getMove(rightData) ?? -Infinity) - (getMove(leftData) ?? -Infinity);
           return left.assetId.localeCompare(right.assetId);
         }),
     [items, query, snapshots, sort],
   );
 
-  const addAsset = async () => {
-    const symbol = addSymbol.trim().toUpperCase();
-    if (!current || !symbol) return;
+  const addAsset = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const symbol = normalizeMarketSymbol(addQuery);
+    if (!current || !symbol || adding) return;
+    setAdding(true);
+    setAddError(null);
     try {
-      const { data } = await apiRequest<ApiEnvelope<{ id: string; assetId: string }>>(
+      // Verify the product against the configured provider before saving it to the account.
+      const { data: snapshot } = await apiRequest<ApiEnvelope<MarketSnapshot>>(
+        `/market-data/${encodeURIComponent(symbol)}?interval=15m`,
+      );
+      const { data: item } = await apiRequest<ApiEnvelope<{ id: string; assetId: string }>>(
         `/watchlists/${current.id}/items`,
-        {
-          method: "POST",
-          body: JSON.stringify({ assetId: symbol }),
-        },
+        { method: "POST", body: JSON.stringify({ assetId: snapshot.data.symbol }) },
       );
       setWatchlists((previous) =>
-        previous.map((list) => (list.id === current.id ? { ...list, items: [...list.items, data] } : list)),
+        previous.map((list) => (list.id === current.id ? { ...list, items: [...list.items, item] } : list)),
       );
-      setAddSymbol("");
-      toast.success(`${symbol} added to your watchlist.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not add the symbol.");
+      setSnapshots((previous) => ({ ...previous, [item.assetId]: { status: "ready", snapshot } }));
+      setAddQuery("");
+      toast.success(`${item.assetId} added to your watchlist.`);
+    } catch (reason) {
+      setAddError(reason instanceof Error ? reason.message : "This market could not be verified.");
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -112,7 +183,6 @@ export function WatchlistManager() {
     if (!current) return;
     try {
       await apiRequest(`/watchlists/${current.id}/items/${itemId}`, { method: "DELETE" });
-      requestedSymbols.current.delete(symbol);
       setWatchlists((previous) =>
         previous.map((list) =>
           list.id === current.id ? { ...list, items: list.items.filter((item) => item.id !== itemId) } : list,
@@ -124,185 +194,231 @@ export function WatchlistManager() {
         return next;
       });
       toast.success(`${symbol} removed from your watchlist.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not remove the symbol.");
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : "Could not remove the market.");
     }
   };
-
-  if (loading)
-    return (
-      <div className="rounded-lg border p-8 text-center text-muted-foreground" role="status">
-        Loading your watchlist…
-      </div>
-    );
 
   return (
     <div className="space-y-4">
       <Card className="shadow-none">
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end sm:justify-between">
-          <label className="min-w-0 flex-1 font-medium text-sm" htmlFor="watchlist-search">
-            Search saved symbols
-            <Input
-              id="watchlist-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search symbol"
-              className="mt-1"
-            />
-          </label>
-          <label className="text-sm font-medium" htmlFor="watchlist-sort">
-            Sort
-            <select
-              id="watchlist-sort"
-              value={sort}
-              onChange={(event) => setSort(event.target.value as typeof sort)}
-              className="mt-1 block h-9 rounded-md border bg-background px-2"
-            >
-              <option value="symbol">Symbol A–Z</option>
-              <option value="price-desc">Price: high to low</option>
-              <option value="change-desc">Candle move: high to low</option>
-            </select>
-          </label>
-          <form
-            className="flex gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void addAsset();
-            }}
-          >
-            <label className="font-medium text-sm" htmlFor="watchlist-add">
-              Coinbase product
-              <Input
-                id="watchlist-add"
-                value={addSymbol}
-                onChange={(event) => setAddSymbol(event.target.value)}
-                placeholder="BTC-USD"
-                className="mt-1 sm:w-52"
-              />
-            </label>
-            <Button type="submit" className="self-end" disabled={!addSymbol.trim() || !current}>
-              <Plus /> Add
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-      <Card className="shadow-none">
-        <CardHeader>
-          <CardTitle className="text-base">{current?.name ?? "Watchlist"}</CardTitle>
-          <CardDescription>
-            {items.length} saved products · prices and indicators load from Coinbase Exchange
-          </CardDescription>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">{current?.name ?? "Your watchlist"}</CardTitle>
+              <CardDescription>
+                {loading
+                  ? "Loading saved markets…"
+                  : `${items.length} ${items.length === 1 ? "market" : "markets"} · prices refresh automatically`}
+              </CardDescription>
+            </div>
+            {items.length ? <Badge variant="outline">Coinbase Exchange</Badge> : null}
+          </div>
         </CardHeader>
-        {visibleItems.length === 0 ? (
-          <CardContent>
-            <div className="rounded-lg border border-dashed p-8 text-center">
-              <p className="font-medium">{items.length ? "No matching symbols" : "Your watchlist is empty"}</p>
-              <p className="mt-1 text-muted-foreground text-sm">
-                Add an exact Coinbase Exchange product identifier, such as BTC-USD.
-              </p>
+        <CardContent className="space-y-4">
+          <form onSubmit={addAsset}>
+            <FieldGroup className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <Field className="sm:max-w-sm">
+                <FieldLabel htmlFor="watchlist-add">Follow a market</FieldLabel>
+                <MarketSymbolField
+                  id="watchlist-add"
+                  value={addQuery}
+                  onChange={setAddQuery}
+                  placeholder="Choose an asset to follow"
+                  excluded={items.map((item) => item.assetId)}
+                  disabled={!current || adding}
+                />
+              </Field>
+              <Button type="submit" className="h-10 shrink-0" disabled={!current || !addQuery || adding}>
+                <Plus data-icon="inline-start" /> {adding ? "Adding…" : "Add to watchlist"}
+              </Button>
+            </FieldGroup>
+          </form>
+          {addError ? (
+            <div
+              className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
+              role="alert"
+            >
+              <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+              <p>{addError}</p>
             </div>
-          </CardContent>
-        ) : (
-          <CardContent className="px-0 sm:px-6">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Change in returned candles</TableHead>
-                    <TableHead>Trend</TableHead>
-                    <TableHead>Sentiment</TableHead>
-                    <TableHead className="text-right">
-                      <span className="sr-only">Remove</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleItems.map((item) => {
-                    const snapshot = snapshots[item.assetId];
-                    const response = snapshot?.data;
-                    const first = response?.candles.at(-1)?.open;
-                    const change = first && response ? ((response.price - first) / first) * 100 : null;
-                    return (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <Link
-                            href={`/dashboard/markets/${encodeURIComponent(item.assetId)}`}
-                            className="font-medium hover:underline"
-                          >
-                            {item.assetId}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          <MarketPriceValue
-                            response={response}
-                            loading={snapshots[item.assetId] === undefined}
-                            error={errors[item.assetId]}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {change === null ? "Unavailable" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}
-                        </TableCell>
-                        <TableCell>
-                          {response?.trend ? <Badge variant="outline">{response.trend}</Badge> : "Insufficient data"}
-                        </TableCell>
-                        <TableCell>Unavailable</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void removeAsset(item.id, item.assetId)}
-                            aria-label={`Remove ${item.assetId} from watchlist`}
-                          >
-                            <Trash2 />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+          ) : null}
+          {error ? (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 p-3 text-sm" role="alert">
+              <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+              <div className="flex-1">
+                <p>{error}</p>
+                <Button variant="link" className="h-auto p-0" onClick={() => void loadWatchlists()}>
+                  Try again
+                </Button>
+              </div>
             </div>
-            <div className="flex justify-end border-t pt-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  requestedSymbols.current.clear();
-                  setSnapshots({});
-                  setErrors({});
-                  loadMarketData(items);
-                }}
-              >
-                Refresh provider data
+          ) : null}
+          {loading ? (
+            <div className="p-6 text-center text-muted-foreground text-sm" role="status">
+              Loading your markets…
+            </div>
+          ) : null}
+          {!loading && !error && items.length === 0 ? (
+            <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                <CandlestickChart className="size-4 text-muted-foreground" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-sm">Your watchlist is ready for its first market</p>
+                <p className="mt-1 text-muted-foreground text-sm">
+                  Search by asset name in the menu above. Your saved markets will appear here with prices and charts.
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/dashboard/markets">
+                  Explore markets <ArrowRight data-icon="inline-end" />
+                </Link>
               </Button>
             </div>
-          </CardContent>
-        )}
+          ) : null}
+        </CardContent>
       </Card>
+
+      {items.length > 0 ? (
+        <Card className="shadow-none">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <CardTitle className="text-base">Market list</CardTitle>
+              <CardDescription>Live prices and moves over the returned 15 minute candle window.</CardDescription>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_auto]">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Filter markets"
+                  aria-label="Filter watchlist"
+                  className="pl-9"
+                />
+              </div>
+              <select
+                value={sort}
+                onChange={(event) => setSort(event.target.value as typeof sort)}
+                aria-label="Sort watchlist"
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="symbol">Symbol A–Z</option>
+                <option value="price-desc">Price: high to low</option>
+                <option value="change-desc">Move: high to low</option>
+              </select>
+            </div>
+          </CardHeader>
+          <CardContent className="px-0 sm:px-6">
+            {visibleItems.length ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Market</TableHead>
+                      <TableHead>Latest price</TableHead>
+                      <TableHead>Window move</TableHead>
+                      <TableHead>Trend</TableHead>
+                      <TableHead className="hidden lg:table-cell">Recent history</TableHead>
+                      <TableHead>
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleItems.map((item) => {
+                      const snapshot = snapshots[item.assetId];
+                      const ready = snapshot?.status === "ready" ? snapshot.snapshot : null;
+                      const move = ready ? getMove(ready.data) : null;
+                      let priceContent: React.ReactNode = "Loading…";
+                      if (ready) priceContent = formatPrice(ready.data.price);
+                      else if (snapshot?.status === "error")
+                        priceContent = <span title={snapshot.message}>Unavailable</span>;
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <Link
+                              href={`/dashboard/markets/${encodeURIComponent(item.assetId)}`}
+                              className="font-medium hover:underline"
+                            >
+                              <span className="flex items-center gap-2">
+                                <AssetMark symbol={item.assetId} small />
+                                {marketName(item.assetId)}{" "}
+                                <span className="text-muted-foreground text-xs">{item.assetId}</span>
+                              </span>
+                            </Link>
+                            <p className="mt-0.5 text-muted-foreground text-xs">
+                              {ready
+                                ? `Observed ${new Date(ready.data.timestamp).toLocaleTimeString()}${ready.freshness === "stale" ? " · cached" : ""}${snapshot?.status === "ready" && snapshot.warning ? " · refresh failed" : ""}`
+                                : "Coinbase Exchange"}
+                            </p>
+                          </TableCell>
+                          <TableCell className="font-medium tabular-nums">{priceContent}</TableCell>
+                          <TableCell className="tabular-nums">
+                            {move === null ? "—" : <Change value={move} />}
+                          </TableCell>
+                          <TableCell>
+                            {ready?.data.trend ? <Badge variant="outline">{formatTrend(ready.data.trend)}</Badge> : "—"}
+                          </TableCell>
+                          <TableCell className="hidden w-32 lg:table-cell">
+                            {ready ? (
+                              <MarketSparkline
+                                className="h-8"
+                                values={ready.data.candles.slice(-48).map((candle) => candle.close)}
+                                positive={(move ?? 0) >= 0}
+                              />
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => void removeAsset(item.id, item.assetId)}
+                              aria-label={`Remove ${item.assetId} from your watchlist`}
+                            >
+                              <Trash2 />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="p-6 text-center text-muted-foreground text-sm">No saved markets match “{query}”.</p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
 
-function MarketPriceValue({
-  response,
-  loading,
-  error,
-}: {
-  response?: MarketObservation;
-  loading: boolean;
-  error?: string;
-}) {
-  if (response) return formatPrice(response.price);
-  if (loading) return <span className="text-muted-foreground">Loading…</span>;
+function getMove(data?: MarketObservation | null) {
+  const firstOpen = data?.candles[0]?.open;
+  return data && firstOpen ? ((data.price - firstOpen) / firstOpen) * 100 : null;
+}
+
+function Change({ value }: { value: number }) {
   return (
-    <span className="text-muted-foreground" title={error}>
-      Unavailable
+    <span className={value >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+      {value >= 0 ? "+" : ""}
+      {value.toFixed(2)}%
     </span>
   );
 }
 
 function formatPrice(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 1 ? 8 : 4 }).format(value);
+}
+
+function formatTrend(value: string) {
+  return value[0].toUpperCase() + value.slice(1);
 }

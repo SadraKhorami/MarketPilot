@@ -1,4 +1,3 @@
-import { Newspaper } from "lucide-react";
 import type { Metadata } from "next";
 
 import { MarketPilotPage } from "../_components/marketpilot-page";
@@ -10,8 +9,7 @@ export default function NewsPage() {
   return (
     <MarketPilotPage
       title="News & Sentiment"
-      description="Browse normalized financial RSS metadata with original source links. Sentiment remains unavailable until a verified source or later classifier is added."
-      actions={<Newspaper className="size-5 text-muted-foreground" aria-hidden="true" />}
+      description="Your market reading desk. Discover the latest coverage, explore sources and keep the stories that matter."
     >
       <NewsExplorer />
     </MarketPilotPage>

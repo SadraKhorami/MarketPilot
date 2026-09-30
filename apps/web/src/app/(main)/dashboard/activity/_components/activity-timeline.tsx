@@ -31,7 +31,7 @@ export function ActivityTimeline() {
 
   return (
     <Card className="shadow-none">
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Recent activity</CardTitle>
           <CardDescription>Events are stored with your account and scoped to your user.</CardDescription>

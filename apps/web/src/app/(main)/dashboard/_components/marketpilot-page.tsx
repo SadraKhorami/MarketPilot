@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 
-import { ArrowUpRight } from "lucide-react";
-
 import { Badge } from "@/components/ui/badge";
 
 export function MarketPilotPage({
@@ -19,10 +17,6 @@ export function MarketPilotPage({
     <div className="@container/main mx-auto flex w-full max-w-screen-2xl flex-col gap-5 md:gap-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1.5">
-          <Badge variant="outline" className="mb-1 gap-1 text-muted-foreground">
-            <ArrowUpRight className="size-3" aria-hidden="true" />
-            Workspace preview
-          </Badge>
           <h1 className="font-semibold text-2xl tracking-tight sm:text-3xl">{title}</h1>
           <p className="max-w-3xl text-muted-foreground text-sm">{description}</p>
         </div>

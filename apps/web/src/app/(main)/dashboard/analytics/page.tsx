@@ -8,7 +8,7 @@ export default function AnalyticsPage() {
   return (
     <MarketDataWorkspace
       title="Analytics"
-      description="Review indicators, support and resistance levels, volatility, and source timestamps."
+      description="Study one product across price history, momentum, trend, volatility, and provider-derived levels."
       mode="analytics"
     />
   );

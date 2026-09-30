@@ -4,9 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "cn";
-import { ChevronRight, MailIcon, PlusCircleIcon } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
@@ -103,29 +102,6 @@ export function NavMain({ items }: NavMainProps) {
 
   return (
     <>
-      <SidebarGroup>
-        <SidebarGroupContent className="flex flex-col gap-2">
-          <SidebarMenu>
-            <SidebarMenuItem className="flex items-center gap-2">
-              <SidebarMenuButton
-                tooltip="Quick Create"
-                className="min-w-8 bg-primary text-primary-foreground duration-200 ease-linear hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground"
-              >
-                <PlusCircleIcon />
-                <span>Quick Create</span>
-              </SidebarMenuButton>
-              <Button
-                size="icon"
-                className="h-9 w-9 shrink-0 group-data-[collapsible=icon]:opacity-0"
-                variant="outline"
-              >
-                <MailIcon />
-                <span className="sr-only">Inbox</span>
-              </Button>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
       {items.map((group) => (
         <SidebarGroup key={group.id}>
           {group.label && (
@@ -264,12 +240,20 @@ function NavCollapsibleItem({ item, isActive, defaultOpen, isSubItemActive }: Na
         <NavItemBadge badge={item.badge} />
 
         <CollapsibleContent>
-          <SidebarMenuSub>
+          <SidebarMenuSub className="gap-0 border-l-0 px-0">
             {item.subItems.map((subItem) => {
               const SubIcon = subItem.icon;
 
               return (
-                <SidebarMenuSubItem key={subItem.id}>
+                <SidebarMenuSubItem
+                  key={subItem.id}
+                  className={cn(
+                    "py-0.5 pl-5",
+                    "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:border-sidebar-foreground/20 before:border-l last:before:hidden",
+                    "after:pointer-events-none after:absolute after:top-0 after:left-0 after:h-1/2 after:w-4",
+                    "after:rounded-bl-xl after:border-sidebar-foreground/20 after:border-b after:border-l",
+                  )}
+                >
                   <SidebarMenuSubButton
                     asChild
                     aria-disabled={subItem.disabled}

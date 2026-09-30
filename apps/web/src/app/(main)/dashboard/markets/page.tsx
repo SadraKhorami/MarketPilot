@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 
-import { MarketDataWorkspace } from "../_components/market-data-workspace";
+import { MarketPilotPage } from "../_components/marketpilot-page";
+import { MarketsExplorer } from "./_components/markets-explorer";
 
 export const metadata: Metadata = { title: "Markets · MarketPilot" };
 
 export default function MarketsPage() {
   return (
-    <MarketDataWorkspace
+    <MarketPilotPage
       title="Markets"
-      description="Explore Coinbase Exchange crypto products with provider timestamps, candles, and calculated technical indicators."
-    />
+      description="Search market products, compare live provider observations, and open a product to review its price history."
+    >
+      <MarketsExplorer />
+    </MarketPilotPage>
   );
 }

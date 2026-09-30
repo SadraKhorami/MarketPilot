@@ -1,6 +1,7 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { ApiCookieAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsOptional, IsString, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 import { DatabaseService } from "../database.module";
 import { RedisService } from "../redis.service";
@@ -15,6 +16,24 @@ class NewsQueryDto {
   @IsString()
   @MaxLength(100)
   category?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  pageSize = 20;
 }
 
 @ApiTags("news")
@@ -29,16 +48,43 @@ export class NewsController {
   @Get()
   @ApiOperation({ summary: "List normalized RSS articles with source provenance." })
   async list(@Query() query: NewsQueryDto) {
+    const search = query.search?.trim();
     const where = {
       ...(query.asset ? { affectedAssets: { has: query.asset.toUpperCase() } } : {}),
       ...(query.category ? { sourceCategories: { has: query.category } } : {}),
+      ...(search
+        ? {
+            OR: [
+              { title: { contains: search, mode: "insensitive" as const } },
+              { description: { contains: search, mode: "insensitive" as const } },
+              { source: { contains: search, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
     };
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
     const [articles, total, refreshState] = await Promise.all([
-      this.db.newsArticle.findMany({ where, orderBy: [{ publishedAt: "desc" }, { fetchedAt: "desc" }], take: 100 }),
+      this.db.newsArticle.findMany({
+        where,
+        orderBy: [{ publishedAt: "desc" }, { fetchedAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
       this.db.newsArticle.count({ where }),
       this.readRefreshState(),
     ]);
-    return { data: { articles, total, refreshState, sentiment: null as null } };
+    return {
+      data: {
+        articles,
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+        refreshState,
+        sentiment: null as null,
+      },
+    };
   }
 
   private async readRefreshState() {

@@ -1,7 +1,4 @@
-import { BellRing } from "lucide-react";
 import type { Metadata } from "next";
-
-import { Button } from "@/components/ui/button";
 
 import { MarketPilotPage } from "../_components/marketpilot-page";
 import { AlertManager } from "./_components/alert-manager";
@@ -12,12 +9,7 @@ export default function AlertsPage() {
   return (
     <MarketPilotPage
       title="Alerts"
-      description="Create and manage saved market alert rules for your account."
-      actions={
-        <Button variant="outline" disabled>
-          <BellRing /> Evaluation not enabled
-        </Button>
-      }
+      description="Save price and indicator conditions to review later. Rules are not evaluated or delivered yet."
     >
       <AlertManager />
     </MarketPilotPage>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import Link from "next/link";
 
-import { Check, Monitor, Moon, Palette, Save, ShieldCheck, Sun, UserRound } from "lucide-react";
+import { BellRing, Monitor, Moon, Palette, ShieldCheck, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
@@ -12,25 +12,22 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
-export type SettingsSection = "profile" | "security" | "notifications" | "appearance";
+export type SettingsSection = "security" | "notifications" | "appearance";
 
-const sectionLinks: Array<{ id: SettingsSection; label: string; icon: typeof UserRound }> = [
-  { id: "profile", label: "Profile", icon: UserRound },
+const sectionLinks: Array<{ id: SettingsSection; label: string; icon: typeof BellRing }> = [
   { id: "security", label: "Security", icon: ShieldCheck },
-  { id: "notifications", label: "Notifications", icon: Check },
+  { id: "notifications", label: "Notifications", icon: BellRing },
   { id: "appearance", label: "Appearance", icon: Palette },
 ];
 
 export function SettingsPanel({ section }: { section: SettingsSection }) {
   let content = <AppearanceSettings />;
-  if (section === "profile") content = <ProfileSettings />;
-  else if (section === "security") content = <SecuritySettings />;
+  if (section === "security") content = <SecuritySettings />;
   else if (section === "notifications") content = <NotificationSettings />;
 
   return (
@@ -47,63 +44,6 @@ export function SettingsPanel({ section }: { section: SettingsSection }) {
       </nav>
       {content}
     </div>
-  );
-}
-
-function ProfileSettings() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    apiRequest<ApiEnvelope<{ email: string; name: string | null }>>("/users/me")
-      .then(({ data }) => {
-        setName(data.name ?? "");
-        setEmail(data.email);
-      })
-      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not load your profile."))
-      .finally(() => setLoading(false));
-  }, []);
-  return (
-    <Card className="shadow-none">
-      <CardHeader>
-        <CardTitle className="text-base">Profile</CardTitle>
-        <CardDescription>Update the name shown on your MarketPilot account.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="max-w-xl space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void apiRequest("/users/me", { method: "PATCH", body: JSON.stringify({ name }) })
-              .then(() => toast.success("Profile saved."))
-              .catch((error: unknown) =>
-                toast.error(error instanceof Error ? error.message : "Could not save profile."),
-              );
-          }}
-        >
-          <div className="space-y-2">
-            <Label htmlFor="profile-name">Name</Label>
-            <Input
-              id="profile-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              autoComplete="name"
-              disabled={loading}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="profile-email">Email</Label>
-            <Input id="profile-email" type="email" value={email} autoComplete="email" disabled />
-          </div>
-          <div className="flex items-center gap-2">
-            <Button type="submit">
-              <Save /> Save profile
-            </Button>
-            <Badge variant="outline">Email changes unavailable</Badge>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
   );
 }
 
