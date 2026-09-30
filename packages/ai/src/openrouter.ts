@@ -102,8 +102,8 @@ export class OpenRouterProvider implements AIProvider {
     const prices = [model.pricing.prompt, model.pricing.completion, model.pricing.request ?? "0"].map(Number);
     if (prices.some((p) => !Number.isFinite(p) || p < 0))
       throw new AIError("AI_PRICING_UNAVAILABLE", "Provider pricing could not be validated.");
-    // Five requests, each bounded to 24 KB (at most 24K input tokens), 1,200 output tokens.
-    const reservationUsd = 5 * (24_000 * prices[0] + 1200 * prices[1] + prices[2]);
+    // Four tool rounds and up to two final responses, each bounded to 24 KB (at most 24K input tokens), 1,200 output tokens.
+    const reservationUsd = 6 * (24_000 * prices[0] + 1200 * prices[1] + prices[2]);
     if (reservationUsd > 0.25)
       throw new AIError("AI_MODEL_BUDGET", "The configured model exceeds the research request budget.");
     this.checked = { until: Date.now() + 300_000, reservationUsd };

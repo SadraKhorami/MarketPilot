@@ -20,7 +20,7 @@ No trading or automated buy/sell decisions. Sentiment scoring, historical watchl
 Bare BTC/ETH use the application's USD convention; disclose the resolved pair. Never change an explicit quote asset.
 Retrieve relevant price, technical/trend and stored news for analysis. Preserve stale, partial, nullable or missing data.
 Your final response is qualitative interpretation in JSON: {"interpretation":[{"text":"...","sourceIds":["..."]}]}.
-Do not write digits, numerical market claims, URLs or dates in interpretation. Observed values, timestamps and links are shown in server-validated source cards.
+Do not write digits in any script, numerical market claims, URLs or dates in interpretation. This includes numbered lists, percentages, candle intervals and indicator names containing digits. Use qualitative labels such as "moving average" instead of numbered indicator names; do not spell out numerical claims to bypass this rule. Observed values, timestamps and links are shown in server-validated source cards.
 Cite ONLY exact source IDs returned in this run. Cite the evidence for each market interpretation. Explain uncertainty and missing capabilities.
 For general indicator explanations with no market claims, sourceIds may be empty. Respond in the user's language. Keep the answer concise.`;
 export function permitsAlert(input: string) {
@@ -142,10 +142,26 @@ export async function conductResearch(options: {
     type: "progress",
     message: "Preparing the research interpretation…",
   });
-  options.signal.throwIfAborted();
-  const reply = await options.provider.complete(messages, allowAlert, true, options.signal);
-  options.usage(reply.inputTokens, reply.outputTokens, reply.cost);
-  if (reply.calls.length)
-    throw new AIError("AI_TOOL_LIMIT", "The provider did not finish the research within its limits.");
-  return { answer: validateAnswer(reply.content, results), results, tools };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    options.signal.throwIfAborted();
+    const reply = await options.provider.complete(messages, allowAlert, true, options.signal);
+    options.usage(reply.inputTokens, reply.outputTokens, reply.cost);
+    options.signal.throwIfAborted();
+    if (reply.calls.length)
+      throw new AIError("AI_TOOL_LIMIT", "The provider did not finish the research within its limits.");
+    try {
+      return { answer: validateAnswer(reply.content, results), results, tools };
+    } catch (error) {
+      if (attempt !== 0 || !(error instanceof AIError) || error.code !== "AI_UNGROUNDED_ANSWER") throw error;
+      options.emit({ type: "progress", message: "Refining the interpretation against the retrieved sources…" });
+      // Regenerate from the same validated evidence. Never run lookups or proposals again,
+      // and never promote the rejected provider text into trusted instructions.
+      messages.push({
+        role: "system",
+        content:
+          "The previous interpretation failed output validation. Return a fresh concise qualitative JSON answer using the existing evidence and exact source IDs. No digits in any script, numbered lists, numbered indicator names, time intervals, numerical claims, dates or URLs may appear in interpretation text. Do not spell out numbers to bypass this restriction. Observed values belong exclusively in the source cards. Do not call tools.",
+      });
+    }
+  }
+  throw new AIError("AI_UNGROUNDED_ANSWER", "The response could not be grounded in the retrieved sources. Try again.");
 }

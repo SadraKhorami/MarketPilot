@@ -35,6 +35,7 @@ test("uses explicit configured model, capability discovery, strict structured re
   });
   const check = await provider.check(signal);
   assert.ok(check.reservationUsd < 0.25);
+  assert.equal(check.reservationUsd, 6 * (24_000 * 0.000001 + 1200 * 0.000001));
   await provider.complete([{ role: "user", content: "Explain RSI" }], false, true, signal);
   assert.equal(requests[0].url, "https://openrouter.ai/api/v1/models");
   assert.equal(requests[1].body?.model, "test/research");

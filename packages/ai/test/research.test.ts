@@ -311,3 +311,63 @@ test("reused tool identifiers are rejected even for different lookups", async ()
     (error: unknown) => error instanceof AIError && error.code === "AI_INVALID_TOOL_CALL",
   );
 });
+
+test("repairs digit-containing interpretations once using existing evidence and accounts for both completions", async () => {
+  for (const text of ["MA50 suggests momentum", "The 15m candles are volatile", "بازه ۱۵ دقیقه نوسانی است"]) {
+    const invalid = JSON.stringify({ interpretation: [{ text, sourceIds: [source.id] }] });
+    const provider = fake([
+      completion([call("getMarketPrice")]),
+      completion(),
+      { ...completion([], invalid), cost: 0.002 },
+      { ...completion([], answer), cost: 0.003 },
+    ]);
+    let lookups = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cost = 0;
+    const research = await run(provider.provider, {
+      execute: async () => {
+        lookups++;
+        return result;
+      },
+      usage: (incoming, outgoing, usd) => {
+        inputTokens += incoming;
+        outputTokens += outgoing;
+        cost += usd ?? 0;
+      },
+    });
+    assert.equal(research.answer.interpretation[0].text, JSON.parse(answer).interpretation[0].text);
+    assert.equal(provider.count(), 4);
+    assert.equal(lookups, 1);
+    assert.equal(inputTokens, 80);
+    assert.equal(outputTokens, 40);
+    assert.equal(cost, 0.005);
+    assert.equal(provider.messages[3].at(-1)?.role, "system");
+    assert.doesNotMatch(provider.messages[3].at(-1)?.content ?? "", /MA50|15m|۱۵/);
+  }
+});
+
+test("a failed repair remains rejected without unbounded retries", async () => {
+  const invalid = JSON.stringify({ interpretation: [{ text: "Price is 200 USD", sourceIds: [source.id] }] });
+  const provider = fake([
+    completion([call("getMarketPrice")]),
+    completion(),
+    completion([], invalid),
+    completion([], invalid),
+  ]);
+  await assert.rejects(
+    run(provider.provider),
+    (error: unknown) => error instanceof AIError && error.code === "AI_UNGROUNDED_ANSWER",
+  );
+  assert.equal(provider.count(), 4);
+});
+
+test("unknown citations do not trigger a numerical repair", async () => {
+  const invalid = JSON.stringify({ interpretation: [{ text: "Unsupported evidence", sourceIds: ["invented"] }] });
+  const provider = fake([completion([call("getMarketPrice")]), completion(), completion([], invalid)]);
+  await assert.rejects(
+    run(provider.provider),
+    (error: unknown) => error instanceof AIError && error.code === "AI_INVALID_CITATION",
+  );
+  assert.equal(provider.count(), 3);
+});
