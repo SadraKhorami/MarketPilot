@@ -47,6 +47,18 @@ test("uses explicit configured model, capability discovery, strict structured re
   assert.equal(requests[1].body?.max_tokens, 1200);
   assert.equal(requests[1].body?.tool_choice, "none");
 });
+test("routes with strict parameters without requiring optional parallel tool-call support", async () => {
+  const provider = new OpenRouterProvider("test/research", "test-only-key", undefined, async (_url, options) => {
+    const body = JSON.parse(String(options?.body));
+    if (Object.hasOwn(body, "parallel_tool_calls")) return Response.json({ error: { code: 404 } }, { status: 404 });
+    assert.equal(body.provider.require_parameters, true);
+    assert.equal(body.tool_choice, "auto");
+    assert.ok(body.tools.length > 0);
+    return Response.json(response);
+  });
+  const result = await provider.complete([{ role: "user", content: "Explain momentum" }], false, false, signal);
+  assert.equal(result.outputTokens, 10);
+});
 test("missing configuration, unsupported model/capabilities and expensive models fail closed", async () => {
   assert.throws(() => new OpenRouterProvider("", ""), /configured/);
   assert.throws(() => new OpenRouterProvider("test/research", "test-only-key", "https://evil.test"), /unsupported/);

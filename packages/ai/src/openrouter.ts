@@ -120,7 +120,6 @@ export class OpenRouterProvider implements AIProvider {
       messages,
       tools: toolDefinitions(allowAlert),
       tool_choice: final ? "none" : "auto",
-      parallel_tool_calls: false,
       max_tokens: 1200,
       stream: false,
       provider: {
