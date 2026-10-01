@@ -1,11 +1,11 @@
-import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import {
-  MarketDataProviderError,
-  MarketObservationSchema,
   type MarketDataInterval,
   type MarketDataProvider,
+  MarketDataProviderError,
   type MarketObservation,
+  MarketObservationSchema,
 } from "@marketpilot/market-data";
+import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 
 import { RedisService } from "../redis.service";
 
@@ -43,8 +43,8 @@ export class MarketDataService {
       if (fresh && Date.now() - Date.parse(fresh.fetchedAt) < FRESH_TTL_SECONDS * 1000) {
         return { ...fresh, freshness: "fresh" };
       }
-    } catch (error) {
-      this.logger.warn(`Market cache unavailable (${error instanceof Error ? error.message : "unknown error"})`);
+    } catch {
+      this.logger.warn({ event: "market_cache_unavailable" });
     }
 
     try {
@@ -56,10 +56,8 @@ export class MarketDataService {
         freshness: "fresh",
         fetchedAt: new Date().toISOString(),
       };
-      await this.redis.client.set(cacheKey, JSON.stringify(record), "EX", STALE_TTL_SECONDS).catch((error) => {
-        this.logger.warn(
-          `Could not cache market observation (${error instanceof Error ? error.message : "unknown error"})`,
-        );
+      await this.redis.client.set(cacheKey, JSON.stringify(record), "EX", STALE_TTL_SECONDS).catch(() => {
+        this.logger.warn({ event: "market_cache_write_failed" });
       });
       return record;
     } catch (error) {

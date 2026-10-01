@@ -12,11 +12,11 @@ The repository contains a Next.js app in `apps/web`, a NestJS REST API in `apps/
 
 ## Run locally
 
-Requirements: Node.js 22+, pnpm 10.26+, and Docker Compose.
+Requirements: Node.js 24.20.0 (see `.node-version`), pnpm 10.26.0, and Docker Compose.
 
 ```bash
 cp .env.example .env
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev:infra
 pnpm db:generate
 pnpm db:migrate
@@ -88,3 +88,11 @@ Configure server secrets, apply the two additive bot migrations, build `@marketp
 The existing API key lifecycle and read API are completed with catalog-driven permission choices, transactionally recorded create/revoke audit events, no-store credential responses, per-key usage shortcuts, searchable filters, UTC reporting and paginated request history. Redis key windows return `X-RateLimit-Limit`, `X-RateLimit-Window`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `X-RateLimit-Mode` and actionable `Retry-After` on 429. The guide and Swagger describe all eight existing supported GET routes; no sentiment or write endpoint is advertised.
 
 No additional database migration or provider configuration is required. Existing running services and bot webhook settings were not deliberately stopped, restarted or reconfigured. Phase 7 verification is static only; no automated tests or browser tabs were run. See [developer API contracts, examples and limits](docs/developer-api.md).
+
+## Production preparation (Phase 8)
+
+Production artifacts are available for web, API and the worker in `docker/Dockerfile`; bot command processing stays in the API and independent external alert delivery stays in the worker. App runners are non-root, Prisma is generated for the image architecture, and Next uses standalone monorepo tracing. `compose.yaml` remains the local infrastructure setup. `compose.production.yaml` is an explicit separate full-stack staging/production composition with private durable PostgreSQL/Redis and an operator-only migration profile.
+
+See [deployment and operations](docs/deployment.md) for protected environment templates, build-time public URLs, TLS/proxy setup, explicit migrations, health/failure diagnosis, backups/restores, bot cutover and verification limits. CI retains tests and migration checks and builds all container targets without publishing. No deployment, production migration, webhook registration, real bot message, paid AI call or Phase 9 feature was performed by this preparation.
+
+Public liveness is available at web `/health` and API `/api/v1/health`; API readiness probes real Postgres/Redis responses. The worker has private liveness/readiness probes, fresh per-stage consumer records and sanitized job outcomes in Administration → System. Process readiness does not establish provider availability or successful external delivery. Last-used session/key metadata is written at most once per minute per record; each authenticated request still records its own usage.

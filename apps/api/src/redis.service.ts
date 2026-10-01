@@ -1,8 +1,8 @@
-import { Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
+import { type BeforeApplicationShutdown, Injectable, Logger } from "@nestjs/common";
 import Redis from "ioredis";
 
 @Injectable()
-export class RedisService implements OnModuleDestroy {
+export class RedisService implements BeforeApplicationShutdown {
   private readonly logger = new Logger(RedisService.name);
   readonly client: Redis;
 
@@ -11,9 +11,11 @@ export class RedisService implements OnModuleDestroy {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
+      connectTimeout: 2500,
+      commandTimeout: 2500,
       retryStrategy: (attempt) => Math.min(attempt * 250, 2000),
     });
-    this.client.on("error", (error: Error) => this.logger.warn(`Redis connection issue: ${error.message}`));
+    this.client.on("error", () => this.logger.warn({ event: "redis_unavailable" }));
   }
 
   async ensureConnected() {
@@ -21,7 +23,7 @@ export class RedisService implements OnModuleDestroy {
     if (this.client.status !== "ready") throw new Error("Redis is not ready");
   }
 
-  async onModuleDestroy() {
+  async beforeApplicationShutdown() {
     if (this.client.status !== "end") await this.client.quit().catch(() => undefined);
   }
 }

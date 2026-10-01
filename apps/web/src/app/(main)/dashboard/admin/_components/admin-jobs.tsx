@@ -16,12 +16,22 @@ import { CollectionPagination, type PagedResult } from "../../_components/collec
 import { ResourceState } from "../../_components/resource-state";
 import { QueueHealth, queueLabels } from "./queue-health";
 
+export interface QueueRuntime {
+  name: string;
+  ready: boolean;
+  lastCompletedAt: string | null;
+  lastFailedAt: string | null;
+  lastFailureCode: string | null;
+  lastLatencyMs: number | null;
+}
 interface JobsOverview {
   checkedAt: string;
+  status: "healthy" | "degraded" | "unavailable";
+  workers: Array<{ workerId: string; checkedAt: string; ready: boolean; queues: QueueRuntime[] }> | null;
   redis: "reachable" | "unavailable";
   activeWorkers: number | null;
-  pendingEvaluations: number;
-  pendingNotifications: number;
+  pendingEvaluations: number | null;
+  pendingNotifications: number | null;
   queues: Array<{ name: string; paused: boolean; counts: Record<string, number> }> | null;
 }
 interface JobRecord {
@@ -32,6 +42,8 @@ interface JobRecord {
   failedAt: string | null;
   reason: string | null;
 }
+const processingLabels = { healthy: "Healthy", degraded: "Needs attention", unavailable: "Unavailable" };
+
 export function AdminJobs() {
   const [queue, setQueue] = useState("market-refresh");
   const [status, setStatus] = useState("failed");
@@ -69,12 +81,14 @@ export function AdminJobs() {
   }
   return (
     <Card className="min-w-0">
-      <CardHeader>
-        <CardTitle>Alert processing</CardTitle>
-        <CardDescription>
-          Market observations → rule evaluation → inbox and opted-in external delivery. Refreshes every 30 seconds.
-        </CardDescription>
-        <CardAction>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <CardTitle>Alert processing</CardTitle>
+          <CardDescription>
+            Market observations → rule evaluation → inbox and opted-in external delivery. Refreshes every 30 seconds.
+          </CardDescription>
+        </div>
+        <CardAction className="shrink-0">
           <Button
             size="sm"
             variant="outline"
@@ -97,7 +111,7 @@ export function AdminJobs() {
                 {
                   label: "Worker processes",
                   value: overview.data.activeWorkers,
-                  detail: "Heartbeat received in the last 45 seconds",
+                  detail: "Ready consumers and dependencies within 45 seconds",
                 },
                 {
                   label: "Pending evaluations",
@@ -119,14 +133,24 @@ export function AdminJobs() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="min-w-0 flex-1 text-muted-foreground text-xs">
-                Checked {new Date(overview.data.checkedAt).toLocaleTimeString()} · Heartbeats confirm running processes,
-                not successful delivery.
+                Checked {new Date(overview.data.checkedAt).toLocaleTimeString()} · Recent heartbeats confirm readiness.
+                Completed jobs do not prove provider acceptance.
               </p>
-              <Badge variant={overview.data.redis === "reachable" ? "secondary" : "destructive"}>
-                Redis {overview.data.redis}
-              </Badge>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Badge variant={overview.data.status === "healthy" ? "secondary" : "destructive"}>
+                  {processingLabels[overview.data.status]}
+                </Badge>
+                <Badge variant={overview.data.redis === "reachable" ? "outline" : "destructive"}>
+                  Redis {overview.data.redis}
+                </Badge>
+              </div>
             </div>
-            {overview.data.queues ? <QueueHealth queues={overview.data.queues} /> : null}
+            {overview.data.queues ? (
+              <QueueHealth
+                queues={overview.data.queues.filter((item) => item.name !== "bot-commands")}
+                runtimes={overview.data.workers?.flatMap((worker) => worker.queues) ?? null}
+              />
+            ) : null}
           </>
         ) : null}
         <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -172,7 +196,10 @@ export function AdminJobs() {
             {jobs.data.items.length ? (
               <div className="flex flex-col divide-y">
                 {jobs.data.items.map((job) => (
-                  <div key={job.id} className="flex w-full flex-col gap-3 py-3 sm:flex-row sm:items-center">
+                  <div
+                    key={job.id}
+                    className="flex w-full flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm">
                         {job.name} · {job.reason ?? status}

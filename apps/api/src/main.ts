@@ -1,25 +1,35 @@
+import "./environment";
 import "reflect-metadata";
 
 import { randomUUID } from "node:crypto";
+import type { Server } from "node:http";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
 import helmet from "helmet";
 import { API_CATALOG } from "./api-keys/api-catalog";
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./common/api-exception.filter";
 import { RequestUsageMiddleware } from "./common/request-usage.middleware";
-
-dotenv.config({ path: "../../.env" });
+import { validateApiConfiguration, webOrigins } from "./common/runtime-config";
+import { StructuredLogger } from "./common/structured-logger";
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
-  const origins = (process.env.WEB_ORIGIN ?? "http://localhost:3000,http://localhost:3001")
-    .split(",")
-    .map((origin) => origin.trim());
+  validateApiConfiguration();
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+    abortOnError: false,
+    logger: new StructuredLogger({ json: true }),
+  });
+  const origins = webOrigins();
+  app.set(
+    "trust proxy",
+    process.env.TRUST_PROXY && process.env.TRUST_PROXY !== "false"
+      ? process.env.TRUST_PROXY.split(",").map((entry) => entry.trim())
+      : false,
+  );
 
   app.enableShutdownHooks();
   app.setGlobalPrefix("api/v1");
@@ -55,6 +65,8 @@ async function bootstrap() {
   );
   const usage = app.get(RequestUsageMiddleware);
   app.use(usage.use.bind(usage));
+  app.useBodyParser("json", { limit: "128kb" });
+  app.useBodyParser("urlencoded", { extended: false, limit: "128kb", parameterLimit: 100 });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -87,9 +99,20 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: false },
   });
 
-  if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
   const port = Number(process.env.API_PORT ?? 4000);
+  const server: Server = app.getHttpServer();
+  server.headersTimeout = 10000;
+  server.requestTimeout = 15000;
+  server.keepAliveTimeout = 5000;
   await app.listen(port, process.env.API_HOST ?? "0.0.0.0");
 }
 
-void bootstrap();
+void bootstrap().catch((error: unknown) => {
+  // Initialization errors may contain connection URLs. Diagnose configuration by names, never dump errors.
+  const configuration =
+    error instanceof Error && /^(Invalid|Missing) configuration: [A-Z_, ]+$/.test(error.message)
+      ? error.message
+      : undefined;
+  console.error(JSON.stringify({ event: "api_start_failed", timestamp: new Date().toISOString(), configuration }));
+  process.exit(1);
+});

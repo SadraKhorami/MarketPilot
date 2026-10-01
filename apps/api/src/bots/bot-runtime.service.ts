@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type BotProvider, botConfiguration, botProviders, encryptPayload } from "@marketpilot/bots";
-import { botHeartbeatKey, connectionOptions, createQueue, queuePrefix } from "@marketpilot/jobs";
+import { botHeartbeatKey, boundedOperation, connectionOptions, createQueue, queuePrefix } from "@marketpilot/jobs";
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { Worker } from "bullmq";
 import { DatabaseService } from "../database.module";
@@ -15,6 +15,8 @@ export class BotRuntimeService implements OnModuleInit, OnModuleDestroy {
   private worker: Worker<{ id: string }> | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private recovering = false;
+  private lastCleanupAt = 0;
+  private transportReady = true;
   private readonly instance = randomUUID();
   private readonly abort = new AbortController();
   constructor(
@@ -59,7 +61,23 @@ export class BotRuntimeService implements OnModuleInit, OnModuleDestroy {
         limiter: { max: 20, duration: 60000 },
       },
     );
-    this.worker.on("error", () => console.error(JSON.stringify({ event: "bot_worker_unavailable" })));
+    this.worker.on("error", () => {
+      this.transportReady = false;
+      console.error(JSON.stringify({ event: "bot_worker_unavailable" }));
+    });
+    this.worker.on("ready", () => {
+      this.transportReady = true;
+    });
+    this.worker.on("completed", (job) =>
+      console.log(
+        JSON.stringify({
+          event: "bot_job_completed",
+          jobId: job.id,
+          timestamp: new Date().toISOString(),
+          latencyMs: job.processedOn ? Date.now() - job.processedOn : null,
+        }),
+      ),
+    );
     this.worker.on("failed", (job) =>
       console.error(JSON.stringify({ event: "bot_command_failed", commandId: job?.data.id })),
     );
@@ -70,11 +88,37 @@ export class BotRuntimeService implements OnModuleInit, OnModuleDestroy {
     if (this.recovering || this.abort.signal.aborted) return;
     this.recovering = true;
     try {
-      await this.db.botCommand.deleteMany({ where: { expiresAt: { lt: new Date() } } });
-      await this.db.botLinkToken.deleteMany({ where: { expiresAt: { lt: new Date(Date.now() - 86400000) } } });
+      if (this.lastCleanupAt < Date.now() - 60000) {
+        const [commands, links] = await Promise.all([
+          this.db.botCommand.findMany({
+            where: { expiresAt: { lt: new Date() } },
+            orderBy: { expiresAt: "asc" },
+            take: 500,
+            select: { id: true },
+          }),
+          this.db.botLinkToken.findMany({
+            where: { expiresAt: { lt: new Date(Date.now() - 86400000) } },
+            orderBy: { expiresAt: "asc" },
+            take: 500,
+            select: { id: true },
+          }),
+        ]);
+        if (commands.length)
+          await this.db.botCommand.deleteMany({ where: { id: { in: commands.map((item) => item.id) } } });
+        if (links.length)
+          await this.db.botLinkToken.deleteMany({ where: { id: { in: links.map((item) => item.id) } } });
+        this.lastCleanupAt = Date.now();
+      }
       if (!this.queue) return;
       await this.redis.ensureConnected();
-      if (this.worker?.isRunning() && !this.worker.isPaused())
+      const connected = this.worker
+        ? await boundedOperation(this.worker.client).then(
+            (client) => client.status === "ready",
+            () => false,
+          )
+        : false;
+      const paused = await boundedOperation(this.queue.isPaused());
+      if (connected && !paused && this.transportReady && this.worker?.isRunning() && !this.worker.isPaused())
         await this.redis.client.zadd(botHeartbeatKey, Date.now(), this.instance);
       else await this.redis.client.zrem(botHeartbeatKey, this.instance);
       await this.redis.client.zremrangebyscore(botHeartbeatKey, 0, Date.now() - 90000);

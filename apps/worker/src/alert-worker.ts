@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@marketpilot/db";
-import { connectionOptions, createQueue, heartbeatKey, jobConfig, queuePrefix } from "@marketpilot/jobs";
+import {
+  connectionOptions,
+  createQueue,
+  heartbeatKey,
+  jobConfig,
+  queuePrefix,
+  workerRegistryKey,
+  workerStatusPrefix,
+} from "@marketpilot/jobs";
 import { CoinbaseExchangeProvider, MarketDataProviderError } from "@marketpilot/market-data";
 import { MultiMarketProvider, TradingViewProvider } from "@marketpilot/market-data/providers";
 import { type Job, type Queue, Worker } from "bullmq";
@@ -9,6 +17,7 @@ import { deliverTrigger } from "./alert-delivery.js";
 import { evaluateObservation } from "./alert-evaluator.js";
 import { isInterval } from "./alert-observation.js";
 import { startExternalWorker } from "./external-worker.js";
+import { WorkerHealth } from "./health.js";
 
 type RefreshJob = { symbol?: string; interval?: string };
 type ReferenceJob = { id: string };
@@ -18,6 +27,8 @@ export async function startAlertWorker(db: PrismaClient) {
   const redis = new Redis({
     ...connectionOptions(),
     maxRetriesPerRequest: 1,
+    connectTimeout: 2500,
+    commandTimeout: 2500,
     enableOfflineQueue: false,
   });
   redis.on("error", () =>
@@ -28,6 +39,7 @@ export async function startAlertWorker(db: PrismaClient) {
       }),
     ),
   );
+  const health = new WorkerHealth(db, redis, instanceId);
   const queues = {
     refresh: createQueue("market-refresh"),
     evaluation: createQueue("alert-evaluation"),
@@ -173,6 +185,9 @@ export async function startAlertWorker(db: PrismaClient) {
   });
   let external: Awaited<ReturnType<typeof startExternalWorker>> | undefined;
   const workers = [refresh, evaluation, notifications];
+  health.track(refresh, queues.refresh);
+  health.track(evaluation, queues.evaluation);
+  health.track(notifications, queues.notifications);
   for (const worker of workers) {
     worker.on("failed", (job: Job | undefined, error: Error) => {
       const code = /^[A-Z_]{3,80}$/.test(error.message) ? error.message : "JOB_FAILED";
@@ -199,26 +214,33 @@ export async function startAlertWorker(db: PrismaClient) {
   }
   for (const queue of Object.values(queues))
     queue.on("error", () => console.error(JSON.stringify({ event: "queue_unavailable", queue: queue.name })));
-  const beat = async () => {
-    if (
-      workers.every((worker) => worker.isRunning() && !worker.isPaused()) &&
-      (!external || (external.worker.isRunning() && !external.worker.isPaused()))
-    )
-      await redis.zadd(heartbeatKey, Date.now(), instanceId);
-    else await redis.zrem(heartbeatKey, instanceId);
-    await redis.zremrangebyscore(heartbeatKey, 0, Date.now() - 90000);
-  };
-  const timer = setInterval(() => void beat().catch(() => undefined), 15000);
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const beat = () =>
+    health.publish().catch(() =>
+      console.error(
+        JSON.stringify({
+          event: "worker_heartbeat_failed",
+          timestamp: new Date().toISOString(),
+          workerId: instanceId,
+        }),
+      ),
+    );
   const close = async () => {
-    clearInterval(timer);
-    await Promise.all(workers.map((worker) => worker.close()));
-    await external?.close();
-    await redis.zrem(heartbeatKey, instanceId).catch(() => undefined);
-    await Promise.all(Object.values(queues).map((queue) => queue.close()));
-    await redis.quit().catch(() => undefined);
+    health.stop();
+    if (timer) clearInterval(timer);
+    const results = await Promise.allSettled([...workers.map((worker) => worker.close()), external?.close()]);
+    await Promise.allSettled([
+      redis.zrem(heartbeatKey, instanceId),
+      redis.zrem(workerRegistryKey, instanceId),
+      redis.del(`${workerStatusPrefix}${instanceId}`),
+    ]);
+    const closed = await Promise.allSettled(Object.values(queues).map((queue) => queue.close()));
+    await redis.quit().catch(() => redis.disconnect());
+    if ([...results, ...closed].some((result) => result.status === "rejected")) throw new Error("WORKER_CLOSE_FAILED");
   };
   try {
     external = await startExternalWorker(db, redis);
+    health.track(external.worker, external.queue);
     await Promise.all(workers.map((worker) => worker.waitUntilReady()));
     await queues.refresh.setGlobalConcurrency(config.refreshConcurrency);
     await queues.refresh.upsertJobScheduler(
@@ -226,7 +248,8 @@ export async function startAlertWorker(db: PrismaClient) {
       { every: config.cadenceMs },
       { name: "dispatch", data: {} },
     );
-    await beat();
+    await health.publish();
+    timer = setInterval(() => void beat(), 15000);
     console.log(
       JSON.stringify({
         event: "alert_worker_ready",
@@ -239,5 +262,5 @@ export async function startAlertWorker(db: PrismaClient) {
     await close();
     throw error;
   }
-  return close;
+  return { close, probe: () => health.probe(), stop: () => health.stop() };
 }

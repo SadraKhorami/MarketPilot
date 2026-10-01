@@ -15,3 +15,10 @@ build/
 coverage/
 *.tsbuildinfo
 .turbo/
+
+# Operational files and local service env files.
+*.env
+/secrets/
+*.dump
+*.rdb
+*.aof

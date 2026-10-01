@@ -1,10 +1,11 @@
-import { PrismaClient } from "@marketpilot/db";
+import type { PrismaClient } from "@marketpilot/db";
 import { InvestingRssSource, parseInvestingRssFeeds } from "@marketpilot/news";
 import Redis from "ioredis";
 
-const prisma = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
   lazyConnect: true,
+  connectTimeout: 2500,
+  commandTimeout: 2500,
   maxRetriesPerRequest: 1,
   enableOfflineQueue: false,
 });
@@ -14,7 +15,7 @@ const lockKey = "marketpilot:news:refresh-lock:v1";
 const statusKey = "marketpilot:news:refresh-status:v1";
 const lockValue = `${process.pid}:${Date.now()}`;
 
-async function refreshNews() {
+async function refreshNews(prisma: PrismaClient) {
   const startedAt = new Date().toISOString();
   if (process.env.NEWS_INGESTION_ENABLED !== "true") {
     await redis.set(
@@ -121,25 +122,24 @@ const redisFeedStateStore = {
   },
 };
 
-export async function startNewsWorker() {
-  if (!Number.isInteger(intervalSeconds) || intervalSeconds < 300)
+export async function startNewsWorker(prisma: PrismaClient) {
+  if (!Number.isInteger(intervalSeconds) || intervalSeconds < 300 || intervalSeconds > 86400)
     throw new Error("Invalid NEWS_REFRESH_INTERVAL_SECONDS");
   try {
     await redis.connect();
   } catch (error) {
     redis.disconnect();
-    await prisma.$disconnect();
     throw error;
   }
-  let active = refreshNews().catch(() => console.error(JSON.stringify({ event: "news_refresh_failed" })));
+  let active = refreshNews(prisma).catch(() => console.error(JSON.stringify({ event: "news_refresh_failed" })));
   const timer = setInterval(() => {
     active = active
-      .then(() => refreshNews())
+      .then(() => refreshNews(prisma))
       .catch(() => console.error(JSON.stringify({ event: "news_refresh_failed" })));
   }, intervalSeconds * 1000);
   return async () => {
     clearInterval(timer);
     await active;
-    await Promise.allSettled([prisma.$disconnect(), redis.quit()]);
+    await redis.quit();
   };
 }

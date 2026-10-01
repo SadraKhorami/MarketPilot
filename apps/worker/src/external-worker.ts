@@ -75,5 +75,5 @@ export async function startExternalWorker(db: PrismaClient, redis: Redis) {
     await close();
     throw error;
   }
-  return { close, worker };
+  return { close, worker, queue };
 }

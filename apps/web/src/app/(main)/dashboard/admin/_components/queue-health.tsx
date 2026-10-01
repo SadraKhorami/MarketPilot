@@ -2,6 +2,8 @@ import { BellRing, ChartNoAxesCombined, ListChecks } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 
+import type { QueueRuntime } from "./admin-jobs";
+
 export const queueLabels: Record<string, string> = {
   "market-refresh": "Market refresh",
   "alert-evaluation": "Rule evaluation",
@@ -20,16 +22,29 @@ const states = ["waiting", "active", "delayed", "failed", "completed"] as const;
 
 export function QueueHealth({
   queues,
+  runtimes,
 }: {
   queues: Array<{ name: string; paused: boolean; counts: Record<string, number> }>;
+  runtimes: QueueRuntime[] | null;
 }) {
   return (
-    <div className="grid min-w-0 gap-3 lg:grid-cols-3">
+    <div className="grid min-w-0 gap-3 md:grid-cols-2">
       {queues.map((queue) => {
         const details = queueDetails[queue.name];
         const Icon = details?.icon ?? ListChecks;
         const failed = queue.counts.failed ?? 0;
-        let status = "No retained failures";
+        const consumers = runtimes?.filter((runtime) => runtime.name === queue.name) ?? [];
+        const ready = consumers.filter((consumer) => consumer.ready).length;
+        const latest = (values: Array<string | null>) =>
+          values
+            .filter((value): value is string => value !== null)
+            .sort()
+            .at(-1);
+        const completedAt = latest(consumers.map((consumer) => consumer.lastCompletedAt));
+        const failedAt = latest(consumers.map((consumer) => consumer.lastFailedAt));
+        const lastFailure = consumers.find((consumer) => consumer.lastFailedAt === failedAt);
+        let status = ready ? "Consumers ready" : "No ready consumers";
+        if (queue.name === "bot-commands") status = "Inspect bot runtime below";
         if (failed > 0) status = "Failures to review";
         if (queue.paused) status = "Paused";
         return (
@@ -51,8 +66,36 @@ export function QueueHealth({
                 </div>
               ))}
             </dl>
+            {queue.name !== "bot-commands" ? (
+              <dl className="flex flex-col gap-2 border-t pt-3 text-xs">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-muted-foreground">Ready consumers</dt>
+                  <dd className="tabular-nums">{runtimes === null ? "Unavailable" : ready}</dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-muted-foreground">Last completed job</dt>
+                  <dd>{completedAt ? new Date(completedAt).toLocaleString() : "Not observed"}</dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-muted-foreground">Last failed job</dt>
+                  <dd>{failedAt ? new Date(failedAt).toLocaleString() : "Not observed"}</dd>
+                </div>
+                {lastFailure?.lastFailureCode ? (
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-muted-foreground">Failure reason</dt>
+                    <dd className="break-all text-destructive">{lastFailure.lastFailureCode}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            ) : null}
             <div className="border-t pt-3">
-              <Badge variant={failed > 0 ? "destructive" : "outline"}>{status}</Badge>
+              <Badge
+                variant={
+                  failed > 0 || queue.paused || (queue.name !== "bot-commands" && !ready) ? "destructive" : "outline"
+                }
+              >
+                {status}
+              </Badge>
             </div>
           </div>
         );

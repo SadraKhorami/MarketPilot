@@ -1,4 +1,14 @@
-import { createQueue, heartbeatKey, type QueueName, queueNames } from "@marketpilot/jobs";
+import {
+  boundedOperation,
+  createQueue,
+  heartbeatKey,
+  parseWorkerSnapshot,
+  type QueueName,
+  queueNames,
+  type WorkerSnapshot,
+  workerRegistryKey,
+  workerStatusPrefix,
+} from "@marketpilot/jobs";
 import { BadRequestException, Injectable, type OnModuleDestroy, ServiceUnavailableException } from "@nestjs/common";
 import { type PageQueryDto, pageResult } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
@@ -30,45 +40,63 @@ export class JobsService implements OnModuleDestroy {
     let queue = this.queues.get(known);
     if (!queue) {
       queue = createQueue(known);
-      queue.on("error", () => undefined);
+      queue.on("error", () => console.error(JSON.stringify({ event: "admin_queue_unavailable", queue: known })));
       this.queues.set(known, queue);
     }
     return queue;
   }
   async overview() {
     const [pendingEvaluations, pendingNotifications] = await Promise.all([
-      this.db.alertObservation.count({ where: { completedAt: null } }),
-      this.db.alertTrigger.count({ where: { deliveryStatus: "pending" } }),
+      boundedOperation(this.db.alertObservation.count({ where: { completedAt: null } })).catch(() => null),
+      boundedOperation(this.db.alertTrigger.count({ where: { deliveryStatus: "pending" } })).catch(() => null),
     ]);
+    const base = { checkedAt: new Date().toISOString(), pendingEvaluations, pendingNotifications };
     try {
-      await this.redis.ensureConnected();
-      const activeWorkers = await this.redis.client.zcount(heartbeatKey, Date.now() - 45000, "+inf");
-      const queues = await this.bounded(
-        Promise.all(
-          queueNames.map(async (name) => ({
-            name,
-            counts: await this.queue(name).getJobCounts("waiting", "active", "delayed", "failed", "completed"),
-            paused: await this.queue(name).isPaused(),
-          })),
-        ),
+      await boundedOperation(this.redis.ensureConnected().then(() => this.redis.client.ping()));
+    } catch {
+      return { ...base, status: "unavailable", redis: "unavailable", activeWorkers: null, workers: null, queues: null };
+    }
+    try {
+      const [activeWorkers, instances, queues] = await this.bounded(
+        Promise.all([
+          this.redis.client.zcount(heartbeatKey, Date.now() - 45000, "+inf"),
+          this.redis.client.zrangebyscore(workerRegistryKey, Date.now() - 45000, "+inf", "LIMIT", 0, 50),
+          Promise.all(
+            queueNames.map(async (name) => ({
+              name,
+              counts: await this.queue(name).getJobCounts("waiting", "active", "delayed", "failed", "completed"),
+              paused: await this.queue(name).isPaused(),
+            })),
+          ),
+        ]),
       );
+      const records = instances.length
+        ? await this.bounded(this.redis.client.mget(...instances.map((id) => `${workerStatusPrefix}${id}`)))
+        : [];
+      const workers = records
+        .map((value) => (value ? parseWorkerSnapshot(value) : null))
+        .filter(
+          (value): value is WorkerSnapshot => value !== null && Date.parse(value.checkedAt) >= Date.now() - 45000,
+        );
+      const degraded =
+        !activeWorkers ||
+        workers.length !== instances.length ||
+        !workers.length ||
+        workers.some((worker) => !worker.ready) ||
+        queues.some((queue) => queue.paused || (queue.counts.failed ?? 0) > 0);
+      let status = degraded ? "degraded" : "healthy";
+      if (pendingEvaluations === null || pendingNotifications === null) status = "unavailable";
       return {
-        checkedAt: new Date().toISOString(),
+        ...base,
+        status,
         redis: "reachable",
         activeWorkers,
-        pendingEvaluations,
-        pendingNotifications,
+        workers,
         queues,
       };
     } catch {
-      return {
-        checkedAt: new Date().toISOString(),
-        redis: "unavailable",
-        activeWorkers: null,
-        pendingEvaluations,
-        pendingNotifications,
-        queues: null,
-      };
+      // A queue inspection failure does not establish that the Redis PING failed.
+      return { ...base, status: "degraded", redis: "reachable", activeWorkers: null, workers: null, queues: null };
     }
   }
   async list(name: string, status: "failed" | "waiting" | "active" | "delayed", query: PageQueryDto) {

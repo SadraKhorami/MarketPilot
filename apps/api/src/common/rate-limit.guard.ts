@@ -12,6 +12,7 @@ export class RateLimitGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request & { user?: { id: string; apiKeyId?: string } }>();
+    if (request.method === "GET" && /^\/(?:api\/v1\/)?health(?:\/ready)?$/.test(request.path)) return true;
     if (request.method === "POST" && request.path.endsWith("/auth/logout")) return true;
     // Webhook acknowledgements have a three-second deadline. Use a cheap pre-auth IP guard;
     // verified platform senders get distributed, fail-closed limits in BotRateService.

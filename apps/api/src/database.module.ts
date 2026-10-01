@@ -1,8 +1,11 @@
 import { PrismaClient, RoleName } from "@marketpilot/db";
-import { Global, Injectable, Module, type OnModuleInit } from "@nestjs/common";
+import { type BeforeApplicationShutdown, Global, Injectable, Module, type OnModuleInit } from "@nestjs/common";
 
 @Injectable()
-export class DatabaseService extends PrismaClient implements OnModuleInit {
+export class DatabaseService extends PrismaClient implements OnModuleInit, BeforeApplicationShutdown {
+  async beforeApplicationShutdown() {
+    await this.$disconnect();
+  }
   async onModuleInit() {
     await this.$connect();
     for (const name of Object.values(RoleName)) {

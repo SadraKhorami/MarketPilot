@@ -1,19 +1,46 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalPassThroughEnv": ["DATABASE_URL", "REDIS_URL"],
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "REDIS_URL"
+  ],
   "tasks": {
     "dev": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "cache": false,
       "persistent": true
     },
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**"
+      ],
+      "env": [
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_APP_URL",
+        "NEXT_TELEMETRY_DISABLED"
+      ]
     },
-    "test": { "dependsOn": ["^build"] },
-    "test:e2e": { "dependsOn": ["^generate"], "cache": false },
-    "generate": { "cache": false },
+    "test": {
+      "dependsOn": [
+        "^build"
+      ]
+    },
+    "test:e2e": {
+      "dependsOn": [
+        "^generate"
+      ],
+      "cache": false
+    },
+    "generate": {
+      "cache": false
+    },
     "lint": {
       "outputs": []
     },
@@ -21,7 +48,9 @@
       "outputs": []
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": []
     }
   }

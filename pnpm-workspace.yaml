@@ -1,8 +1,16 @@
 packages:
   - "apps/*"
   - "packages/*"
+injectWorkspacePackages: true
+syncInjectedDepsAfterScripts:
+  - build
 onlyBuiltDependencies:
   - "@prisma/client"
   - "@prisma/engines"
   - "bcrypt"
   - "prisma"
+
+# Scoped security patch; retain the existing Swagger API and all other dependency versions.
+overrides:
+  "@nestjs/swagger>js-yaml": 5.4.1
+  "@prisma/config>deepmerge-ts": 8.0.0

@@ -1,5 +1,6 @@
 import { botConfiguration, botProviders } from "@marketpilot/bots";
 import { Prisma } from "@marketpilot/db";
+import { boundedOperation } from "@marketpilot/jobs";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { aiConfiguration } from "../ai/ai.service";
 
@@ -227,7 +228,7 @@ export class AdminService {
     const check = async (operation: () => Promise<unknown>) => {
       const start = Date.now();
       try {
-        await operation();
+        await boundedOperation(operation());
         return { status: "healthy", latencyMs: Date.now() - start };
       } catch {
         return { status: "unavailable", latencyMs: null };
@@ -239,7 +240,7 @@ export class AdminService {
         await this.redis.ensureConnected();
         await this.redis.client.ping();
       }),
-      this.db.newsArticle.count().catch(() => null),
+      boundedOperation(this.db.newsArticle.count()).catch(() => null),
     ]);
     return {
       checkedAt: new Date(),

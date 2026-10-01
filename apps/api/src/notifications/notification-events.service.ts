@@ -13,7 +13,7 @@ export class NotificationEventsService {
       });
     } catch {
       // A notification failure must not change the outcome of an already completed sign-in/key operation.
-      this.logger.error("Could not persist a security notification.");
+      this.logger.error({ event: "security_notification_failed" });
     }
   }
   async registered(userId: string, identity: string) {
@@ -44,7 +44,7 @@ export class NotificationEventsService {
           });
       });
     } catch {
-      this.logger.error("Could not persist account registration notifications.");
+      this.logger.error({ event: "registration_notifications_failed" });
     }
   }
 }

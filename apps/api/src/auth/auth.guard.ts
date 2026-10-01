@@ -17,7 +17,8 @@ export class AuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const sessionToken = request.cookies?.[SESSION_COOKIE] as string | undefined;
+    const cookie = request.cookies?.[SESSION_COOKIE];
+    const sessionToken = typeof cookie === "string" && cookie.length <= 256 ? cookie : undefined;
     // An explicit bearer credential must not inherit a browser session's broader access.
     if (sessionToken && !request.headers.authorization) {
       const session = await this.db.session.findUnique({
@@ -32,16 +33,24 @@ export class AuthGuard implements CanActivate {
           roles: session.user.roles.map((item) => item.role.name),
           sessionId: session.id,
         };
-        void this.db.session
-          .update({ where: { id: session.id }, data: { lastSeenAt: new Date() } })
-          .catch(() => undefined);
+        if (!session.lastSeenAt || session.lastSeenAt.getTime() < Date.now() - 60000) {
+          void this.db.session
+            .updateMany({
+              where: {
+                id: session.id,
+                OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: new Date(Date.now() - 60000) } }],
+              },
+              data: { lastSeenAt: new Date() },
+            })
+            .catch(() => undefined);
+        }
         return true;
       }
     }
 
     const authorization = request.headers.authorization;
     const apiKey = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
-    if (apiKey) {
+    if (apiKey && apiKey.length <= 256) {
       const prefix = apiKey.slice(0, 24);
       const record = await this.db.apiKey.findUnique({
         where: { prefix },
@@ -53,6 +62,7 @@ export class AuthGuard implements CanActivate {
         record &&
         record.revokedAt === null &&
         (!record.expiresAt || record.expiresAt > new Date()) &&
+        expected.length === supplied.length &&
         timingSafeEqual(supplied, expected) &&
         record.user.status === "ACTIVE"
       ) {
@@ -64,9 +74,17 @@ export class AuthGuard implements CanActivate {
           apiKeyId: record.id,
           apiKeyScopes: record.scopes,
         };
-        void this.db.apiKey
-          .update({ where: { id: record.id }, data: { lastUsedAt: new Date() } })
-          .catch(() => undefined);
+        if (!record.lastUsedAt || record.lastUsedAt.getTime() < Date.now() - 60000) {
+          void this.db.apiKey
+            .updateMany({
+              where: {
+                id: record.id,
+                OR: [{ lastUsedAt: null }, { lastUsedAt: { lt: new Date(Date.now() - 60000) } }],
+              },
+              data: { lastUsedAt: new Date() },
+            })
+            .catch(() => undefined);
+        }
         return true;
       }
     }

@@ -409,6 +409,7 @@ model BotLinkToken {
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, provider, expiresAt])
+  @@index([expiresAt])
 }
 
 model ExternalDelivery {
@@ -460,6 +461,7 @@ model BotCommand {
 
   @@unique([provider, eventId])
   @@index([status, expiresAt])
+  @@index([expiresAt])
 }
 
 model BotRuntime {

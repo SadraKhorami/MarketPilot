@@ -11,7 +11,18 @@ export class RequestUsageMiddleware implements NestMiddleware {
   use(request: AuthenticatedRequest & { requestId?: string }, response: Response, next: NextFunction) {
     const startedAt = Date.now();
     response.once("finish", () => {
-      if (!request.user || request.path.startsWith("/api/v1/health")) return;
+      if (request.path.startsWith("/api/v1/health")) return;
+      const metadata = {
+        requestId: request.requestId,
+        route: typeof request.route?.path === "string" ? request.route.path : "unmatched",
+        method: request.method,
+        statusCode: response.statusCode,
+        latencyMs: Date.now() - startedAt,
+        userId: request.user?.id,
+      };
+      // Route templates only: never query strings, bodies, credentials or raw unknown paths.
+      this.logger.log({ event: "request_completed", ...metadata });
+      if (!request.user) return;
       void this.db.apiUsage
         .create({
           data: {
@@ -19,13 +30,13 @@ export class RequestUsageMiddleware implements NestMiddleware {
             apiKeyId: request.user.apiKeyId ?? null,
             authType: request.user.apiKeyId ? "API_KEY" : "SESSION",
             requestId: request.requestId ?? randomUUID(),
-            route: String(request.route?.path ?? request.path).slice(0, 160),
+            route: String(metadata.route).slice(0, 160),
             method: request.method,
             statusCode: response.statusCode,
-            latencyMs: Date.now() - startedAt,
+            latencyMs: metadata.latencyMs,
           },
         })
-        .catch(() => this.logger.warn("Could not persist authenticated request metadata."));
+        .catch(() => this.logger.warn({ event: "request_metadata_failed", requestId: request.requestId }));
     });
     next();
   }
