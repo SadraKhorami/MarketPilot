@@ -9,6 +9,7 @@ import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
+import { alertMetric, MarketAlertDetails } from "./market-alert-report";
 import { categoryLabels, type NotificationRecord, severityLabels } from "./notification-types";
 export function NotificationDetail({ item, onClose }: { item: NotificationRecord | null; onClose: () => void }) {
   return (
@@ -36,8 +37,16 @@ export function NotificationDetail({ item, onClose }: { item: NotificationRecord
                       {severityLabels[item.severity]}
                     </Badge>
                   </div>
-                  <ItemTitle className="line-clamp-none [overflow-wrap:anywhere]">{item.title}</ItemTitle>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{item.body}</p>
+                  <ItemTitle className="line-clamp-none [overflow-wrap:anywhere]">
+                    {item.category === "MARKET_ALERT" && item.marketAlert
+                      ? `${item.marketAlert.assetId} · ${alertMetric(item.marketAlert)} alert`
+                      : item.title}
+                  </ItemTitle>
+                  {item.category === "MARKET_ALERT" && item.marketAlert ? (
+                    <MarketAlertDetails report={item.marketAlert} />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{item.body}</p>
+                  )}
                 </ItemContent>
               </Item>
               {item.actionPath && (

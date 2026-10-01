@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Item, ItemActions, ItemContent, ItemMedia } from "@/components/ui/item";
 
+import { alertMetric, alertSummary, alertValue, observationTime } from "./market-alert-report";
 import { useNotifications } from "./notification-provider";
 import { categoryLabels, type NotificationRecord } from "./notification-types";
 
@@ -28,6 +29,8 @@ export function NotificationRow({
 }) {
   const { pending, mutate } = useNotifications();
   const Icon = icons[item.category];
+  const report = item.category === "MARKET_ALERT" ? item.marketAlert : null;
+  const title = report ? `${report.assetId} · ${alertMetric(report)} alert` : item.title;
   return (
     <Item role="listitem" variant={item.readAt ? "outline" : "muted"} className="items-start">
       <ItemMedia variant="icon" className={cn("mt-1", item.severity === "CRITICAL" && "text-destructive")}>
@@ -40,10 +43,18 @@ export function NotificationRow({
           aria-label={`Read notification: ${item.title}`}
           className="flex w-full cursor-pointer flex-col gap-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="font-medium text-sm [overflow-wrap:anywhere]">{item.title}</span>
+          <span className="font-medium text-sm [overflow-wrap:anywhere]">{title}</span>
           <span className="line-clamp-2 text-muted-foreground text-sm leading-normal [overflow-wrap:anywhere]">
-            {item.body}
+            {report ? alertSummary(report) : item.body}
           </span>
+          {report && (
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="font-medium tabular-nums">Recorded {alertValue(report.value, report.unit)}</span>
+              <span className="text-muted-foreground text-xs">
+                {report.interval} · <time dateTime={report.observationAt}>{observationTime(report.observationAt)}</time>
+              </span>
+            </span>
+          )}
           <span className="flex flex-wrap items-center gap-2">
             {!item.readAt && <Badge variant="secondary">New</Badge>}
             {!compact && <Badge variant="outline">{categoryLabels[item.category]}</Badge>}

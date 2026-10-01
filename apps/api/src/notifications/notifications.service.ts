@@ -14,6 +14,7 @@ const publicSelect = {
   readAt: true,
   archivedAt: true,
   createdAt: true,
+  triggerId: true,
 } as const;
 @Injectable()
 export class NotificationsService {
@@ -44,7 +45,52 @@ export class NotificationsService {
       }),
       this.db.notification.count({ where }),
     ]);
-    return pageResult(items, total, query);
+    const triggerIds = items.flatMap((item) => (item.triggerId ? [item.triggerId] : []));
+    const triggers = triggerIds.length
+      ? await this.db.alertTrigger.findMany({
+          where: { userId, id: { in: triggerIds } },
+          select: {
+            id: true,
+            alertId: true,
+            assetId: true,
+            condition: true,
+            threshold: true,
+            value: true,
+            unit: true,
+            interval: true,
+            observationAt: true,
+            source: true,
+            providerSymbol: true,
+            priceKind: true,
+          },
+        })
+      : [];
+    const byId = new Map(triggers.map((trigger) => [trigger.id, trigger]));
+    return pageResult(
+      items.map(({ triggerId, ...item }) => {
+        const trigger = triggerId ? byId.get(triggerId) : undefined;
+        return {
+          ...item,
+          marketAlert: trigger
+            ? {
+                alertId: trigger.alertId,
+                assetId: trigger.assetId,
+                condition: trigger.condition,
+                threshold: trigger.threshold.toString(),
+                value: trigger.value.toString(),
+                unit: trigger.unit,
+                interval: trigger.interval,
+                observationAt: trigger.observationAt,
+                source: trigger.source,
+                providerSymbol: trigger.providerSymbol,
+                priceKind: trigger.priceKind,
+              }
+            : null,
+        };
+      }),
+      total,
+      query,
+    );
   }
   async summary(userId: string) {
     const [unread, inbox, archived] = await Promise.all([
