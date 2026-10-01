@@ -38,7 +38,10 @@ function setup() {
       cost: 0.001,
     }),
   };
-  const service = new AiService(db as never, tools as never, budget as never, proposals as never, provider);
+  const service = new AiService(db as never, tools as never, budget as never, proposals as never, provider, {
+    consumeIn: jest.fn(),
+    locked: (_id: string, action: (tx: typeof db) => unknown) => action(db),
+  } as never);
   return { service, db, budget, release, tools, proposals, provider };
 }
 describe("AI research lifecycle", () => {
@@ -113,7 +116,7 @@ describe("AI research lifecycle", () => {
   });
   it("fails closed when provider is missing or admission exceeds limits", async () => {
     const { db, tools, budget, proposals } = setup();
-    const missing = new AiService(db as never, tools as never, budget as never, proposals as never, null);
+    const missing = new AiService(db as never, tools as never, budget as never, proposals as never, null, {} as never);
     await expect(missing.research("owner", input, new AbortController().signal, () => undefined)).rejects.toMatchObject(
       { code: "AI_NOT_CONFIGURED" },
     );

@@ -14,6 +14,12 @@ export function validateApiConfiguration() {
   jobConfig();
   const port = Number(process.env.API_PORT ?? 4000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid configuration: API_PORT");
+  const mode = process.env.BILLING_MODE ?? "disabled";
+  if (!["disabled", "demo", "stripe_test"].includes(mode)) throw new Error("Invalid configuration: BILLING_MODE");
+  if (mode === "stripe_test" && !process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_"))
+    throw new Error("Invalid configuration: STRIPE_SECRET_KEY (test keys only)");
+  if (process.env.STRIPE_WEBHOOK_SECRET && !process.env.STRIPE_WEBHOOK_SECRET.startsWith("whsec_"))
+    throw new Error("Invalid configuration: STRIPE_WEBHOOK_SECRET");
   if (process.env.NODE_ENV !== "production") return;
   if (!process.env.WEB_ORIGIN?.trim() || !webOrigins().length) throw new Error("Missing configuration: WEB_ORIGIN");
   for (const origin of webOrigins()) {

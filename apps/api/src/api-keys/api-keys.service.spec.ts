@@ -19,7 +19,11 @@ describe("ApiKeysService", () => {
       ...db,
       $transaction: jest.fn(async (operation: (tx: typeof db) => Promise<unknown>) => operation(db)),
     };
-    const service = new ApiKeysService(store as never, { security: jest.fn(), registered: jest.fn() } as never);
+    const service = new ApiKeysService(
+      store as never,
+      { security: jest.fn(), registered: jest.fn() } as never,
+      { capacity: jest.fn() } as never,
+    );
     const result = await service.create("user-1", " Data job ", ["watchlists:read"]);
     expect(result.secret).toMatch(/^mp_live_[0-9a-f]{16}_[0-9a-f]{64}$/);
     expect(record?.prefix).toBe(result.secret.slice(0, 24));
@@ -40,7 +44,11 @@ describe("ApiKeysService", () => {
       ...db,
       $transaction: jest.fn(async (operation: (tx: typeof db) => Promise<unknown>) => operation(db)),
     };
-    const service = new ApiKeysService(store as never, { security: jest.fn(), registered: jest.fn() } as never);
+    const service = new ApiKeysService(
+      store as never,
+      { security: jest.fn(), registered: jest.fn() } as never,
+      { capacity: jest.fn() } as never,
+    );
     const rows = await service.list("user-1");
     expect(rows[0]).not.toHaveProperty("secretHash");
     await service.revoke("user-1", "key-1");
@@ -59,7 +67,11 @@ describe("ApiKeysService", () => {
       ...db,
       $transaction: jest.fn(async (operation: (tx: typeof db) => Promise<unknown>) => operation(db)),
     };
-    const service = new ApiKeysService(store as never, { security: jest.fn(), registered: jest.fn() } as never);
+    const service = new ApiKeysService(
+      store as never,
+      { security: jest.fn(), registered: jest.fn() } as never,
+      { capacity: jest.fn() } as never,
+    );
     await expect(service.revoke("user-2", "key-1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

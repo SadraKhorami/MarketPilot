@@ -8,7 +8,8 @@ import {
   type StreamEvent,
 } from "@marketpilot/ai";
 import { type AiRun, Prisma } from "@marketpilot/db";
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { EntitlementsService } from "../billing/entitlements.service";
 import { type PageQueryDto, pageResult } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
 import type { ResearchDto } from "./ai.dto";
@@ -31,6 +32,7 @@ export class AiService {
     private readonly budget: AiBudgetService,
     private readonly proposals: AiProposalsService,
     @Inject(AI_PROVIDER) private readonly provider: AIProvider | null,
+    private readonly entitlements: EntitlementsService,
   ) {}
   status() {
     const config = aiConfiguration();
@@ -117,7 +119,8 @@ export class AiService {
       );
     }
     if (!this.provider) throw new AIError("AI_NOT_CONFIGURED", this.status().message);
-    const config = await this.provider.check(signal);
+    const provider = this.provider;
+    const config = await provider.check(signal);
     const release = await this.budget.acquire(userId, config.reservationUsd);
     let run: AiRun | undefined;
     let inputTokens = 0;
@@ -127,18 +130,21 @@ export class AiService {
     const start = Date.now();
     try {
       signal.throwIfAborted();
-      run = await this.db.aiRun.create({
-        data: {
-          userId,
-          requestId: dto.requestId,
-          conversationId: dto.conversationId,
-          input,
-          inputHash,
-          status: "running",
-          model: this.provider.model,
-          reservedUsd: config.reservationUsd,
-          expiresAt: new Date(Date.now() + 7 * 86400_000),
-        },
+      run = await this.entitlements.locked(userId, async (tx) => {
+        await this.entitlements.consumeIn(tx, userId, "ai");
+        return tx.aiRun.create({
+          data: {
+            userId,
+            requestId: dto.requestId,
+            conversationId: dto.conversationId,
+            input,
+            inputHash,
+            status: "running",
+            model: provider.model,
+            reservedUsd: config.reservationUsd,
+            expiresAt: new Date(Date.now() + 7 * 86400_000),
+          },
+        });
       });
       const prior = await this.db.aiRun.findMany({
         where: { userId, conversationId: dto.conversationId, status: "completed", expiresAt: { gt: new Date() } },
@@ -222,9 +228,14 @@ export class AiService {
               ? "Research timed out. Ask a narrower question."
               : "Research was cancelled.",
           )
-        : error instanceof AIError
-          ? error
-          : new AIError("AI_RESEARCH_FAILED", "Research could not be completed. Try again.");
+        : error instanceof ForbiddenException
+          ? new AIError(
+              "AI_PLAN_LIMIT",
+              "Your daily plan research allowance has been reached. Manage your plan in Billing; usage resets at 00:00 UTC.",
+            )
+          : error instanceof AIError
+            ? error
+            : new AIError("AI_RESEARCH_FAILED", "Research could not be completed. Try again.");
       if (run)
         await this.db.aiRun.update({
           where: { id: run.id },
@@ -240,7 +251,7 @@ export class AiService {
         });
       throw safe;
     } finally {
-      await release();
+      await release(!run);
     }
   }
   async cleanup() {

@@ -7,10 +7,16 @@ describe("AlertsService", () => {
 
   it("creates an alert scoped to its owner", async () => {
     const db = {
+      activityLog: { create: jest.fn() },
       alert: { create: jest.fn().mockResolvedValue({ id: "a1", assetId: "BTC-USDT", threshold: "64000" }) },
     };
     const catalog = { list: jest.fn().mockResolvedValue({ instruments: [{ symbol: "BTC-USDT", available: true }] }) };
-    const service = new AlertsService(db as never, activity as never, catalog as never);
+    const service = new AlertsService(
+      db as never,
+      activity as never,
+      { capacity: jest.fn(), locked: (_id: string, action: (tx: typeof db) => unknown) => action(db) } as never,
+      catalog as never,
+    );
     const result = await service.create("user-1", {
       name: " BTC level ",
       assetId: "btc-usdt",
@@ -33,7 +39,14 @@ describe("AlertsService", () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
-    const service = new AlertsService(db as never, activity as never);
+    const service = new AlertsService(
+      db as never,
+      activity as never,
+      {
+        capacity: jest.fn(),
+        locked: (_id: string, action: (tx: typeof db) => unknown) => action(db),
+      } as never,
+    );
     await service.update("user-1", "a1", { enabled: false });
     expect(db.alert.updateMany).toHaveBeenCalledWith({
       where: { id: "a1", userId: "user-1", updatedAt },
@@ -45,7 +58,14 @@ describe("AlertsService", () => {
 
   it("returns not found when another owner changes an alert", async () => {
     const db = { alert: { findFirst: jest.fn().mockResolvedValue(null), updateMany: jest.fn() } };
-    const service = new AlertsService(db as never, activity as never);
+    const service = new AlertsService(
+      db as never,
+      activity as never,
+      {
+        capacity: jest.fn(),
+        locked: (_id: string, action: (tx: typeof db) => unknown) => action(db),
+      } as never,
+    );
     await expect(service.update("user-2", "a1", { enabled: false })).rejects.toBeInstanceOf(NotFoundException);
   });
 });

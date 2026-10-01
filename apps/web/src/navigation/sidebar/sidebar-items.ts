@@ -115,6 +115,7 @@ export const sidebarItems: NavGroup[] = [
       { id: "profile", title: "Profile", url: "/dashboard/profile", icon: UserRound },
       { id: "notifications", title: "Notifications", url: "/dashboard/notifications", icon: Bell },
       { id: "activity", title: "Activity", url: "/dashboard/activity", icon: Activity },
+      { id: "billing", title: "Billing & plans", url: "/dashboard/billing", icon: CreditCard },
       {
         id: "settings",
         title: "Settings",

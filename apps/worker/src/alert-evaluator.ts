@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "@marketpilot/db";
+import { effectivePlan, Prisma, type PrismaClient, plans } from "@marketpilot/db";
 import { validateRule } from "@marketpilot/jobs";
 import { metricFromObservation } from "./alert-observation.js";
 
@@ -121,7 +121,9 @@ export async function evaluateObservation(db: PrismaClient, observationId: strin
             externalAccountId: { not: null },
           },
         });
+        const subscription = await tx.subscription.findUnique({ where: { userId: rule.userId } });
         for (const channel of channels) {
+          if (!plans[effectivePlan(subscription, evaluatedAt)].externalAlerts) continue;
           const preferences = channel.preferences;
           if (
             !channel.externalAccountId ||

@@ -3,6 +3,7 @@ import { Prisma } from "@marketpilot/db";
 import { boundedOperation } from "@marketpilot/jobs";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { aiConfiguration } from "../ai/ai.service";
+import { billingMode } from "../billing/stripe-test.service";
 
 import { AdminQueryDto, pageResult, sinceDays } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
@@ -283,7 +284,11 @@ export class AdminService {
           detail:
             "Private commands and independent market alert delivery. Configuration does not establish connectivity; inspect bot runtime below.",
         })),
-        { name: "Payments", status: "not implemented", detail: "No billing provider or transaction records exist." },
+        {
+          name: "Test billing",
+          status: billingMode() === "disabled" ? "unavailable" : "configured",
+          detail: "Free/Pro subscriptions, enforced quotas and sandbox payment history. Live payments are disabled.",
+        },
       ],
     };
   }

@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 
+import { EntitlementsService } from "../billing/entitlements.service";
 import { ActivityService } from "../common/activity.service";
 import { DatabaseService } from "../database.module";
 
@@ -8,6 +9,7 @@ export class WatchlistsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly activity: ActivityService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   list(userId: string) {
@@ -19,7 +21,10 @@ export class WatchlistsService {
   }
 
   async create(userId: string, name: string) {
-    const watchlist = await this.db.watchlist.create({ data: { userId, name: name.trim() } });
+    const watchlist = await this.entitlements.locked(userId, async (tx) => {
+      await this.entitlements.capacity(tx, userId, "watchlists");
+      return tx.watchlist.create({ data: { userId, name: name.trim() } });
+    });
     await this.activity.record(userId, "WATCHLIST_CREATED", `Created watchlist ${watchlist.name}`);
     return watchlist;
   }
@@ -43,9 +48,15 @@ export class WatchlistsService {
   async addItem(userId: string, watchlistId: string, assetId: string) {
     await this.requireOwner(userId, watchlistId);
     const normalized = assetId.trim().toUpperCase();
-    const count = await this.db.watchlistItem.count({ where: { watchlistId } });
+
     try {
-      const item = await this.db.watchlistItem.create({ data: { watchlistId, assetId: normalized, position: count } });
+      const item = await this.entitlements.locked(userId, async (tx) => {
+        const owned = await tx.watchlist.findFirst({ where: { id: watchlistId, userId } });
+        if (!owned) throw new NotFoundException("Watchlist not found.");
+        await this.entitlements.capacity(tx, userId, "watchlistItems", watchlistId);
+        const count = await tx.watchlistItem.count({ where: { watchlistId } });
+        return tx.watchlistItem.create({ data: { watchlistId, assetId: normalized, position: count } });
+      });
       await this.db.watchlist.update({ where: { id: watchlistId }, data: { updatedAt: new Date() } });
       await this.activity.record(userId, "WATCHLIST_ITEM_ADDED", `Added ${normalized} to a watchlist`, {
         assetId: normalized,

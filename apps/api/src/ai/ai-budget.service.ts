@@ -52,14 +52,26 @@ export class AiBudgetService {
             ? "Too many research requests. Try again shortly."
             : "The daily research budget has been reached.",
       );
-    return async () => {
+    return async (unusedReservation = false) => {
       await this.redis.client
         .eval(
-          `if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end return redis.call('ZREM', KEYS[2], ARGV[1])`,
-          2,
+          `if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end
+          local released = redis.call('ZREM', KEYS[2], ARGV[1])
+          if ARGV[2] == '1' and released == 1 then
+            for i = 3, 4 do
+              local value = tonumber(redis.call('GET', KEYS[i]) or '0')
+              if value > 0 then redis.call('DECRBY', KEYS[i], math.min(value, tonumber(ARGV[3]))) end
+            end
+          end
+          return released`,
+          4,
           slot,
           "marketpilot:ai:active:global",
+          `marketpilot:ai:budget:${day}:${userId}`,
+          `marketpilot:ai:budget:${day}:global`,
           token,
+          unusedReservation ? "1" : "0",
+          Math.ceil(reservationUsd * 1_000_000),
         )
         .catch(() => undefined);
     };

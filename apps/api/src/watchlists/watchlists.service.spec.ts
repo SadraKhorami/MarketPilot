@@ -14,7 +14,11 @@ describe("WatchlistsService", () => {
         findUniqueOrThrow: jest.fn().mockResolvedValue({ id: "w1", name: "Updated" }),
       },
     };
-    const service = new WatchlistsService(db as never, activity as never);
+    const service = new WatchlistsService(
+      db as never,
+      activity as never,
+      { capacity: jest.fn(), locked: (_id: string, action: (tx: typeof db) => unknown) => action(db) } as never,
+    );
     await service.list("user-1");
     await service.create("user-1", " Ideas ");
     await service.update("user-1", "w1", "Updated");
@@ -34,7 +38,11 @@ describe("WatchlistsService", () => {
         create: jest.fn().mockResolvedValue({ id: "i1", assetId: "BTC-USD" }),
       },
     };
-    const service = new WatchlistsService(db as never, activity as never);
+    const service = new WatchlistsService(
+      db as never,
+      activity as never,
+      { capacity: jest.fn(), locked: (_id: string, action: (tx: typeof db) => unknown) => action(db) } as never,
+    );
     const result = await service.addItem("user-1", "w1", "btc-usd");
     expect(db.watchlistItem.create).toHaveBeenCalledWith({
       data: { watchlistId: "w1", assetId: "BTC-USD", position: 0 },
@@ -44,7 +52,11 @@ describe("WatchlistsService", () => {
 
   it("does not disclose or mutate another user's watchlist", async () => {
     const db = { watchlist: { findFirst: jest.fn().mockResolvedValue(null) } };
-    const service = new WatchlistsService(db as never, activity as never);
+    const service = new WatchlistsService(
+      db as never,
+      activity as never,
+      { capacity: jest.fn(), locked: (_id: string, action: (tx: typeof db) => unknown) => action(db) } as never,
+    );
     await expect(service.addItem("user-2", "w1", "BTC-USD")).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -52,7 +64,11 @@ describe("WatchlistsService", () => {
     const db = {
       watchlist: { count: jest.fn().mockResolvedValue(2), deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
-    const service = new WatchlistsService(db as never, activity as never);
+    const service = new WatchlistsService(
+      db as never,
+      activity as never,
+      { capacity: jest.fn(), locked: (_id: string, action: (tx: typeof db) => unknown) => action(db) } as never,
+    );
     await expect(service.remove("user-1", "w1")).resolves.toEqual({ success: true });
     db.watchlist.count.mockResolvedValue(1);
     await expect(service.remove("user-1", "w1")).rejects.toMatchObject({

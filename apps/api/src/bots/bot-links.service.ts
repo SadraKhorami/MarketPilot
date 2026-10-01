@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { type BotProvider, botConfiguration, dashboardUrl, plainText } from "@marketpilot/bots";
 import { Prisma } from "@marketpilot/db";
 import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { EntitlementsService } from "../billing/entitlements.service";
 import { DatabaseService } from "../database.module";
 import { BotRateService } from "./bot-rate.service";
 
@@ -10,6 +11,7 @@ export class BotLinksService {
   constructor(
     private readonly db: DatabaseService,
     private readonly rate: BotRateService,
+    private readonly entitlements: EntitlementsService,
   ) {}
   async state(userId: string, provider: BotProvider) {
     const [channel, candidate] = await Promise.all([
@@ -207,6 +209,7 @@ export class BotLinksService {
   async preferences(userId: string, provider: BotProvider, marketAlerts: boolean) {
     await this.db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`;
+      if (marketAlerts) await this.entitlements.external(tx, userId);
       const updated = await tx.notificationChannel.updateMany({
         where: { userId, provider, active: true, verifiedAt: { not: null } },
         data: { preferences: { marketAlerts } },

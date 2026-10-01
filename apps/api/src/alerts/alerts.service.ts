@@ -7,6 +7,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { EntitlementsService } from "../billing/entitlements.service";
 import { ActivityService } from "../common/activity.service";
 import { PageQueryDto, pageResult } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
@@ -19,6 +20,7 @@ export class AlertsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly activity: ActivityService,
+    private readonly entitlements: EntitlementsService,
     @Optional() private readonly catalog?: MarketCatalogService,
   ) {}
 
@@ -105,28 +107,31 @@ export class AlertsService {
       },
       true,
     );
-    const store = transaction ?? this.db;
-    const alert = await store.alert.create({
-      data: {
-        userId,
-        name: input.name.trim(),
-        assetId: input.assetId.toUpperCase(),
-        interval: input.interval ?? "15m",
-        condition: input.condition,
-        threshold: new Prisma.Decimal(input.threshold),
-        enabled: input.enabled ?? true,
-        cooldownMinutes: input.cooldownMinutes ?? 60,
-      },
-    });
-    const metadata = { alertId: alert.id, assetId: alert.assetId };
-    if (transaction) {
-      await transaction.activityLog.create({
-        data: { userId, eventType: "ALERT_CREATED", description: `Created alert ${alert.name}`, metadata },
+    const create = async (store: Prisma.TransactionClient) => {
+      if (input.enabled !== false) await this.entitlements.capacity(store, userId, "activeAlerts");
+      const alert = await store.alert.create({
+        data: {
+          userId,
+          name: input.name.trim(),
+          assetId: input.assetId.toUpperCase(),
+          interval: input.interval ?? "15m",
+          condition: input.condition,
+          threshold: new Prisma.Decimal(input.threshold),
+          enabled: input.enabled ?? true,
+          cooldownMinutes: input.cooldownMinutes ?? 60,
+        },
       });
-    } else {
-      await this.activity.record(userId, "ALERT_CREATED", `Created alert ${alert.name}`, metadata);
-    }
-    return alert;
+      await store.activityLog.create({
+        data: {
+          userId,
+          eventType: "ALERT_CREATED",
+          description: `Created alert ${alert.name}`,
+          metadata: { alertId: alert.id, assetId: alert.assetId },
+        },
+      });
+      return alert;
+    };
+    return transaction ? create(transaction) : this.entitlements.locked(userId, create);
   }
 
   async update(userId: string, id: string, input: UpdateAlertDto) {
@@ -167,7 +172,10 @@ export class AlertsService {
       data.lastValue = null;
       data.evaluationReason = "AWAITING_BASELINE";
     }
-    const result = await this.db.alert.updateMany({ where: { id, userId, updatedAt: current.updatedAt }, data });
+    const result = await this.entitlements.locked(userId, async (tx) => {
+      if (input.enabled === true && !current.enabled) await this.entitlements.capacity(tx, userId, "activeAlerts");
+      return tx.alert.updateMany({ where: { id, userId, updatedAt: current.updatedAt }, data });
+    });
     if (!result.count) throw new BadRequestException("This alert changed. Reload it before editing.");
     await this.activity.record(userId, "ALERT_UPDATED", "Updated an alert", { alertId: id });
     return this.db.alert.findUniqueOrThrow({ where: { id } });

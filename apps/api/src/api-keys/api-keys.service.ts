@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { EntitlementsService } from "../billing/entitlements.service";
 import { DatabaseService } from "../database.module";
 import { NotificationEventsService } from "../notifications/notification-events.service";
 
@@ -8,6 +9,7 @@ export class ApiKeysService {
   constructor(
     private readonly db: DatabaseService,
     private readonly notifications: NotificationEventsService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async list(userId: string) {
@@ -32,6 +34,7 @@ export class ApiKeysService {
     const token = `mp_live_${randomBytes(8).toString("hex")}_${randomBytes(32).toString("hex")}`;
     const prefix = token.slice(0, 24);
     const apiKey = await this.db.$transaction(async (tx) => {
+      await this.entitlements.capacity(tx, userId, "apiKeys");
       const created = await tx.apiKey.create({
         data: {
           userId,

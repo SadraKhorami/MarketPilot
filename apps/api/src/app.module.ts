@@ -11,6 +11,8 @@ import { ApiUsageService } from "./api-keys/api-usage.service";
 import { AuthController } from "./auth/auth.controller";
 import { AuthGuard } from "./auth/auth.guard";
 import { AuthService } from "./auth/auth.service";
+import { ApiQuotaGuard } from "./billing/api-quota.guard";
+import { BillingModule } from "./billing/billing.module";
 import { BotsModule } from "./bots/bots.module";
 import { ActivityService } from "./common/activity.service";
 import { ApiScopesGuard } from "./common/api-scopes.guard";
@@ -31,7 +33,16 @@ import { WatchlistsController } from "./watchlists/watchlists.controller";
 import { WatchlistsService } from "./watchlists/watchlists.service";
 
 @Module({
-  imports: [DatabaseModule, RedisModule, MarketDataModule, AdminModule, NotificationsModule, AiModule, BotsModule],
+  imports: [
+    BillingModule,
+    DatabaseModule,
+    RedisModule,
+    MarketDataModule,
+    AdminModule,
+    NotificationsModule,
+    AiModule,
+    BotsModule,
+  ],
   controllers: [
     AuthController,
     UsersController,
@@ -56,6 +67,7 @@ import { WatchlistsService } from "./watchlists/watchlists.service";
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: OriginGuard },
     { provide: APP_GUARD, useClass: ApiScopesGuard },
+    { provide: APP_GUARD, useClass: ApiQuotaGuard },
     RequestUsageMiddleware,
   ],
 })

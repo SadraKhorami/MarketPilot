@@ -139,8 +139,9 @@ export function ApiDocumentation() {
                 </p>
                 <p className="text-muted-foreground">
                   On 429, wait for <code>Retry-After</code> seconds before retrying. These headers describe the bucket
-                  at response time, not a billing quota. <code>X-RateLimit-Mode</code> is <code>redis</code> normally;{" "}
-                  <code>local</code> identifies per-process outage fallback, which is not shared across replicas.
+                  at response time. Daily plan allowances are shown in Billing. <code>X-RateLimit-Mode</code> is{" "}
+                  <code>redis</code> normally; <code>local</code> identifies per-process outage fallback, which is not
+                  shared across replicas.
                 </p>
                 <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs leading-5">
                   <code>{`HTTP/1.1 429 Too Many Requests\nRetry-After: 42\n\n{"error":{"code":"RATE_LIMITED",\n "message":"Too many requests. Retry in 42 seconds.",\n "retryAfterSeconds":42},"requestId":"…"}`}</code>
@@ -167,8 +168,8 @@ export function ApiDocumentation() {
           </div>
           <p className="text-muted-foreground text-sm">
             Keys cannot access AI research, account management, linking, administration or write operations. Trading,
-            billing and sentiment endpoints are unavailable. Usage records exclude browser and internal bot/provider
-            traffic; invalid credentials cannot be attributed to an account.
+            billing and sentiment endpoints are not available to API keys. Usage records exclude browser and internal
+            bot/provider traffic; invalid credentials cannot be attributed to an account.
           </p>
         </>
       )}

@@ -102,6 +102,13 @@ export async function startAlertWorker(db: PrismaClient) {
     ]);
     for (const item of observations) await publish(queues.evaluation, item.id);
     for (const item of triggers) await publish(queues.notifications, item.id);
+    const quotaCutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const expiredUsage = await db.quotaUsage.findMany({
+      where: { day: { lt: quotaCutoff } },
+      select: { userId: true, day: true, resource: true },
+      take: 500,
+    });
+    if (expiredUsage.length) await db.quotaUsage.deleteMany({ where: { OR: expiredUsage } });
     await db.alertObservation.deleteMany({
       where: { completedAt: { lt: new Date(Date.now() - 7 * 86400000) } },
     });

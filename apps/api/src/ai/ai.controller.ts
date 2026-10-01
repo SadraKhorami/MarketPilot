@@ -132,6 +132,7 @@ export class AiController {
     try {
       return { data: await this.proposals.decide(user.id, id, dto) };
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw aiHttpError(error);
     }
   }

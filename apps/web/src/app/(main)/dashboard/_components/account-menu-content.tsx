@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { Bell, LoaderCircle, LogOut, Palette, ShieldCheck, UserRound } from "lucide-react";
+import { Bell, CreditCard, LoaderCircle, LogOut, Palette, ShieldCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -72,6 +72,11 @@ export function AccountMenuContent() {
         <DropdownMenuItem asChild className="px-3 py-2">
           <Link href="/dashboard/notifications">
             <Bell /> Notifications
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="px-3 py-2">
+          <Link href="/dashboard/billing">
+            <CreditCard /> Billing & plans
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="px-3 py-2">

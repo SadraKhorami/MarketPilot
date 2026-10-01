@@ -96,3 +96,7 @@ Production artifacts are available for web, API and the worker in `docker/Docker
 See [deployment and operations](docs/deployment.md) for protected environment templates, build-time public URLs, TLS/proxy setup, explicit migrations, health/failure diagnosis, backups/restores, bot cutover and verification limits. CI retains tests and migration checks and builds all container targets without publishing. No deployment, production migration, webhook registration, real bot message, paid AI call or Phase 9 feature was performed by this preparation.
 
 Public liveness is available at web `/health` and API `/api/v1/health`; API readiness probes real Postgres/Redis responses. The worker has private liveness/readiness probes, fresh per-stage consumer records and sanitized job outcomes in Administration → System. Process readiness does not establish provider availability or successful external delivery. Last-used session/key metadata is written at most once per minute per record; each authenticated request still records its own usage.
+
+## Test billing
+
+Free/Pro plans, daily allowances and test subscription management are documented in [docs/billing.md](docs/billing.md). Billing supports a credential-free 30-day demo or Stripe sandbox Checkout. Live payments are disabled.

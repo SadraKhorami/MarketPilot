@@ -1,5 +1,6 @@
 import { BotProviderError, botConfiguration, botProviders, reserveSendSlot, sendAlert } from "@marketpilot/bots";
 import type { ExternalDelivery, Prisma, PrismaClient } from "@marketpilot/db";
+import { effectivePlan, plans } from "@marketpilot/db";
 import type Redis from "ioredis";
 
 const maximumAttempts = 5;
@@ -154,6 +155,8 @@ async function lockDelivery(tx: Prisma.TransactionClient, item: ExternalDelivery
   await tx.$queryRaw`SELECT id FROM "ExternalDelivery" WHERE id = ${item.id}::uuid FOR UPDATE`;
 }
 async function eligible(tx: Prisma.TransactionClient, item: ExternalDelivery) {
+  const subscription = await tx.subscription.findUnique({ where: { userId: item.userId } });
+  if (!plans[effectivePlan(subscription)].externalAlerts) return false;
   const channel = await tx.notificationChannel.findUnique({
     where: { id: item.channelId },
     include: { user: { select: { status: true } } },
