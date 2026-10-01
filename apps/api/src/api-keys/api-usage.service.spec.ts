@@ -22,10 +22,18 @@ describe("Developer API usage", () => {
     query.days = 7;
     const result = await service.summary("owner", query);
     for (const [args] of db.apiUsage.count.mock.calls)
-      expect(args.where).toMatchObject({ userId: "owner", authType: "API_KEY", occurredAt: { gte: expect.any(Date) } });
+      expect(args.where).toMatchObject({
+        userId: "owner",
+        authType: "API_KEY",
+        occurredAt: { gte: expect.any(Date), lte: expect.any(Date) },
+      });
     expect(db.apiUsage.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ userId: "owner", authType: "API_KEY", occurredAt: { gte: expect.any(Date) } }),
+        where: expect.objectContaining({
+          userId: "owner",
+          authType: "API_KEY",
+          occurredAt: { gte: expect.any(Date), lte: expect.any(Date) },
+        }),
       }),
     );
     expect(result.byDay).toHaveLength(7);
