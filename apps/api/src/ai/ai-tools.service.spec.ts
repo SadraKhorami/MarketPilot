@@ -13,7 +13,7 @@ function fixture(symbol = "BTC-USD", length = 250, freshness: "fresh" | "stale" 
   }));
   const indicators = calculateTechnicalIndicators(candles);
   return {
-    source: "test",
+    source: "coinbase-exchange",
     requestedSymbol: symbol,
     freshness,
     fetchedAt: "2026-09-30T00:00:00Z",
@@ -52,7 +52,7 @@ describe("AI application tools", () => {
     expect(resolveResearchSymbol("ETH/USDT")).toBe("ETH-USDT");
     expect(resolveResearchSymbol("BTCUSDT")).not.toBe("BTC-USD");
   });
-  it("reuses market reads and recomputes indicators for the actual window", async () => {
+  it("reuses market reads and preserves calculation history independently of the chart window", async () => {
     const { service, market, context } = setup();
     await service.execute("getMarketPrice", { symbol: "BTC" }, context);
     const result = await service.execute(
@@ -62,8 +62,11 @@ describe("AI application tools", () => {
     );
     expect(market.getMarketData).toHaveBeenCalledTimes(1);
     expect(result.sources[0].history).toHaveLength(30);
-    expect(result.sources[0].facts.find((f) => f.label === "SMA 200")?.value).toBeNull();
-    expect(result.status).toBe("partial");
+    expect(result.sources[0].calculationHistory?.candles).toBe(250);
+    expect(result.sources[0].facts.find((f) => f.label === "SMA 200")?.value).toBe(
+      calculateTechnicalIndicators(fixture().data.candles).sma200,
+    );
+    expect(result.status).toBe("ok");
   });
   it("preserves stale freshness and rejects mismatched/malformed observations", async () => {
     const setupStale = setup(fixture("BTC-USD", 40, "stale"));

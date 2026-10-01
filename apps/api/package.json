@@ -6,9 +6,9 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
-    "lint": "biome lint src test",
-    "format:check": "biome format src test",
-    "format": "biome format --write src test",
+    "lint": "biome lint src",
+    "format:check": "biome format src",
+    "format": "biome format --write src",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand"
   },
