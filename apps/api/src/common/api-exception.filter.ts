@@ -30,6 +30,18 @@ export class ApiExceptionFilter implements ExceptionFilter {
     } else if (typeof validation === "string" && status < 500) {
       message = validation;
     }
-    response.status(status).json({ error: { code, message }, requestId });
+    const retryAfterSeconds =
+      status === HttpStatus.TOO_MANY_REQUESTS &&
+      typeof extracted === "object" &&
+      extracted !== null &&
+      "retryAfterSeconds" in extracted &&
+      typeof extracted.retryAfterSeconds === "number" &&
+      Number.isInteger(extracted.retryAfterSeconds) &&
+      extracted.retryAfterSeconds > 0
+        ? extracted.retryAfterSeconds
+        : undefined;
+    response
+      .status(status)
+      .json({ error: { code, message, ...(retryAfterSeconds ? { retryAfterSeconds } : {}) }, requestId });
   }
 }

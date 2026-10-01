@@ -5,7 +5,7 @@
 - `/api/v1/admin/*` requires an authenticated `ADMIN` browser session. Global backend role and scope guards enforce this independently of sidebar visibility and the frontend gate. Even an administrator’s API key cannot call these routes.
 - User pages show the current account’s keys, activity and preferences. Account, request and credential administration remains read-only; announcement management is described in [notification center](notification-center.md). No role changes, account disabling, impersonation or billing mutations were added.
 - The API catalog is the source for creation scopes, endpoint documentation and the actual per-key rate limit. Supported reads: `market:read` → market price/candles/indicators/trend, `news:read` → paginated sourced articles, `watchlists:read` and `alerts:read` → owner resources. Existing keys are not granted new scopes automatically.
-- No AI, email delivery, Telegram, Discord or billing implementation was added. In-app notifications are implemented separately. Future phases in the supplied document informed page boundaries only; OpenRouter remains the planned AI provider.
+- AI research through OpenRouter, alert workers and secure Telegram/Discord linking/delivery are implemented in their respective modules. They remain session/internal capabilities and are not exposed to developer API keys. Email delivery, trading, billing and sentiment scoring remain unavailable. See [AI Analyst](ai-analyst.md), [bot integrations](bot-integrations.md) and the [Phase 7 developer guide](developer-api.md).
 
 ## Request accounting
 
@@ -38,3 +38,9 @@ The requested additional administrator was provisioned in the local database wit
 ## Phase 4 AI operations
 
 Administration → System displays seven-day AI run states, tool counts, input/output tokens, average latency, reported provider cost and conservative budget reservations. These are actual server metadata, never private questions/answers or invented billing. `GET /ai/metrics` requires an ADMIN browser session. All `/ai/*` endpoints deny developer API keys even if the owner is an administrator; existing read scopes and API-key Usage are unchanged. Browser request records remain in Administration. Details and endpoint contracts are in [AI Analyst](ai-analyst.md).
+
+## Phase 7 developer platform
+
+The [developer API guide](developer-api.md) documents the complete read catalog, key lifecycle, envelopes, pagination, source/freshness semantics, examples and rate headers. Creation scope choices come from the API catalog. Key create/revoke audit records are transactional. Developer navigation groups keys, owned usage and documentation; per-key shortcuts, searchable key filters, paginated request history and observed 429 counts support investigation. UTC period metadata is shared by aggregates and request pages.
+
+Redis-backed key limits expose actual remaining/window/reset metadata and explicit retry seconds. Local outage fallback is labeled and remains per process. Explicit bearer credentials do not inherit browser-session authority. Swagger distinguishes session-only routes and enriches supported reads from the same catalog. No migration, billing mutation, public hosting or Phase 8 work was added.

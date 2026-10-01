@@ -8,6 +8,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import helmet from "helmet";
+import { API_CATALOG } from "./api-keys/api-catalog";
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./common/api-exception.filter";
 import { RequestUsageMiddleware } from "./common/request-usage.middleware";
@@ -26,6 +27,15 @@ async function bootstrap() {
     origin: origins,
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    exposedHeaders: [
+      "X-Request-Id",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Window",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+      "X-RateLimit-Mode",
+      "Retry-After",
+    ],
     allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id"],
   });
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
@@ -65,6 +75,13 @@ async function bootstrap() {
     .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "MarketPilot API key" }, "apiKey")
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
+  // Keep developer descriptions aligned with the catalog used by the key form and guide.
+  for (const endpoint of API_CATALOG.endpoints) {
+    const operation = document.paths[`/api/v1${endpoint.path}`]?.get;
+    if (!operation) throw new Error(`Catalog endpoint is missing from OpenAPI: ${endpoint.path}`);
+    operation.summary = endpoint.title;
+    operation.description = `${endpoint.description} Required API-key scope: ${endpoint.scope}. Parameters: ${endpoint.parameters}. Response: ${endpoint.response}.`;
+  }
   SwaggerModule.setup("api/v1/docs", app, document, {
     jsonDocumentUrl: "/api/v1/openapi.json",
     swaggerOptions: { persistAuthorization: false },

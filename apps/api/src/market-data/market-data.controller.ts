@@ -1,14 +1,14 @@
 import { Controller, Get, Param, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 
-import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
+import { ApiReadAuth, ApiStandardResponses } from "../common/api-documentation";
 import { ApiScopes } from "../common/auth";
 import { MarketCatalogService } from "./market-catalog.service";
 import { MarketDataQueryDto } from "./market-data.dto";
 import { MarketDataService } from "./market-data.service";
 
 @ApiTags("market-data")
-@ApiSessionAuth()
+@ApiReadAuth()
 @ApiStandardResponses()
 @Controller("market-data")
 export class MarketDataController {

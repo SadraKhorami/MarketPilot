@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { ActivityService } from "../common/activity.service";
 import { DatabaseService } from "../database.module";
 import { NotificationEventsService } from "../notifications/notification-events.service";
 
@@ -8,7 +7,6 @@ import { NotificationEventsService } from "../notifications/notification-events.
 export class ApiKeysService {
   constructor(
     private readonly db: DatabaseService,
-    private readonly activity: ActivityService,
     private readonly notifications: NotificationEventsService,
   ) {}
 
@@ -33,12 +31,25 @@ export class ApiKeysService {
   async create(userId: string, name: string, scopes: string[] = ["market:read"]) {
     const token = `mp_live_${randomBytes(8).toString("hex")}_${randomBytes(32).toString("hex")}`;
     const prefix = token.slice(0, 24);
-    const apiKey = await this.db.apiKey.create({
-      data: { userId, name: name.trim(), prefix, secretHash: createHash("sha256").update(token).digest("hex"), scopes },
-    });
-    await this.activity.record(userId, "API_KEY_CREATED", `Created API key ${apiKey.name}`, {
-      apiKeyId: apiKey.id,
-      prefix,
+    const apiKey = await this.db.$transaction(async (tx) => {
+      const created = await tx.apiKey.create({
+        data: {
+          userId,
+          name: name.trim(),
+          prefix,
+          secretHash: createHash("sha256").update(token).digest("hex"),
+          scopes,
+        },
+      });
+      await tx.activityLog.create({
+        data: {
+          userId,
+          eventType: "API_KEY_CREATED",
+          description: `Created API key ${created.name}`,
+          metadata: { apiKeyId: created.id, prefix },
+        },
+      });
+      return created;
     });
     await this.notifications.security(
       userId,
@@ -57,13 +68,22 @@ export class ApiKeysService {
   }
 
   async revoke(userId: string, id: string) {
-    const result = await this.db.apiKey.updateMany({
-      where: { id, userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    await this.db.$transaction(async (tx) => {
+      const result = await tx.apiKey.updateMany({
+        where: { id, userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (!result.count)
+        throw new NotFoundException({ error: { code: "NOT_FOUND", message: "Active API key not found." } });
+      await tx.activityLog.create({
+        data: {
+          userId,
+          eventType: "API_KEY_REVOKED",
+          description: "Revoked an API key",
+          metadata: { apiKeyId: id },
+        },
+      });
     });
-    if (!result.count)
-      throw new NotFoundException({ error: { code: "NOT_FOUND", message: "Active API key not found." } });
-    await this.activity.record(userId, "API_KEY_REVOKED", "Revoked an API key", { apiKeyId: id });
     await this.notifications.security(
       userId,
       "API key revoked",

@@ -11,7 +11,7 @@ import { useApiResource } from "@/hooks/use-api-resource";
 import { ResourceState } from "../../_components/resource-state";
 import type { ApiCatalog } from "./api-types";
 
-const icons = {
+const icons: Record<string, typeof ArrowUpRight> = {
   "market:read": CandlestickChart,
   "news:read": Newspaper,
   "watchlists:read": Bookmark,
@@ -36,18 +36,21 @@ export function ApiCapabilities() {
         <ResourceState {...resource} retry={resource.reload} />
         {!resource.loading && !resource.error && (
           <div className="grid gap-4 md:grid-cols-2">
-            {resource.data?.endpoints.map((endpoint) => {
-              const Icon = icons[endpoint.scope as keyof typeof icons] ?? ArrowUpRight;
+            {resource.data?.scopes.map((scope) => {
+              const Icon = icons[scope.id] ?? ArrowUpRight;
               return (
-                <div key={`${endpoint.method}:${endpoint.path}`} className="flex gap-3 rounded-lg border p-4">
+                <div key={scope.id} className="flex gap-3 rounded-lg border p-4">
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                     <Icon className="size-4" />
                   </div>
                   <div className="flex min-w-0 flex-col gap-2">
-                    <p className="font-medium text-sm">{endpoint.title}</p>
-                    <p className="text-muted-foreground text-sm">{endpoint.description}</p>
+                    <p className="font-medium text-sm">{scope.title}</p>
+                    <p className="text-muted-foreground text-sm">
+                      {resource.data?.endpoints.filter((endpoint) => endpoint.scope === scope.id).length} documented
+                      read endpoints
+                    </p>
                     <div>
-                      <Badge variant="outline">{endpoint.scope}</Badge>
+                      <Badge variant="outline">{scope.id}</Badge>
                     </div>
                   </div>
                 </div>

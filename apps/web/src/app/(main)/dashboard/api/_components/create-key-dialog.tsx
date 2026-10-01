@@ -27,30 +27,48 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useApiResource } from "@/hooks/use-api-resource";
 
-const scopes = ["market:read", "news:read", "watchlists:read", "alerts:read"] as const;
-const labels = ["Prices, candles & indicators", "Sourced market news", "Your watchlists", "Your saved alert rules"];
+import { ResourceState } from "../../_components/resource-state";
+import type { ApiCatalog } from "./api-types";
+
 const schema = z.object({
-  name: z.string().trim().min(2, "Use at least 2 characters.").max(80),
-  scopes: z.array(z.enum(scopes)).min(1, "Select at least one permission."),
+  name: z.string().trim().min(1, "Enter a name.").max(80),
+  scopes: z.array(z.string()).min(1, "Select at least one permission."),
 });
 export type CreateKeyInput = z.infer<typeof schema>;
-export function CreateKeyDialog({ onCreate }: { onCreate: (input: CreateKeyInput) => Promise<boolean> }) {
+export function CreateKeyDialog({
+  onCreate,
+  disabled = false,
+}: {
+  onCreate: (input: CreateKeyInput) => Promise<boolean>;
+  disabled?: boolean;
+}) {
+  const catalog = useApiResource<ApiCatalog>("/api-keys/catalog");
   const [open, setOpen] = useState(false);
   const form = useForm<CreateKeyInput>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", scopes: ["market:read"] },
   });
   const submit = async (values: CreateKeyInput) => {
+    if (!catalog.data || values.scopes.some((scope) => !catalog.data?.scopes.some((item) => item.id === scope))) {
+      form.setError("scopes", { message: "Choose available permissions." });
+      return;
+    }
     if (await onCreate(values)) {
       setOpen(false);
       form.reset();
     }
   };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!form.formState.isSubmitting) setOpen(value);
+      }}
+    >
       <DialogTrigger asChild>
-        <Button>
+        <Button disabled={disabled}>
           <Plus data-icon="inline-start" />
           Create key
         </Button>
@@ -88,30 +106,46 @@ export function CreateKeyDialog({ onCreate }: { onCreate: (input: CreateKeyInput
                 <FieldSet>
                   <FieldLegend>Read permissions</FieldLegend>
                   <FieldDescription>Keys cannot change account settings or access administration.</FieldDescription>
-                  {scopes.map((scope, index) => (
-                    <Field key={scope} orientation="horizontal" data-invalid={fieldState.invalid}>
-                      <Checkbox
-                        id={`scope-${scope}`}
-                        checked={field.value.includes(scope)}
-                        onCheckedChange={(checked) =>
-                          field.onChange(
-                            checked ? [...field.value, scope] : field.value.filter((value) => value !== scope),
-                          )
-                        }
-                        aria-invalid={fieldState.invalid}
-                      />
-                      <FieldLabel htmlFor={`scope-${scope}`}>{labels[index]}</FieldLabel>
-                    </Field>
-                  ))}
+                  <ResourceState {...catalog} retry={catalog.reload} />
+                  {(catalog.error || catalog.loading ? [] : (catalog.data?.scopes ?? [])).map(
+                    ({ id: scope, title }) => (
+                      <Field key={scope} orientation="horizontal" data-invalid={fieldState.invalid}>
+                        <Checkbox
+                          id={`scope-${scope}`}
+                          checked={field.value.includes(scope)}
+                          onCheckedChange={(checked) =>
+                            field.onChange(
+                              checked ? [...field.value, scope] : field.value.filter((value) => value !== scope),
+                            )
+                          }
+                          aria-invalid={fieldState.invalid}
+                        />
+                        <FieldLabel htmlFor={`scope-${scope}`}>
+                          <span className="flex flex-col gap-1">
+                            {title}
+                            <code className="text-muted-foreground text-xs">{scope}</code>
+                          </span>
+                        </FieldLabel>
+                      </Field>
+                    ),
+                  )}
                   <FieldError errors={[fieldState.error]} />
                 </FieldSet>
               )}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={form.formState.isSubmitting}
+                onClick={() => setOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
+              <Button
+                type="submit"
+                disabled={form.formState.isSubmitting || catalog.loading || !!catalog.error || !catalog.data}
+              >
                 {form.formState.isSubmitting ? "Creating…" : "Create key"}
               </Button>
             </DialogFooter>

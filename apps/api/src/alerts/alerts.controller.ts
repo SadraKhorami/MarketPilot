@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
+import { ApiReadAuth, ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
 
 import { ApiScopes, type AuthenticatedUser, CurrentUser } from "../common/auth";
 import { PageQueryDto } from "../common/request-query.dto";
@@ -14,20 +14,23 @@ import { AlertsQueryDto } from "./alerts-query.dto";
 @Controller("alerts")
 export class AlertsController {
   constructor(private readonly service: AlertsService) {}
-  @Get() @ApiScopes("alerts:read") async list(@CurrentUser() user: AuthenticatedUser, @Query() query: AlertsQueryDto) {
+  @Get() @ApiScopes("alerts:read") @ApiReadAuth() async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AlertsQueryDto,
+  ) {
     return { data: await this.service.list(user.id, query) };
   }
-  @Get("summary") @ApiScopes("alerts:read") async summary(@CurrentUser() user: AuthenticatedUser) {
+  @Get("summary") @ApiScopes("alerts:read") @ApiReadAuth() async summary(@CurrentUser() user: AuthenticatedUser) {
     return { data: await this.service.summary(user.id) };
   }
-  @Get(":id/history") @ApiScopes("alerts:read") async history(
+  @Get(":id/history") @ApiScopes("alerts:read") @ApiReadAuth() async history(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
     @Query() query: PageQueryDto,
   ) {
     return { data: await this.service.history(user.id, id, query) };
   }
-  @Get(":id") @ApiScopes("alerts:read") async detail(
+  @Get(":id") @ApiScopes("alerts:read") @ApiReadAuth() async detail(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
   ) {

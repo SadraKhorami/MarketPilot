@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
 const chartConfig = {
-  requests: { label: "Requests", color: "var(--color-chart-2)" },
+  requests: { label: "Requests", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
 export function UsageChart({ data }: { data: Array<{ day: string; requests: number }> }) {
@@ -27,7 +27,7 @@ export function UsageChart({ data }: { data: Array<{ day: string; requests: numb
           tickMargin={10}
         />
         <YAxis axisLine={false} tickLine={false} width={42} allowDecimals={false} />
-        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+        <ChartTooltip cursor={false} content={<ChartTooltipContent labelFormatter={(label) => `${label} · UTC`} />} />
         <Bar dataKey="requests" fill="var(--color-requests)" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ChartContainer>

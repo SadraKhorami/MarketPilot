@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
 
-export class PageQueryDto {
+export class PaginationQueryDto {
   @ApiPropertyOptional({ default: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100000) page = 1;
   @ApiPropertyOptional({ default: 20, maximum: 50 })
   @IsOptional()
@@ -11,13 +11,17 @@ export class PageQueryDto {
   @Min(1)
   @Max(50)
   pageSize = 20;
+}
+export class PageQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120) search?: string;
 }
 export class RangeQueryDto {
   @ApiPropertyOptional({ default: 7, maximum: 90 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(90) days =
     7;
 }
-export class UsageQueryDto extends RangeQueryDto {
+export class UsageQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ default: 7, maximum: 90 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(90) days =
+    7;
   @ApiPropertyOptional() @IsOptional() @IsUUID() keyId?: string;
 }
 export class AdminQueryDto extends PageQueryDto {
@@ -34,8 +38,8 @@ export class AdminQueryDto extends PageQueryDto {
     | "success"
     | "error";
 }
-export function sinceDays(days: number) {
-  const since = new Date();
+export function sinceDays(days: number, now = new Date()) {
+  const since = new Date(now);
   since.setUTCHours(0, 0, 0, 0);
   since.setUTCDate(since.getUTCDate() - days + 1);
   return since;

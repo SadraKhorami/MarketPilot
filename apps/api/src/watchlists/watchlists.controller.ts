@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
+import { ApiReadAuth, ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
 
 import { ApiScopes, type AuthenticatedUser, CurrentUser } from "../common/auth";
 import { AddWatchlistItemDto, CreateWatchlistDto, ReorderWatchlistDto, UpdateWatchlistDto } from "./watchlists.dto";
@@ -13,7 +13,7 @@ import { WatchlistsService } from "./watchlists.service";
 export class WatchlistsController {
   constructor(private readonly service: WatchlistsService) {}
 
-  @Get() @ApiScopes("watchlists:read") list(@CurrentUser() user: AuthenticatedUser) {
+  @Get() @ApiScopes("watchlists:read") @ApiReadAuth() list(@CurrentUser() user: AuthenticatedUser) {
     return this.service.list(user.id).then((data) => ({ data }));
   }
   @Post() async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateWatchlistDto) {

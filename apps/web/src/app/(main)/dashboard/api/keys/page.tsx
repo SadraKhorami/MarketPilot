@@ -1,4 +1,3 @@
-import { KeyRound } from "lucide-react";
 import type { Metadata } from "next";
 
 import { MarketPilotPage } from "../../_components/marketpilot-page";
@@ -11,7 +10,6 @@ export default function ApiKeysPage() {
     <MarketPilotPage
       title="API keys"
       description="Create scoped credentials, review usage, and revoke keys you no longer need."
-      actions={<KeyRound className="size-5 text-muted-foreground" aria-hidden="true" />}
     >
       <ApiKeysWorkspace />
     </MarketPilotPage>

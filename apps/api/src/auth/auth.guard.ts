@@ -18,7 +18,8 @@ export class AuthGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const sessionToken = request.cookies?.[SESSION_COOKIE] as string | undefined;
-    if (sessionToken) {
+    // An explicit bearer credential must not inherit a browser session's broader access.
+    if (sessionToken && !request.headers.authorization) {
       const session = await this.db.session.findUnique({
         where: { tokenHash: createHash("sha256").update(sessionToken).digest("hex") },
         include: { user: { include: { roles: { include: { role: true } } } } },

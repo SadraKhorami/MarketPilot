@@ -5,7 +5,10 @@ import { RateLimitGuard } from "./rate-limit.guard";
 describe("RateLimitGuard", () => {
   const requestContext = (path: string, method = "GET", user?: { id: string; apiKeyId?: string }) =>
     ({
-      switchToHttp: () => ({ getRequest: () => ({ path, method, ip: "127.0.0.1", user }) }),
+      switchToHttp: () => ({
+        getRequest: () => ({ path, method, ip: "127.0.0.1", user }),
+        getResponse: () => ({ setHeader: jest.fn() }),
+      }),
     }) as never;
 
   function createGuard() {

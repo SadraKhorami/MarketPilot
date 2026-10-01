@@ -7,6 +7,7 @@ describe("ApiKeysService", () => {
   it("returns a generated secret once and stores only its hash", async () => {
     let record: { prefix: string; secretHash: string; userId: string; name: string } | undefined;
     const db = {
+      activityLog: { create: jest.fn().mockResolvedValue(undefined) },
       apiKey: {
         create: jest.fn(async ({ data }) => {
           record = data;
@@ -14,12 +15,11 @@ describe("ApiKeysService", () => {
         }),
       },
     };
-    const activity = { record: jest.fn().mockResolvedValue(undefined) };
-    const service = new ApiKeysService(
-      db as never,
-      activity as never,
-      { security: jest.fn(), registered: jest.fn() } as never,
-    );
+    const store = {
+      ...db,
+      $transaction: jest.fn(async (operation: (tx: typeof db) => Promise<unknown>) => operation(db)),
+    };
+    const service = new ApiKeysService(store as never, { security: jest.fn(), registered: jest.fn() } as never);
     const result = await service.create("user-1", " Data job ", ["watchlists:read"]);
     expect(result.secret).toMatch(/^mp_live_[0-9a-f]{16}_[0-9a-f]{64}$/);
     expect(record?.prefix).toBe(result.secret.slice(0, 24));
@@ -30,16 +30,17 @@ describe("ApiKeysService", () => {
 
   it("lists keys without secret material and scopes revocation by owner", async () => {
     const db = {
+      activityLog: { create: jest.fn().mockResolvedValue(undefined) },
       apiKey: {
         findMany: jest.fn().mockResolvedValue([{ id: "key-1", prefix: "mp_live_abc12345" }]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
-    const service = new ApiKeysService(
-      db as never,
-      { record: jest.fn() } as never,
-      { security: jest.fn(), registered: jest.fn() } as never,
-    );
+    const store = {
+      ...db,
+      $transaction: jest.fn(async (operation: (tx: typeof db) => Promise<unknown>) => operation(db)),
+    };
+    const service = new ApiKeysService(store as never, { security: jest.fn(), registered: jest.fn() } as never);
     const rows = await service.list("user-1");
     expect(rows[0]).not.toHaveProperty("secretHash");
     await service.revoke("user-1", "key-1");
@@ -50,12 +51,15 @@ describe("ApiKeysService", () => {
   });
 
   it("does not revoke keys belonging to a different user", async () => {
-    const db = { apiKey: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) } };
-    const service = new ApiKeysService(
-      db as never,
-      { record: jest.fn() } as never,
-      { security: jest.fn(), registered: jest.fn() } as never,
-    );
+    const db = {
+      activityLog: { create: jest.fn().mockResolvedValue(undefined) },
+      apiKey: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    };
+    const store = {
+      ...db,
+      $transaction: jest.fn(async (operation: (tx: typeof db) => Promise<unknown>) => operation(db)),
+    };
+    const service = new ApiKeysService(store as never, { security: jest.fn(), registered: jest.fn() } as never);
     await expect(service.revoke("user-2", "key-1")).rejects.toBeInstanceOf(NotFoundException);
   });
 });

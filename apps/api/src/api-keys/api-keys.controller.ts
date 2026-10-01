@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Param, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
@@ -28,6 +28,7 @@ export class ApiKeysController {
     return { data: await this.usageService.summary(user.id, query) };
   }
   @Post()
+  @Header("Cache-Control", "no-store")
   @ApiOperation({ summary: "Create a key. The secret is returned once and is never stored in plaintext." })
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateApiKeyDto) {
     return { data: await this.service.create(user.id, body.name, body.scopes) };

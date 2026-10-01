@@ -10,6 +10,7 @@ export interface KeyRecord {
 }
 export interface ApiCatalog {
   version: string;
+  scopes: Array<{ id: string; title: string }>;
   authentication: string;
   rateLimit: { requests: number; windowSeconds: number; per: string };
   endpoints: Array<{
@@ -19,11 +20,17 @@ export interface ApiCatalog {
     title: string;
     description: string;
     parameters: string;
+    response: string;
   }>;
 }
 export interface KeyUsage {
   days: number;
   keyCount: number;
+  period: { since: string; until: string; timeZone: "UTC" };
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  rateLimitedRequests: number;
   totalRequests: number;
   successfulRequests: number;
   errorRequests: number;

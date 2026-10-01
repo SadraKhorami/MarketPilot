@@ -9,11 +9,14 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiProperty,
+  ApiPropertyOptional,
   ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 
 class ApiErrorDetail {
+  @ApiPropertyOptional({ example: 42, description: "Seconds to wait for a rate-limited request." })
+  retryAfterSeconds?: number;
   @ApiProperty({ example: "VALIDATION_ERROR" }) code!: string;
   @ApiProperty({ example: "The request could not be completed." }) message!: string;
 }
@@ -23,7 +26,8 @@ class ApiErrorResponse {
   @ApiProperty({ example: "9f4b8d73-5641-48c0-9871-8ace2fd5c661" }) requestId!: string;
 }
 
-export const ApiSessionAuth = () => applyDecorators(ApiCookieAuth("sessionCookie"), ApiBearerAuth("apiKey"));
+export const ApiSessionAuth = () => ApiCookieAuth("sessionCookie");
+export const ApiReadAuth = () => applyDecorators(ApiSessionAuth(), ApiBearerAuth("apiKey"));
 
 export const ApiStandardResponses = () =>
   applyDecorators(

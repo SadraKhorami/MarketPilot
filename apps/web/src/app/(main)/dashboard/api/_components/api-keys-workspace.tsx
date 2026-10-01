@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 
-import { Copy, KeyRound, Trash2 } from "lucide-react";
+import Link from "next/link";
+
+import { Activity, Copy, KeyRound, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,13 +27,12 @@ import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
 import { CollectionPagination } from "../../_components/collection-pagination";
 import { ResourceState } from "../../_components/resource-state";
-import { ApiCapabilities } from "./api-capabilities";
 import type { KeyRecord } from "./api-types";
 import { CreateKeyDialog, type CreateKeyInput } from "./create-key-dialog";
 import { getKeyStatus } from "./key-status";
 export function ApiKeysWorkspace() {
   const resource = useApiResource<KeyRecord[]>("/api-keys");
-  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [newSecret, setNewSecret] = useState<{ id: string; name: string; secret: string } | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<KeyRecord | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [page, setPage] = useState(1);
@@ -43,7 +44,7 @@ export function ApiKeysWorkspace() {
         method: "POST",
         body: JSON.stringify(input),
       });
-      setNewSecret(data.secret);
+      setNewSecret({ id: data.id, name: data.name, secret: data.secret });
       resource.reload();
       setPage(1);
       toast.success("Key created. Save your secret now.");
@@ -59,6 +60,7 @@ export function ApiKeysWorkspace() {
     try {
       await apiRequest(`/api-keys/${revokeTarget.id}`, { method: "DELETE" });
       resource.reload();
+      if (newSecret?.id === revokeTarget.id) setNewSecret(null);
       setRevokeTarget(null);
       toast.success("Key revoked.");
     } catch (error) {
@@ -70,7 +72,7 @@ export function ApiKeysWorkspace() {
   const copy = async () => {
     if (!newSecret) return;
     try {
-      await navigator.clipboard.writeText(newSecret);
+      await navigator.clipboard.writeText(newSecret.secret);
       toast.success("Key copied.");
     } catch {
       toast.error("Clipboard unavailable. Select and copy your key manually.");
@@ -79,13 +81,13 @@ export function ApiKeysWorkspace() {
   return (
     <div className="flex flex-col gap-5">
       {newSecret && (
-        <Alert className="gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-          <div className="flex min-w-0 items-start gap-2">
+        <Alert className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-start gap-2">
             <KeyRound className="mt-0.5 size-4 shrink-0" />
             <div className="min-w-0">
-              <AlertTitle>Save your key — it is shown once</AlertTitle>
+              <AlertTitle>Save {newSecret.name} — shown once</AlertTitle>
               <AlertDescription className="mt-1">
-                <code className="block break-all font-mono text-xs">{newSecret}</code>
+                <code className="block break-all font-mono text-xs">{newSecret.secret}</code>
               </AlertDescription>
             </div>
           </div>
@@ -101,13 +103,15 @@ export function ApiKeysWorkspace() {
         </Alert>
       )}
       <Card>
-        <CardHeader>
-          <CardTitle>Your API keys</CardTitle>
-          <CardDescription>
-            Read-only credentials for scripts and integrations. Revoke a key to stop its access immediately.
-          </CardDescription>
-          <CardAction>
-            <CreateKeyDialog onCreate={create} />
+        <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1">
+            <CardTitle>Your API keys</CardTitle>
+            <CardDescription>
+              Read-only credentials for scripts and integrations. Revoke a key to stop its access immediately.
+            </CardDescription>
+          </div>
+          <CardAction className="shrink-0 self-start">
+            <CreateKeyDialog onCreate={create} disabled={!!newSecret} />
           </CardAction>
         </CardHeader>
         <CardContent className="px-0">
@@ -132,7 +136,9 @@ export function ApiKeysWorkspace() {
                   {rows.slice((page - 1) * pageSize, page * pageSize).map((key) => (
                     <TableRow key={key.id}>
                       <TableCell className="py-4 pl-6">
-                        <p className="font-medium">{key.name}</p>
+                        <p className="max-w-56 truncate font-medium" title={key.name}>
+                          {key.name}
+                        </p>
                         <code className="text-muted-foreground text-xs">{key.prefix}••••</code>
                       </TableCell>
                       <TableCell>
@@ -152,16 +158,26 @@ export function ApiKeysWorkspace() {
                         <Badge variant="outline">{getKeyStatus(key)}</Badge>
                       </TableCell>
                       <TableCell>
-                        {!key.revokedAt && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Revoke ${key.name}`}
-                            onClick={() => setRevokeTarget(key)}
-                          >
-                            <Trash2 />
+                        <div className="flex items-center justify-end gap-1 pr-3">
+                          <Button asChild variant="ghost" size="icon">
+                            <Link
+                              href={`/dashboard/api/usage?keyId=${key.id}`}
+                              aria-label={`View usage for ${key.name}`}
+                            >
+                              <Activity />
+                            </Link>
                           </Button>
-                        )}
+                          {!key.revokedAt && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Revoke ${key.name}`}
+                              onClick={() => setRevokeTarget(key)}
+                            >
+                              <Trash2 />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -194,7 +210,6 @@ export function ApiKeysWorkspace() {
           />
         )}
       </Card>
-      <ApiCapabilities />
       <AlertDialog
         open={!!revokeTarget}
         onOpenChange={(open) => {

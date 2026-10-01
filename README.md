@@ -2,7 +2,7 @@
 
 **AI-powered market intelligence**
 
-MarketPilot is a market intelligence SaaS for monitoring assets, trends, news, sentiment, alerts, and integrations. The Next.js dashboard connects to a NestJS API. MarketPilot fetches Coinbase Exchange product prices and candles through its own provider adapter, validates the response, and calculates technical indicators in a shared TypeScript package. Unsupported products and unavailable observations are shown as unavailable. The AI Analyst is implemented using OpenRouter and authenticated application tools; a server key and compatible model are required. Bot integrations are not connected.
+MarketPilot is a market intelligence SaaS for monitoring assets, trends, news, alerts, and integrations. The Next.js dashboard connects to a NestJS API. MarketPilot fetches Coinbase Exchange product prices and candles through its own provider adapter, validates the response, and calculates technical indicators in a shared TypeScript package. Unsupported products and unavailable observations are shown as unavailable. The AI Analyst is implemented using OpenRouter and authenticated application tools; a server key and compatible model are required. Telegram/Discord linking, commands and alert delivery are implemented; live use requires server credentials and webhook registration.
 
 ## Workspace
 
@@ -30,7 +30,7 @@ Market-data requests use Coinbase Exchange public product endpoints directly fro
 
 ## Account and administration workspaces
 
-Developer API keys provide scoped read access to market data, sourced news, watchlists and alert rules. The Usage page counts API-key requests only; browser traffic is visible separately in Administration. The in-app API guide lists supported endpoints and request examples.
+Developer API keys provide scoped read access to market data, sourced news, watchlists and alert rules. The Usage page counts API-key requests only; browser traffic is visible separately in Administration. The developer area groups keys, paginated owned request history and endpoint documentation. Its guide includes curl, Node.js and Python examples, exact scope/envelope/pagination contracts and actual rate-limit headers. Keys are displayed once, never recoverable, and explicit bearer requests cannot inherit a browser session. See [Phase 7 developer API](docs/developer-api.md) for setup, Redis outage behavior, data freshness and limitations.
 
 Administrators have a separate protected sidebar for overview metrics, account directory/details, request logs, audit events, API key inventory and system checks. Payments displays an unavailable state until billing is implemented. No financial records or integrations are simulated.
 
@@ -82,3 +82,9 @@ Apply `pnpm --filter @marketpilot/db migrate:deploy` and build shared dependenci
 Bots pages now support temporary one-time link tokens, verified private platform identity, browser confirmation, disconnect/relink, explicit market-alert opt-in and paginated actual delivery history. Both providers share owned price/research/watchlist/alert commands. Discord responses are ephemeral; external alerts use private DMs. Administration → System separates configuration, worker readiness and observed connectivity, with sanitized errors and bounded recovery. No bot credentials are exposed to the browser and no bot request is billed as customer API-key traffic.
 
 Configure server secrets, apply the two additive bot migrations, build `@marketpilot/bots`, and restart the API/worker. Both use HTTPS webhooks; local development needs a tunnel. Run the explicit `pnpm bots:setup telegram` or `pnpm bots:setup discord` registration command after configuration. See [bot setup, linking, commands, privacy and delivery guarantees](docs/bot-integrations.md). Provider acceptance cannot be committed atomically with the database, so exactly-once external delivery is not promised.
+
+## Developer platform (Phase 7)
+
+The existing API key lifecycle and read API are completed with catalog-driven permission choices, transactionally recorded create/revoke audit events, no-store credential responses, per-key usage shortcuts, searchable filters, UTC reporting and paginated request history. Redis key windows return `X-RateLimit-Limit`, `X-RateLimit-Window`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `X-RateLimit-Mode` and actionable `Retry-After` on 429. The guide and Swagger describe all eight existing supported GET routes; no sentiment or write endpoint is advertised.
+
+No additional database migration or provider configuration is required. Existing running services and bot webhook settings were not deliberately stopped, restarted or reconfigured. Phase 7 verification is static only; no automated tests or browser tabs were run. See [developer API contracts, examples and limits](docs/developer-api.md).
