@@ -19,6 +19,7 @@ import {
 import { apiRequest } from "@/lib/api/client";
 import { getInitials } from "@/lib/utils";
 
+import { AccountThemeMenu } from "./account-theme-menu";
 import { useSessionUser } from "./auth-gate";
 
 export function AccountMenuContent() {
@@ -117,6 +118,8 @@ export function AccountMenuContent() {
           {signingOut ? <LoaderCircle className="animate-spin" /> : <LogOut />}
         </DropdownMenuItem>
       </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <AccountThemeMenu />
     </>
   );
 }
