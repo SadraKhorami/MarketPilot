@@ -33,12 +33,14 @@ export function useResearch() {
   const [progress, setProgress] = useState("");
   const [activity, setActivity] = useState<Array<Extract<StreamEvent, { type: "tool" }>>>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequest = useRef<AbortController | null>(null);
   const abort = useRef<AbortController | null>(null);
   const mounted = useRef<boolean>(true);
   const active = useRef<boolean>(false);
   useEffect(() => {
     mounted.current = true;
     const historyAbort = new AbortController();
+    historyRequest.current = historyAbort;
     const requested = new URLSearchParams(window.location.search).get("conversation");
     const stored = requested ?? sessionStorage.getItem("marketpilot:ai:conversation");
     const id =
@@ -60,6 +62,7 @@ export function useResearch() {
     return () => {
       mounted.current = false;
       historyAbort.abort();
+      historyRequest.current?.abort();
       abort.current?.abort();
     };
   }, []);
@@ -122,20 +125,57 @@ export function useResearch() {
   async function recover() {
     if (!conversationId || active.current) return;
     setHistoryError(null);
+    historyRequest.current?.abort();
+    const controller = new AbortController();
+    historyRequest.current = controller;
     try {
-      const response = await apiRequest<ApiEnvelope<ResearchTurn[]>>(`/ai/history?conversationId=${conversationId}`);
+      const response = await apiRequest<ApiEnvelope<ResearchTurn[]>>(`/ai/history?conversationId=${conversationId}`, {
+        signal: controller.signal,
+      });
+      if (!mounted.current || controller.signal.aborted) return;
       setTurns((current) =>
-        current.map((turn) => {
+        (current.length ? current : response.data).map((turn) => {
           const saved = response.data.find((item) => item.requestId === turn.requestId);
           return saved ? historyTurn(saved) : turn;
         }),
       );
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "Conversation history could not be loaded.");
+      if (mounted.current && !controller.signal.aborted)
+        setHistoryError(error instanceof Error ? error.message : "Conversation history could not be loaded.");
+    }
+  }
+  async function openConversation(id: string) {
+    if (active.current) return;
+    historyRequest.current?.abort();
+    const controller = new AbortController();
+    historyRequest.current = controller;
+    setConversationId(id);
+    sessionStorage.setItem("marketpilot:ai:conversation", id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("conversation", id);
+    window.history.replaceState(null, "", url);
+    setTurns([]);
+    setActivity([]);
+    setHistoryError(null);
+    setHydrated(false);
+    try {
+      const response = await apiRequest<ApiEnvelope<ResearchTurn[]>>(`/ai/history?conversationId=${id}`, {
+        signal: controller.signal,
+      });
+      if (mounted.current && !controller.signal.aborted) setTurns(response.data.map(historyTurn));
+    } catch (error) {
+      if (mounted.current && !controller.signal.aborted) setHistoryError(failureMessage(error));
+    } finally {
+      if (mounted.current && !controller.signal.aborted) setHydrated(true);
     }
   }
   function newConversation() {
     if (active.current) return;
+    historyRequest.current?.abort();
+    setHydrated(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("conversation");
+    window.history.replaceState(null, "", url);
     const id = crypto.randomUUID();
     sessionStorage.setItem("marketpilot:ai:conversation", id);
     setConversationId(id);
@@ -147,6 +187,8 @@ export function useResearch() {
     setTurns((current) => current.map((turn) => (turn.result?.runId === result.runId ? { ...turn, result } : turn)));
   }
   return {
+    conversationId,
+    openConversation,
     turns,
     running,
     progress,

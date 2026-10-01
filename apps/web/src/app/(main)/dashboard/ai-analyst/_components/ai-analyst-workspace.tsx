@@ -25,6 +25,7 @@ import { useApiResource } from "@/hooks/use-api-resource";
 import { MarketSymbolField } from "../../_components/market-symbol-field";
 import { ResourceState } from "../../_components/resource-state";
 import { ResearchConversation } from "./research-conversation";
+import { ResearchHistory } from "./research-history";
 import { toolLabels } from "./research-stream";
 import { useResearch } from "./use-research";
 
@@ -73,13 +74,20 @@ export function AIAnalystWorkspace() {
   return (
     <div className="grid min-h-0 min-w-0 flex-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:grid-rows-[minmax(0,1fr)]">
       <Card className="h-[70dvh] min-h-0 min-w-0 xl:h-full">
-        <CardHeader className="shrink-0">
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="size-4" />
-            Market research
-          </CardTitle>
-          <CardDescription>Observed facts and cited interpretation, using your MarketPilot sources.</CardDescription>
-          <CardAction>
+        <CardHeader className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="size-4" />
+              Market research
+            </CardTitle>
+            <CardDescription>Observed facts and cited interpretation, using your MarketPilot sources.</CardDescription>
+          </div>
+          <CardAction className="flex shrink-0 flex-wrap justify-end gap-2">
+            <ResearchHistory
+              currentId={research.conversationId}
+              disabled={research.running || !research.ready}
+              onSelect={research.openConversation}
+            />
             <Button variant="ghost" size="sm" disabled={research.running} onClick={research.newConversation}>
               <Plus data-icon="inline-start" />
               New
@@ -105,7 +113,8 @@ export function AIAnalystWorkspace() {
               retry={research.recover}
             />
           ) : null}
-          {!research.turns.length ? (
+          {!research.ready ? <Skeleton className="min-h-0 flex-1" /> : null}
+          {research.ready && !research.turns.length ? (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
               <Empty>
                 <EmptyHeader>
@@ -133,9 +142,10 @@ export function AIAnalystWorkspace() {
                 ))}
               </div>
             </div>
-          ) : (
+          ) : null}
+          {research.ready && research.turns.length > 0 ? (
             <ResearchConversation research={research} disabled={disabled} watchlistId={watchlistId} />
-          )}
+          ) : null}
           {research.running ? (
             <p role="status" aria-live="polite" className="shrink-0 text-muted-foreground text-sm">
               {research.progress}

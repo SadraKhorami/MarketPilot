@@ -96,3 +96,7 @@ AI tools display the requested candle window and calculate indicators from all a
 
 
 Phase 5 follow-up: confirmed proposals create the same active, owned 15m alert rules used by the background evaluator (60-minute cooldown, first-observation baseline). Inbox delivery honors in-app preferences; confirmation remains explicit. See [alert engine](alert-engine.md).
+
+### Conversation history
+
+The AI Analyst History panel lists the signed-in account’s unexpired research conversations, including bot-originated research. `/api/v1/ai/conversations` supports bounded pagination and searches stored questions. Selecting a conversation loads its latest twenty turns and keeps a `conversation` URL parameter for reopening it. Research remains subject to the existing seven-day retention policy; empty new conversations are not stored. Switching conversations is disabled during an active research request.

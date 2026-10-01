@@ -9,6 +9,7 @@ import {
 } from "@marketpilot/ai";
 import { type AiRun, Prisma } from "@marketpilot/db";
 import { Inject, Injectable } from "@nestjs/common";
+import { type PageQueryDto, pageResult } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
 import type { ResearchDto } from "./ai.dto";
 import { AiBudgetService } from "./ai-budget.service";
@@ -45,6 +46,25 @@ export class AiService {
       sentiment: false,
       alertEvaluation: false,
     };
+  }
+  async conversations(userId: string, query: PageQueryDto) {
+    const search = `%${query.search?.trim() ?? ""}%`;
+    const eligible = Prisma.sql`
+      SELECT "conversationId", (array_agg(input ORDER BY "createdAt", id))[1] AS title,
+        MAX("createdAt") AS "updatedAt", COUNT(*)::int AS "turnCount"
+      FROM "AiRun" WHERE "userId" = ${userId}::uuid AND "expiresAt" > ${new Date()}
+      GROUP BY "conversationId" HAVING bool_or(input ILIKE ${search})`;
+    const [items, count] = await Promise.all([
+      this.db.$queryRaw<Array<{ conversationId: string; title: string; updatedAt: Date; turnCount: number }>>`
+        SELECT * FROM (${eligible}) conversations ORDER BY "updatedAt" DESC, "conversationId"
+        LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`,
+      this.db.$queryRaw<Array<{ total: number }>>`SELECT COUNT(*)::int AS total FROM (${eligible}) conversations`,
+    ]);
+    return pageResult(
+      items.map((item) => ({ ...item, title: item.title.slice(0, 160) })),
+      count[0]?.total ?? 0,
+      query,
+    );
   }
   async history(userId: string, conversationId: string) {
     const runs = await this.db.aiRun.findMany({

@@ -16,6 +16,7 @@ import { ApiOperation, ApiProduces, ApiResponse, ApiTags } from "@nestjs/swagger
 import type { Request, Response } from "express";
 import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
 import { type AuthenticatedUser, CurrentUser, Roles } from "../common/auth";
+import { PageQueryDto } from "../common/request-query.dto";
 import { ProposalDecisionDto, ResearchDto } from "./ai.dto";
 import { AiService } from "./ai.service";
 import { AiProposalsService } from "./ai-proposals.service";
@@ -49,6 +50,11 @@ export class AiController {
   @ApiOperation({ summary: "Browser session: AI configuration status; no provider secrets" })
   status() {
     return { data: this.service.status() };
+  }
+  @Get("conversations")
+  @ApiOperation({ summary: "Browser session: paginated owned research conversations retained for seven days" })
+  async conversations(@CurrentUser() user: AuthenticatedUser, @Query() query: PageQueryDto) {
+    return { data: await this.service.conversations(user.id, query) };
   }
   @Get("history")
   @ApiOperation({ summary: "Browser session: last 20 owned conversation turns, retained for seven days" })
