@@ -137,3 +137,23 @@ The following checks passed for API and web:
 - `git diff --check`
 
 Shared prerequisite builds were reused from the Turbo cache. Web lint reports three existing warnings in unrelated research/dashboard files; changed files introduce none. Automated tests, real external requests, paid inference and browser tabs are deliberately not used for this phase. Existing key/rate-limit fixtures were adapted to changed contracts for subsequent CI; this does not mean tests passed. Browser visual quality, live Redis fallback/headers, mixed-cookie/bearer behavior and the full integration flow remain unverified end to end under the user's verification restrictions.
+
+## Migration ordering correction
+
+The alert engine migration was renamed from `20261001090000_alert_engine` to
+`20260930200000_alert_engine` so fresh databases create `AlertTrigger` before
+bot delivery foreign keys reference it. Its SQL is unchanged.
+
+Existing databases that successfully applied the old name must update only
+the corresponding migration ledger name before `prisma migrate deploy`:
+
+```sql
+UPDATE "_prisma_migrations"
+SET migration_name = '20260930200000_alert_engine'
+WHERE migration_name = '20261001090000_alert_engine'
+  AND finished_at IS NOT NULL AND rolled_back_at IS NULL;
+```
+
+Do not reset the database or reapply the alert tables. A database with a failed
+bot migration requires separate recovery of its partial DDL before deployment;
+this ledger update only handles a successfully applied alert migration.
