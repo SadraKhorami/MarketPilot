@@ -30,7 +30,7 @@ import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
 type Profile = { id: string; email: string; name: string | null; status: string; createdAt: string };
 type Watchlist = { items: Array<{ id: string }> };
-type AlertRule = { id: string };
+type AlertSummary = { total: number };
 type ApiKey = { id: string; revokedAt: string | null; expiresAt: string | null };
 
 export function ProfileWorkspace() {
@@ -47,7 +47,7 @@ export function ProfileWorkspace() {
     void Promise.allSettled([
       apiRequest<ApiEnvelope<Profile>>("/users/me"),
       apiRequest<ApiEnvelope<Watchlist[]>>("/watchlists"),
-      apiRequest<ApiEnvelope<AlertRule[]>>("/alerts"),
+      apiRequest<ApiEnvelope<AlertSummary>>("/alerts/summary"),
       apiRequest<ApiEnvelope<ApiKey[]>>("/api-keys"),
     ]).then(([profileResult, watchlistResult, alertResult, keyResult]) => {
       if (profileResult.status === "fulfilled") {
@@ -62,7 +62,7 @@ export function ProfileWorkspace() {
           watchlistResult.status === "fulfilled"
             ? watchlistResult.value.data.reduce((sum, list) => sum + list.items.length, 0)
             : null,
-        alerts: alertResult.status === "fulfilled" ? alertResult.value.data.length : null,
+        alerts: alertResult.status === "fulfilled" ? alertResult.value.data.total : null,
         keys:
           keyResult.status === "fulfilled"
             ? keyResult.value.data.filter(

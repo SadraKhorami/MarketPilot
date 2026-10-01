@@ -1,0 +1,22 @@
+{
+  "name": "@marketpilot/jobs",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint src",
+    "format:check": "biome format src"
+  },
+  "dependencies": {
+    "bullmq": "^5.81.5",
+    "@marketpilot/market-data": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3",
+    "@biomejs/biome": "^2.5.14"
+  }
+}

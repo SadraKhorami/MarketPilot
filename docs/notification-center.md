@@ -6,7 +6,7 @@
 - Navbar: bounded scrolling for the latest eight messages, unread badge, mark-all-read, details and preferences/inbox shortcuts. The full inbox adds owner-scoped search, category/status filters and server pagination.
 - Synchronization: summary polling every 60 seconds while the tab is visible/online, focus refresh with a 10-second cooldown, immediate refresh after actions, and same-browser tab invalidation via BroadcastChannel. This is polling, not WebSocket/device push. Reloads retain existing rows while updating.
 - Real events: successful sign-in, session revocation, API key creation/revocation, welcome after registration, and new-registration notices for active administrators. Audit history stays separate. Event notification write failures are logged without turning a completed security/account operation into a failure; durable outbox retries are a future requirement.
-- `inAppEnabled` controls optional product announcements. Security/account-access notices remain available. Email preferences are stored only; email, Telegram, Discord, device push and market-trigger delivery are not implemented.
+- `inAppEnabled` controls optional product announcements and market alerts. Security/account-access notices remain available. Email preferences are stored only; email, Telegram, Discord and device push are not implemented.
 
 ## Administrator announcements
 
@@ -41,8 +41,11 @@ The local development process was restarted after it was found serving an older 
 
 ## Remaining production work
 
-Notification retention/export policy, durable outbox/retries for event notices, asynchronous large-audience delivery, market-trigger evaluation, and external channels belong to subsequent backend phases. Those capabilities are not presented as active.
+Notification retention/export policy, asynchronous large-audience announcement delivery and external channels remain outside this phase. Market-trigger evaluation and its durable outbox/retries are implemented by the Phase 5 worker.
 
 ## Phase 4 boundary
 
-An AI alert confirmation saves an owned rule and its existing alert audit event. It does not create an inbox message, evaluate prices or deliver notifications. Alert engine/background work remains Phase 5; Telegram/Discord remains Phase 6.
+An AI alert confirmation saves an owned rule and its existing alert audit event. Confirmation itself does not create an inbox message. The Phase 5 worker evaluates the rule, and a later valid crossing can deliver a market-alert inbox entry. Telegram/Discord remains Phase 6.
+
+
+Phase 5 adds MARKET_ALERT to the durable inbox, category filter and unread count. Optional alert delivery checks active account, rule and WEB in-app preferences; security events keep their existing behavior. See [alert engine](alert-engine.md) for the transactional outbox, idempotency and recovery policy.

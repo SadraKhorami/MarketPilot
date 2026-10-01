@@ -54,8 +54,8 @@ export function AlertProposal({ proposal, change }: { proposal: Proposal; change
       <CardContent className="flex flex-col gap-3">
         <Badge variant="outline">{stateLabel}</Badge>
         <p className="text-muted-foreground text-xs">
-          This saves a rule in Alerts. Evaluation and notification delivery are not connected yet. No destination is
-          available in this phase.
+          Confirm to activate a 15-minute rule with dashboard inbox delivery. The first observation sets its baseline;
+          later crossings can trigger a notification, subject to your in-app preferences.
         </p>
         {proposal.state === "pending" ? (
           <p className="text-muted-foreground text-xs">

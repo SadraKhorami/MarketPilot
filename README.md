@@ -8,7 +8,7 @@ MarketPilot is a market intelligence SaaS for monitoring assets, trends, news, s
 
 The web app is based on the completed [Next.js shadcn admin dashboard](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), substantially adapted for MarketPilot. The source dashboard's MIT notice is retained at `apps/web/LICENSE`; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The repository contains a Next.js app in `apps/web`, a NestJS REST API in `apps/api`, a controlled RSS ingestion worker in `apps/worker`, and shared packages for the database, market-data providers and calculations, news source parsing, and validated AI provider contracts. The Desktop MarketFeed repository is an inspection reference only; MarketPilot does not call or depend on it. OpenRouter AI research is implemented; Telegram and Discord remain unavailable.
+The repository contains a Next.js app in `apps/web`, a NestJS REST API in `apps/api`, an alert/background-job and controlled RSS ingestion worker in `apps/worker`, and shared packages for the database, market-data providers and calculations, news source parsing, and validated AI provider contracts. The Desktop MarketFeed repository is an inspection reference only; MarketPilot does not call or depend on it. OpenRouter AI research is implemented; Telegram and Discord remain unavailable.
 
 ## Run locally
 
@@ -61,7 +61,7 @@ GitHub Actions runs the same checks on pull requests and pushes to `main`.
 
 ## Notification center
 
-The navbar bell and `/dashboard/notifications` use a real personal inbox with unread counts, filters, pagination, read/unread, archive/restore and related-page shortcuts. Administrators manage reviewed announcements at `/dashboard/admin/notifications`; publishing respects account preferences and provides aggregate delivery/read counts. Security and registration notices are generated from current events. Email, bot, device-push and market-alert delivery remain unavailable. See [notification center](docs/notification-center.md).
+The navbar bell and `/dashboard/notifications` use a real personal inbox with unread counts, filters, pagination, read/unread, archive/restore and related-page shortcuts. Administrators manage reviewed announcements at `/dashboard/admin/notifications`; publishing respects account preferences and provides aggregate delivery/read counts. Security and registration notices are generated from current events. Market alerts use the same inbox. Email, bot and device-push delivery remain unavailable. See [notification center](docs/notification-center.md).
 
 ## AI Analyst (Phase 4)
 
@@ -69,4 +69,10 @@ Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` on the server and restart the AP
 
 Research uses the current browser session and owned watchlist, streams honest progress, and returns validated observation/source cards with a separate qualitative interpretation. Cancellation stops application orchestration; non-streaming upstream inference may still be billed. Private turns are retained for seven days, with bounded request-triggered cleanup and the latest twenty turns displayed. AI metrics appear in Administration → System; API-key Usage remains separate. See [AI Analyst API and limits](docs/ai-analyst.md).
 
-Alert proposals require an expiring, separate confirmation. Saved rules are not evaluated or delivered yet. Sentiment scoring, historical watchlist changes, bots, payments and deployment are outside this phase.
+Alert proposals require an expiring, separate confirmation. Confirmed rules are evaluated by the Phase 5 worker with dashboard inbox delivery. Sentiment scoring, historical watchlist changes, bots, payments and deployment are outside this phase.
+
+## Alert engine and background jobs (Phase 5)
+
+BullMQ refreshes grouped active markets, evaluates price/RSI/completed-candle percentage crossings and delivers owned market alerts to the inbox. PostgreSQL observation/trigger outboxes and unique notification keys recover queue publication failures and prevent duplicate delivery. Administration → System shows real queue counts, worker heartbeats, pending/failed jobs and safe failed-job retry. RSS ingestion remains independent and disabled by default.
+
+Apply `pnpm --filter @marketpilot/db migrate:deploy` and build shared dependencies before launching the updated API/worker. `pnpm dev` starts the worker with the applications; production uses `pnpm --filter @marketpilot/worker start` after builds. See [alert engine setup, semantics, configuration and recovery](docs/alert-engine.md). No bots or external delivery are implemented.

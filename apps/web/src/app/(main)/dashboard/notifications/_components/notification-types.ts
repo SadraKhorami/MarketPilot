@@ -1,4 +1,4 @@
-export type NotificationCategory = "SECURITY" | "ACCOUNT" | "ANNOUNCEMENT";
+export type NotificationCategory = "SECURITY" | "ACCOUNT" | "ANNOUNCEMENT" | "MARKET_ALERT";
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL";
 export interface NotificationRecord {
   id: string;
@@ -16,5 +16,10 @@ export interface NotificationSummary {
   inbox: number;
   archived: number;
 }
-export const categoryLabels = { SECURITY: "Security", ACCOUNT: "Account", ANNOUNCEMENT: "Announcements" } as const;
+export const categoryLabels = {
+  SECURITY: "Security",
+  ACCOUNT: "Account",
+  ANNOUNCEMENT: "Announcements",
+  MARKET_ALERT: "Market alerts",
+} as const;
 export const severityLabels = { INFO: "Information", WARNING: "Important", CRITICAL: "Urgent" } as const;

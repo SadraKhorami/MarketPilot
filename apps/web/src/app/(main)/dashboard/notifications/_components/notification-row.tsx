@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "cn";
-import { Archive, ArchiveRestore, Check, Eye, Mail, Megaphone, ShieldCheck, UserRound } from "lucide-react";
+import { Archive, ArchiveRestore, BellRing, Check, Eye, Mail, Megaphone, ShieldCheck, UserRound } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Item, ItemActions, ItemContent, ItemMedia } from "@/components/ui/item"
 import { useNotifications } from "./notification-provider";
 import { categoryLabels, type NotificationRecord } from "./notification-types";
 
-const icons = { SECURITY: ShieldCheck, ACCOUNT: UserRound, ANNOUNCEMENT: Megaphone };
+const icons = { SECURITY: ShieldCheck, ACCOUNT: UserRound, ANNOUNCEMENT: Megaphone, MARKET_ALERT: BellRing };
 function relativeTime(value: string) {
   const minutes = Math.round((new Date(value).getTime() - Date.now()) / 60000);
   const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });

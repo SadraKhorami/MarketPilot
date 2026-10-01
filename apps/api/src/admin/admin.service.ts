@@ -271,8 +271,9 @@ export class AdminService {
         },
         {
           name: "Alert delivery",
-          status: "not implemented",
-          detail: "Rules can be saved; background evaluation and delivery are not connected.",
+          status: "implemented",
+          detail:
+            "Price, RSI and candle change evaluation with durable inbox delivery. Inspect worker health and queues below.",
         },
         {
           name: "Telegram & Discord",

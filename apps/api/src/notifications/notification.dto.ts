@@ -7,10 +7,10 @@ export class NotificationQueryDto extends PageQueryDto {
   @IsOptional()
   @IsIn(["all", "unread", "read", "archived"])
   status: "all" | "unread" | "read" | "archived" = "all";
-  @ApiPropertyOptional({ enum: ["SECURITY", "ACCOUNT", "ANNOUNCEMENT"] })
+  @ApiPropertyOptional({ enum: ["SECURITY", "ACCOUNT", "ANNOUNCEMENT", "MARKET_ALERT"] })
   @IsOptional()
-  @IsIn(["SECURITY", "ACCOUNT", "ANNOUNCEMENT"])
-  category?: "SECURITY" | "ACCOUNT" | "ANNOUNCEMENT";
+  @IsIn(["SECURITY", "ACCOUNT", "ANNOUNCEMENT", "MARKET_ALERT"])
+  category?: "SECURITY" | "ACCOUNT" | "ANNOUNCEMENT" | "MARKET_ALERT";
 }
 export class UpdateNotificationDto {
   @ApiPropertyOptional()

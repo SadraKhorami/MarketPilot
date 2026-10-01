@@ -43,8 +43,9 @@ export const API_CATALOG = {
       path: "/alerts",
       scope: "alerts:read",
       title: "Your alert rules",
-      description: "Saved rules belonging to the key owner. Evaluation is not enabled yet.",
-      parameters: "None",
+      description:
+        "Owned alert rules with latest evaluation and trigger state. Returns data.items with pagination metadata.",
+      parameters: "search, status: all|active|paused, page, pageSize (1–50)",
     },
   ],
 };

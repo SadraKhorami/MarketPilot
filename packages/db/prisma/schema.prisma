@@ -41,6 +41,7 @@ enum NotificationCategory {
   SECURITY
   ACCOUNT
   ANNOUNCEMENT
+  MARKET_ALERT
 }
 
 enum NotificationSeverity {
@@ -142,22 +143,28 @@ model WatchlistItem {
 }
 
 model Alert {
-  id              String         @id @default(uuid()) @db.Uuid
-  userId          String         @db.Uuid
-  name            String         @db.VarChar(120)
-  assetId         String         @db.VarChar(80)
-  condition       AlertCondition
-  threshold       Decimal        @db.Decimal(24, 10)
-  enabled         Boolean        @default(true)
-  cooldownMinutes Int            @default(60)
-  lastEvaluatedAt DateTime?      @db.Timestamptz(3)
-  lastTriggeredAt DateTime?      @db.Timestamptz(3)
-  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
-  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String         @id @default(uuid()) @db.Uuid
+  userId            String         @db.Uuid
+  name              String         @db.VarChar(120)
+  assetId           String         @db.VarChar(80)
+  condition         AlertCondition
+  threshold         Decimal        @db.Decimal(24, 10)
+  enabled           Boolean        @default(true)
+  cooldownMinutes   Int            @default(60)
+  interval          String         @default("15m") @db.VarChar(4)
+  lastObservationAt DateTime?      @db.Timestamptz(3)
+  lastValue         Decimal?       @db.Decimal(24, 10)
+  matched           Boolean?
+  evaluationReason  String?        @db.VarChar(80)
+  triggers          AlertTrigger[]
+  lastEvaluatedAt   DateTime?      @db.Timestamptz(3)
+  lastTriggeredAt   DateTime?      @db.Timestamptz(3)
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, enabled, createdAt])
-  @@index([enabled, assetId])
+  @@index([enabled, assetId, interval])
 }
 
 model NotificationChannel {
@@ -266,6 +273,7 @@ model Notification {
   readAt         DateTime?                 @db.Timestamptz(3)
   archivedAt     DateTime?                 @db.Timestamptz(3)
   createdAt      DateTime                  @default(now()) @db.Timestamptz(3)
+  triggerId      String?                   @unique @db.Uuid
   announcementId String?                   @db.Uuid
   user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   announcement   NotificationAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: Restrict)
@@ -337,4 +345,46 @@ model AiAlertProposal {
   run       AiRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
+}
+
+// A persisted observation is the recoverable outbox for evaluation queue publication.
+model AlertObservation {
+  id              String    @id @default(uuid()) @db.Uuid
+  symbol          String    @db.VarChar(80)
+  interval        String    @db.VarChar(4)
+  payload         Json
+  fetchedAt       DateTime  @db.Timestamptz(3)
+  lastPublishedAt DateTime? @db.Timestamptz(3)
+  failureCode     String?   @db.VarChar(80)
+  completedAt     DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([completedAt, lastPublishedAt, createdAt])
+}
+
+// Pending trigger rows are the transactional notification outbox.
+model AlertTrigger {
+  id              String         @id @default(uuid()) @db.Uuid
+  alertId         String         @db.Uuid
+  userId          String         @db.Uuid
+  observationAt   DateTime       @db.Timestamptz(3)
+  triggeredAt     DateTime       @default(now()) @db.Timestamptz(3)
+  assetId         String         @db.VarChar(80)
+  condition       AlertCondition
+  threshold       Decimal        @db.Decimal(24, 10)
+  value           Decimal        @db.Decimal(24, 10)
+  interval        String         @db.VarChar(4)
+  source          String         @db.VarChar(80)
+  providerSymbol  String         @db.VarChar(80)
+  priceKind       String         @db.VarChar(20)
+  unit            String         @db.VarChar(30)
+  lastPublishedAt DateTime?      @db.Timestamptz(3)
+  failureCode     String?        @db.VarChar(80)
+  deliveryStatus  String         @default("pending") @db.VarChar(20)
+  deliveredAt     DateTime?      @db.Timestamptz(3)
+  alert           Alert          @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@unique([alertId, observationAt])
+  @@index([userId, triggeredAt])
+  @@index([deliveryStatus, lastPublishedAt, triggeredAt])
 }

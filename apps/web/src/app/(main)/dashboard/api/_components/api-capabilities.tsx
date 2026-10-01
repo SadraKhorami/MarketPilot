@@ -39,7 +39,7 @@ export function ApiCapabilities() {
             {resource.data?.endpoints.map((endpoint) => {
               const Icon = icons[endpoint.scope as keyof typeof icons] ?? ArrowUpRight;
               return (
-                <div key={endpoint.scope} className="flex gap-3 rounded-lg border p-4">
+                <div key={`${endpoint.method}:${endpoint.path}`} className="flex gap-3 rounded-lg border p-4">
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                     <Icon className="size-4" />
                   </div>

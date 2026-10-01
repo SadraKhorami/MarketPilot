@@ -3,6 +3,8 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -29,6 +31,11 @@ export class CreateAlertDto {
   @IsEnum(AlertCondition)
   condition!: AlertCondition;
 
+  @ApiPropertyOptional({ default: "15m", enum: ["1m", "5m", "15m", "1h", "6h", "1d"] })
+  @IsOptional()
+  @IsIn(["1m", "5m", "15m", "1h", "6h", "1d"])
+  interval?: string;
+
   @ApiProperty({ example: 65000 })
   @IsNumber({ allowNaN: false, allowInfinity: false })
   threshold!: number;
@@ -40,17 +47,18 @@ export class CreateAlertDto {
 
   @ApiPropertyOptional({ default: 60, minimum: 0, maximum: 10080 })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @Min(0)
   @Max(10080)
   cooldownMinutes?: number;
 }
 
 export class UpdateAlertDto {
+  @ApiPropertyOptional() @IsOptional() @IsIn(["1m", "5m", "15m", "1h", "6h", "1d"]) interval?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(1) @MaxLength(120) name?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @Matches(/^[a-zA-Z0-9:_-]{2,32}$/) assetId?: string;
   @ApiPropertyOptional({ enum: AlertCondition }) @IsOptional() @IsEnum(AlertCondition) condition?: AlertCondition;
   @ApiPropertyOptional() @IsOptional() @IsNumber({ allowNaN: false, allowInfinity: false }) threshold?: number;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() enabled?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) @Max(10080) cooldownMinutes?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(10080) cooldownMinutes?: number;
 }

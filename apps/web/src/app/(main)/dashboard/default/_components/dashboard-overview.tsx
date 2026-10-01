@@ -17,7 +17,7 @@ import { OverviewHeadlines, type OverviewNews } from "./overview-headlines";
 import { OverviewMarketHistory } from "./overview-market-history";
 
 type Watchlist = { id: string; name: string; items: Array<{ id: string; assetId: string }> };
-type AlertRule = { id: string; enabled: boolean };
+type AlertSummary = { total: number; active: number };
 
 const refreshInterval = 65_000;
 const marketPulseSymbols = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"];
@@ -27,7 +27,7 @@ export function DashboardOverview() {
   const [watchlists, setWatchlists] = useState<Watchlist[] | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, Snapshot | null>>({});
   const [news, setNews] = useState<OverviewNews | null>(null);
-  const [alerts, setAlerts] = useState<AlertRule[] | null>(null);
+  const [alerts, setAlerts] = useState<AlertSummary | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
@@ -43,7 +43,7 @@ export function DashboardOverview() {
       const [watchlistResult, newsResult, alertsResult] = await Promise.allSettled([
         apiRequest<ApiEnvelope<Watchlist[]>>("/watchlists"),
         apiRequest<ApiEnvelope<OverviewNews>>("/news?page=1&pageSize=6"),
-        apiRequest<ApiEnvelope<AlertRule[]>>("/alerts"),
+        apiRequest<ApiEnvelope<AlertSummary>>("/alerts/summary"),
       ]);
 
       const nextErrors: string[] = [];
@@ -170,8 +170,8 @@ export function DashboardOverview() {
         <SummaryCard
           href="/dashboard/alerts"
           label="Saved alerts"
-          value={alerts ? String(alerts.length) : unavailableValue}
-          detail={alerts?.length ? "Your saved market conditions" : "Save a price condition to revisit"}
+          value={alerts ? String(alerts.total) : unavailableValue}
+          detail={alerts?.total ? `${alerts.active} active market conditions` : "Save a price condition to revisit"}
           icon={BellRing}
         />
       </section>

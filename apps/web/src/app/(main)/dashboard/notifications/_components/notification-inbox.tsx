@@ -106,6 +106,7 @@ export function NotificationInbox() {
                 ["SECURITY", "Security"],
                 ["ACCOUNT", "Account"],
                 ["ANNOUNCEMENT", "Announcements"],
+                ["MARKET_ALERT", "Market alerts"],
               ]}
               onChange={(value) => {
                 setCategory(value);

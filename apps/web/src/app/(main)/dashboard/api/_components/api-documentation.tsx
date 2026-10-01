@@ -59,7 +59,7 @@ export function ApiDocumentation() {
         <>
           <div className="grid gap-4 md:grid-cols-2">
             {resource.data.endpoints.map((endpoint) => (
-              <Card key={endpoint.scope}>
+              <Card key={`${endpoint.method}:${endpoint.path}`}>
                 <CardHeader>
                   <CardTitle>{endpoint.title}</CardTitle>
                   <CardDescription>{endpoint.description}</CardDescription>
