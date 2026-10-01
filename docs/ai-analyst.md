@@ -21,7 +21,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
 Use an exact OpenRouter catalog model supporting tools, tool choice and structured outputs. No model is guessed and no provider fallback exists. Restart the API after changing configuration. `/ai/status` reports configuration, not a successful inference or provider connection. Model discovery and published pricing are checked before inference, cached for five minutes, with one shared bounded in-flight catalog read per API process. Keys never enter browser bundles, tool arguments, prompts, fixtures, logs or the repository. Prompts and bounded news/watchlist data necessarily go to OpenRouter and the selected upstream provider; review provider privacy requirements for your deployment.
 
-Sentiment scoring, historical watchlist-change analysis, alert evaluation, bot destinations, trades and payments are unavailable. RSS ingestion remains subject to its existing permission/configuration requirements. This phase reads only already stored news.
+Sentiment scoring, historical watchlist-change analysis, trades and payments are unavailable. Phase 5 evaluates saved alerts, and Phase 6 adds private bot research through this same service; bot alert proposals still require the existing authenticated browser confirmation. RSS ingestion remains subject to its existing permission/configuration requirements. This phase reads only already stored news.
 
 ## Browser-session API
 

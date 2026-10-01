@@ -6,12 +6,16 @@ export const queueLabels: Record<string, string> = {
   "market-refresh": "Market refresh",
   "alert-evaluation": "Rule evaluation",
   notifications: "Inbox delivery",
+  "external-notifications": "External delivery",
+  "bot-commands": "Bot commands",
 };
 const queueDetails: Record<string, { icon: typeof BellRing; detail: string }> = {
   "market-refresh": { icon: ChartNoAxesCombined, detail: "Fetch fresh provider observations" },
   "alert-evaluation": { icon: ListChecks, detail: "Check thresholds and persist crossings" },
   notifications: { icon: BellRing, detail: "Deliver saved triggers without duplicates" },
 };
+queueDetails["external-notifications"] = { icon: BellRing, detail: "Independent Telegram and Discord outbox" };
+queueDetails["bot-commands"] = { icon: ListChecks, detail: "Private commands through authorized services" };
 const states = ["waiting", "active", "delayed", "failed", "completed"] as const;
 
 export function QueueHealth({

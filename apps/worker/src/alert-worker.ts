@@ -8,6 +8,7 @@ import Redis from "ioredis";
 import { deliverTrigger } from "./alert-delivery.js";
 import { evaluateObservation } from "./alert-evaluator.js";
 import { isInterval } from "./alert-observation.js";
+import { startExternalWorker } from "./external-worker.js";
 
 type RefreshJob = { symbol?: string; interval?: string };
 type ReferenceJob = { id: string };
@@ -170,6 +171,7 @@ export async function startAlertWorker(db: PrismaClient) {
     connection,
     concurrency: config.notificationConcurrency,
   });
+  let external: Awaited<ReturnType<typeof startExternalWorker>> | undefined;
   const workers = [refresh, evaluation, notifications];
   for (const worker of workers) {
     worker.on("failed", (job: Job | undefined, error: Error) => {
@@ -198,7 +200,10 @@ export async function startAlertWorker(db: PrismaClient) {
   for (const queue of Object.values(queues))
     queue.on("error", () => console.error(JSON.stringify({ event: "queue_unavailable", queue: queue.name })));
   const beat = async () => {
-    if (workers.every((worker) => worker.isRunning() && !worker.isPaused()))
+    if (
+      workers.every((worker) => worker.isRunning() && !worker.isPaused()) &&
+      (!external || (external.worker.isRunning() && !external.worker.isPaused()))
+    )
       await redis.zadd(heartbeatKey, Date.now(), instanceId);
     else await redis.zrem(heartbeatKey, instanceId);
     await redis.zremrangebyscore(heartbeatKey, 0, Date.now() - 90000);
@@ -207,11 +212,13 @@ export async function startAlertWorker(db: PrismaClient) {
   const close = async () => {
     clearInterval(timer);
     await Promise.all(workers.map((worker) => worker.close()));
+    await external?.close();
     await redis.zrem(heartbeatKey, instanceId).catch(() => undefined);
     await Promise.all(Object.values(queues).map((queue) => queue.close()));
     await redis.quit().catch(() => undefined);
   };
   try {
+    external = await startExternalWorker(db, redis);
     await Promise.all(workers.map((worker) => worker.waitUntilReady()));
     await queues.refresh.setGlobalConcurrency(config.refreshConcurrency);
     await queues.refresh.upsertJobScheduler(
@@ -224,7 +231,7 @@ export async function startAlertWorker(db: PrismaClient) {
       JSON.stringify({
         event: "alert_worker_ready",
         workerId: instanceId,
-        queues: workers.map((worker) => worker.name),
+        queues: [...workers.map((worker) => worker.name), external.worker.name],
         cadenceSeconds: config.cadenceMs / 1000,
       }),
     );

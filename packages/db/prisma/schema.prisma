@@ -63,24 +63,26 @@ enum AnnouncementStatus {
 }
 
 model User {
-  id            String                     @id @default(uuid()) @db.Uuid
-  email         String                     @unique @db.VarChar(320)
-  passwordHash  String                     @db.VarChar(255)
-  name          String?                    @db.VarChar(120)
-  status        UserStatus                 @default(ACTIVE)
-  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
-  roles         UserRole[]
-  sessions      Session[]
-  watchlists    Watchlist[]
-  alerts        Alert[]
-  channels      NotificationChannel[]
-  apiKeys       ApiKey[]
-  apiUsage      ApiUsage[]
-  activity      ActivityLog[]
-  aiRuns        AiRun[]
-  notifications Notification[]
-  announcements NotificationAnnouncement[] @relation("AnnouncementAuthor")
+  id                 String                     @id @default(uuid()) @db.Uuid
+  email              String                     @unique @db.VarChar(320)
+  passwordHash       String                     @db.VarChar(255)
+  name               String?                    @db.VarChar(120)
+  status             UserStatus                 @default(ACTIVE)
+  createdAt          DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz(3)
+  roles              UserRole[]
+  sessions           Session[]
+  watchlists         Watchlist[]
+  alerts             Alert[]
+  channels           NotificationChannel[]
+  apiKeys            ApiKey[]
+  apiUsage           ApiUsage[]
+  activity           ActivityLog[]
+  aiRuns             AiRun[]
+  notifications      Notification[]
+  announcements      NotificationAnnouncement[] @relation("AnnouncementAuthor")
+  botLinkTokens      BotLinkToken[]
+  externalDeliveries ExternalDelivery[]
 
   @@index([status, createdAt])
 }
@@ -168,17 +170,18 @@ model Alert {
 }
 
 model NotificationChannel {
-  id                String          @id @default(uuid()) @db.Uuid
-  userId            String          @db.Uuid
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @db.Uuid
   provider          ChannelProvider
-  externalAccountId String?         @db.VarChar(200)
-  displayName       String?         @db.VarChar(120)
-  verifiedAt        DateTime?       @db.Timestamptz(3)
-  active            Boolean         @default(false)
-  preferences       Json            @default("{}")
-  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  externalAccountId String?            @db.VarChar(200)
+  displayName       String?            @db.VarChar(120)
+  verifiedAt        DateTime?          @db.Timestamptz(3)
+  active            Boolean            @default(false)
+  preferences       Json               @default("{}")
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries        ExternalDelivery[]
 
   @@unique([provider, externalAccountId])
   @@unique([userId, provider])
@@ -364,27 +367,105 @@ model AlertObservation {
 
 // Pending trigger rows are the transactional notification outbox.
 model AlertTrigger {
-  id              String         @id @default(uuid()) @db.Uuid
-  alertId         String         @db.Uuid
-  userId          String         @db.Uuid
-  observationAt   DateTime       @db.Timestamptz(3)
-  triggeredAt     DateTime       @default(now()) @db.Timestamptz(3)
-  assetId         String         @db.VarChar(80)
-  condition       AlertCondition
-  threshold       Decimal        @db.Decimal(24, 10)
-  value           Decimal        @db.Decimal(24, 10)
-  interval        String         @db.VarChar(4)
-  source          String         @db.VarChar(80)
-  providerSymbol  String         @db.VarChar(80)
-  priceKind       String         @db.VarChar(20)
-  unit            String         @db.VarChar(30)
-  lastPublishedAt DateTime?      @db.Timestamptz(3)
-  failureCode     String?        @db.VarChar(80)
-  deliveryStatus  String         @default("pending") @db.VarChar(20)
-  deliveredAt     DateTime?      @db.Timestamptz(3)
-  alert           Alert          @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(uuid()) @db.Uuid
+  alertId            String             @db.Uuid
+  userId             String             @db.Uuid
+  observationAt      DateTime           @db.Timestamptz(3)
+  triggeredAt        DateTime           @default(now()) @db.Timestamptz(3)
+  assetId            String             @db.VarChar(80)
+  condition          AlertCondition
+  threshold          Decimal            @db.Decimal(24, 10)
+  value              Decimal            @db.Decimal(24, 10)
+  interval           String             @db.VarChar(4)
+  source             String             @db.VarChar(80)
+  providerSymbol     String             @db.VarChar(80)
+  priceKind          String             @db.VarChar(20)
+  unit               String             @db.VarChar(30)
+  lastPublishedAt    DateTime?          @db.Timestamptz(3)
+  failureCode        String?            @db.VarChar(80)
+  deliveryStatus     String             @default("pending") @db.VarChar(20)
+  deliveredAt        DateTime?          @db.Timestamptz(3)
+  alert              Alert              @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  externalDeliveries ExternalDelivery[]
 
   @@unique([alertId, observationAt])
   @@index([userId, triggeredAt])
   @@index([deliveryStatus, lastPublishedAt, triggeredAt])
+}
+
+// Only a hash is stored. Redemption identifies a candidate; browser confirmation grants access.
+model BotLinkToken {
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        String          @db.Uuid
+  provider      ChannelProvider
+  tokenHash     String          @unique @db.Char(64)
+  expiresAt     DateTime        @db.Timestamptz(3)
+  consumedAt    DateTime?       @db.Timestamptz(3)
+  revokedAt     DateTime?       @db.Timestamptz(3)
+  confirmedAt   DateTime?       @db.Timestamptz(3)
+  candidateId   String?         @db.VarChar(200)
+  candidateName String?         @db.VarChar(120)
+  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider, expiresAt])
+}
+
+model ExternalDelivery {
+  id            String              @id @default(uuid()) @db.Uuid
+  triggerId     String              @db.Uuid
+  userId        String              @db.Uuid
+  channelId     String              @db.Uuid
+  provider      ChannelProvider
+  destination   String              @db.VarChar(200)
+  linkedAt      DateTime            @db.Timestamptz(3)
+  status        String              @default("pending") @db.VarChar(20)
+  attempts      Int                 @default(0)
+  adminRetries  Int                 @default(0)
+  nextAttemptAt DateTime            @default(now()) @db.Timestamptz(3)
+  sendingAt     DateTime?           @db.Timestamptz(3)
+  deliveredAt   DateTime?           @db.Timestamptz(3)
+  receiptId     String?             @db.VarChar(200)
+  failureCode   String?             @db.VarChar(80)
+  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @db.Timestamptz(3)
+  trigger       AlertTrigger        @relation(fields: [triggerId], references: [id], onDelete: Cascade)
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel       NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([triggerId, channelId, destination])
+  @@index([status, nextAttemptAt])
+  @@index([userId, provider, createdAt])
+}
+
+// Platform tokens, link codes and command input are encrypted at rest and removed on expiry.
+model BotCommand {
+  id             String          @id @default(uuid()) @db.Uuid
+  provider       ChannelProvider
+  eventId        String          @db.VarChar(80)
+  payload        String          @db.Text
+  status         String          @default("pending") @db.VarChar(20)
+  result         String?         @db.Text
+  replyIndex     Int             @default(0)
+  replyAttempts  Int             @default(0)
+  nextAttemptAt  DateTime        @default(now()) @db.Timestamptz(3)
+  failureCode    String?         @db.VarChar(80)
+  requestId      String          @default(uuid()) @db.Uuid
+  conversationId String          @default(uuid()) @db.Uuid
+  leaseUntil     DateTime?       @db.Timestamptz(3)
+  leaseOwner     String?         @db.Uuid
+  sendingAt      DateTime?       @db.Timestamptz(3)
+  expiresAt      DateTime        @db.Timestamptz(3)
+  createdAt      DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@unique([provider, eventId])
+  @@index([status, expiresAt])
+}
+
+model BotRuntime {
+  provider     ChannelProvider @id
+  inboundAt    DateTime?       @db.Timestamptz(3)
+  checkedAt    DateTime?       @db.Timestamptz(3)
+  successfulAt DateTime?       @db.Timestamptz(3)
+  failureCode  String?         @db.VarChar(80)
 }

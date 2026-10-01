@@ -14,10 +14,13 @@ export async function evaluateObservation(db: PrismaClient, observationId: strin
       interval: batch.interval,
       user: { status: "ACTIVE" },
     },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
-  for (const { id } of rules) {
+  for (const { id, userId } of rules) {
     const trigger = await db.$transaction(async (tx) => {
+      // Lock the owner before the rule, matching bot delivery/link lock order. The later
+      // outbox foreign-key insert needs this shared lock; acquiring it first avoids a cycle.
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR KEY SHARE`;
       // Serialize evaluation, edits, pauses and deletion on the same database row.
       await tx.$queryRaw`SELECT id FROM "Alert" WHERE id = ${id}::uuid FOR UPDATE`;
       const rule = await tx.alert.findUnique({
@@ -91,8 +94,8 @@ export async function evaluateObservation(db: PrismaClient, observationId: strin
           ...(trigger ? { lastTriggeredAt: evaluatedAt } : {}),
         },
       });
-      if (trigger)
-        return tx.alertTrigger.create({
+      if (trigger) {
+        const event = await tx.alertTrigger.create({
           data: {
             alertId: id,
             userId: rule.userId,
@@ -109,6 +112,39 @@ export async function evaluateObservation(db: PrismaClient, observationId: strin
             unit: metric.unit,
           },
         });
+        const channels = await tx.notificationChannel.findMany({
+          where: {
+            userId: rule.userId,
+            provider: { in: ["TELEGRAM", "DISCORD"] },
+            active: true,
+            verifiedAt: { not: null },
+            externalAccountId: { not: null },
+          },
+        });
+        for (const channel of channels) {
+          const preferences = channel.preferences;
+          if (
+            !channel.externalAccountId ||
+            !channel.verifiedAt ||
+            !preferences ||
+            typeof preferences !== "object" ||
+            Array.isArray(preferences) ||
+            preferences.marketAlerts !== true
+          )
+            continue;
+          await tx.externalDelivery.create({
+            data: {
+              triggerId: event.id,
+              userId: rule.userId,
+              channelId: channel.id,
+              provider: channel.provider,
+              destination: channel.externalAccountId,
+              linkedAt: channel.verifiedAt,
+            },
+          });
+        }
+        return event;
+      }
     });
     if (trigger)
       console.log(

@@ -9,7 +9,7 @@ export default function AlertsPage() {
   return (
     <MarketPilotPage
       title="Alerts"
-      description="Track price, RSI and candle change crossings with dashboard inbox delivery."
+      description="Track price, RSI and candle change crossings with inbox and opted-in bot delivery."
     >
       <AlertManager />
     </MarketPilotPage>

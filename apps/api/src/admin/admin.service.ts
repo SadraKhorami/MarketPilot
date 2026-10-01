@@ -1,3 +1,4 @@
+import { botConfiguration, botProviders } from "@marketpilot/bots";
 import { Prisma } from "@marketpilot/db";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { aiConfiguration } from "../ai/ai.service";
@@ -275,11 +276,12 @@ export class AdminService {
           detail:
             "Price, RSI and candle change evaluation with durable inbox delivery. Inspect worker health and queues below.",
         },
-        {
-          name: "Telegram & Discord",
-          status: "not implemented",
-          detail: "Account linking and bot delivery are planned.",
-        },
+        ...botProviders.map((provider) => ({
+          name: provider === "TELEGRAM" ? "Telegram" : "Discord",
+          status: botConfiguration(provider).configured ? "configured" : "unavailable",
+          detail:
+            "Private commands and independent market alert delivery. Configuration does not establish connectivity; inspect bot runtime below.",
+        })),
         { name: "Payments", status: "not implemented", detail: "No billing provider or transaction records exist." },
       ],
     };

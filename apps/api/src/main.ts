@@ -20,6 +20,7 @@ async function bootstrap() {
     .split(",")
     .map((origin) => origin.trim());
 
+  app.enableShutdownHooks();
   app.setGlobalPrefix("api/v1");
   app.enableCors({
     origin: origins,

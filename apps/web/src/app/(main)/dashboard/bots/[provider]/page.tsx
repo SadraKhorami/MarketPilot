@@ -19,8 +19,11 @@ export default async function BotPage({ params }: BotPageProps) {
   if (provider !== "telegram" && provider !== "discord") notFound();
   const name = provider === "telegram" ? "Telegram" : "Discord";
   return (
-    <MarketPilotPage title={name} description={`Review the current ${name} notification connection status.`}>
-      <BotIntegration provider={provider} />
+    <MarketPilotPage
+      title={name}
+      description={`Connect your ${name} account for private market research and alert notifications.`}
+    >
+      <BotIntegration key={provider} provider={provider} />
     </MarketPilotPage>
   );
 }

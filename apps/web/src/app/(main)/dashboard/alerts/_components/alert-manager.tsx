@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 
+import Link from "next/link";
+
 import { BellRing, Eye, Pause, Play, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -62,15 +64,20 @@ export function AlertManager() {
           <div className="min-w-0 flex-1">
             <CardTitle>Alert rules</CardTitle>
             <CardDescription>
-              Crossing-based rules · Dashboard inbox delivery · Fresh provider observations
+              Crossing-based rules · Fresh provider observations · Channel preferences apply
             </CardDescription>
           </div>
-          <CreateAlert
-            saved={() => {
-              setPage(1);
-              resource.reload();
-            }}
-          />
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/dashboard/bots/telegram">Bot delivery</Link>
+            </Button>
+            <CreateAlert
+              saved={() => {
+                setPage(1);
+                resource.reload();
+              }}
+            />
+          </div>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row">
@@ -127,7 +134,7 @@ export function AlertManager() {
                           </TableCell>
                           <TableCell>
                             <p>{conditionLabel(rule)}</p>
-                            <p className="text-muted-foreground text-xs">{rule.cooldownMinutes}m cooldown · Inbox</p>
+                            <p className="text-muted-foreground text-xs">{rule.cooldownMinutes}m cooldown</p>
                           </TableCell>
                           <TableCell>
                             <p>{reasonLabel(rule.evaluationReason)}</p>

@@ -72,7 +72,7 @@ export function AdminJobs() {
       <CardHeader>
         <CardTitle>Alert processing</CardTitle>
         <CardDescription>
-          Market observations → rule evaluation → inbox delivery. Refreshes every 30 seconds.
+          Market observations → rule evaluation → inbox and opted-in external delivery. Refreshes every 30 seconds.
         </CardDescription>
         <CardAction>
           <Button
@@ -141,7 +141,9 @@ export function AdminJobs() {
               options={[
                 ["market-refresh", "Market refresh"],
                 ["alert-evaluation", "Evaluation"],
-                ["notifications", "Notifications"],
+                ["notifications", "Inbox delivery"],
+                ["external-notifications", "External delivery"],
+                ["bot-commands", "Bot commands"],
               ]}
               onChange={(value) => {
                 setQueue(value);
@@ -179,7 +181,7 @@ export function AdminJobs() {
                         {job.id} · {job.attempts} attempts · {new Date(job.failedAt ?? job.createdAt).toLocaleString()}
                       </p>
                     </div>
-                    {status === "failed" ? (
+                    {status === "failed" && queue !== "external-notifications" ? (
                       <Button
                         className="shrink-0"
                         size="sm"

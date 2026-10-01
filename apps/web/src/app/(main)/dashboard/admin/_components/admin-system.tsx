@@ -10,6 +10,7 @@ import { useApiResource } from "@/hooks/use-api-resource";
 
 import { ResourceState } from "../../_components/resource-state";
 import { AdminAiMetrics } from "./admin-ai-metrics";
+import { AdminBots } from "./admin-bots";
 import { AdminJobs } from "./admin-jobs";
 import type { SystemState } from "./admin-types";
 
@@ -93,6 +94,7 @@ export function AdminSystem() {
         ) : null}
       </section>
       <AdminJobs />
+      <AdminBots />
       <AdminAiMetrics />
       {data && !resource.error ? (
         <Card>

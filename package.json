@@ -14,7 +14,8 @@
     "lint": "turbo run lint --filter=@marketpilot/*",
     "format:check": "turbo run format:check --filter=@marketpilot/*",
     "typecheck": "turbo run typecheck --filter=@marketpilot/*",
-    "ci": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build"
+    "ci": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build",
+    "bots:setup": "node --env-file=.env packages/bots/dist/setup.js"
   },
   "devDependencies": {
     "turbo": "^2.5.6"

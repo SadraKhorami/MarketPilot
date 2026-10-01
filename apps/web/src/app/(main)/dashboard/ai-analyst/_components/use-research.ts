@@ -39,7 +39,8 @@ export function useResearch() {
   useEffect(() => {
     mounted.current = true;
     const historyAbort = new AbortController();
-    const stored = sessionStorage.getItem("marketpilot:ai:conversation");
+    const requested = new URLSearchParams(window.location.search).get("conversation");
+    const stored = requested ?? sessionStorage.getItem("marketpilot:ai:conversation");
     const id =
       stored && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(stored)
         ? stored

@@ -6,7 +6,7 @@
 - Navbar: bounded scrolling for the latest eight messages, unread badge, mark-all-read, details and preferences/inbox shortcuts. The full inbox adds owner-scoped search, category/status filters and server pagination.
 - Synchronization: summary polling every 60 seconds while the tab is visible/online, focus refresh with a 10-second cooldown, immediate refresh after actions, and same-browser tab invalidation via BroadcastChannel. This is polling, not WebSocket/device push. Reloads retain existing rows while updating.
 - Real events: successful sign-in, session revocation, API key creation/revocation, welcome after registration, and new-registration notices for active administrators. Audit history stays separate. Event notification write failures are logged without turning a completed security/account operation into a failure; durable outbox retries are a future requirement.
-- `inAppEnabled` controls optional product announcements and market alerts. Security/account-access notices remain available. Email preferences are stored only; email, Telegram, Discord and device push are not implemented.
+- `inAppEnabled` controls optional product announcements and market alerts. Security/account-access notices remain available. Email preferences are stored only; email and device push are not implemented. Telegram/Discord market-alert preferences and delivery state are independent; see [bot integrations](bot-integrations.md).
 
 ## Administrator announcements
 
@@ -45,7 +45,7 @@ Notification retention/export policy, asynchronous large-audience announcement d
 
 ## Phase 4 boundary
 
-An AI alert confirmation saves an owned rule and its existing alert audit event. Confirmation itself does not create an inbox message. The Phase 5 worker evaluates the rule, and a later valid crossing can deliver a market-alert inbox entry. Telegram/Discord remains Phase 6.
+An AI alert confirmation saves an owned rule and its existing alert audit event. Confirmation itself does not create an inbox message. The Phase 5 worker evaluates the rule, and a later valid crossing can deliver a market-alert inbox entry. Phase 6 additionally snapshots verified opted-in Telegram/Discord destinations into an independent external outbox; inbox state is not reused for those channels.
 
 
 Phase 5 adds MARKET_ALERT to the durable inbox, category filter and unread count. Optional alert delivery checks active account, rule and WEB in-app preferences; security events keep their existing behavior. See [alert engine](alert-engine.md) for the transactional outbox, idempotency and recovery policy.

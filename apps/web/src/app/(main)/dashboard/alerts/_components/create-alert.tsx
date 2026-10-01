@@ -206,8 +206,8 @@ export function CreateAlert({ saved }: { saved: () => void }) {
             />
           </FieldGroup>
           <p className="text-muted-foreground text-xs">
-            Delivery: dashboard inbox, subject to in-app preferences. RSI and percentage change use completed candles. A
-            new crossing during cooldown is skipped.
+            Delivery follows inbox preferences and any verified bots you have opted into. RSI and percentage change use
+            completed candles. A new crossing during cooldown is skipped.
           </p>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>

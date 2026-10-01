@@ -14,6 +14,7 @@ import { AiToolsService } from "./ai-tools.service";
 @Module({
   imports: [MarketDataModule],
   controllers: [AiController],
+  exports: [AiService],
   providers: [
     AiService,
     AiToolsService,

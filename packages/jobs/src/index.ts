@@ -1,9 +1,16 @@
 import { type MarketDataInterval, marketDataIntervals, referenceMarkets } from "@marketpilot/market-data";
 import { type JobsOptions, Queue } from "bullmq";
 
-export const queueNames = ["market-refresh", "alert-evaluation", "notifications"] as const;
+export const queueNames = [
+  "market-refresh",
+  "alert-evaluation",
+  "notifications",
+  "external-notifications",
+  "bot-commands",
+] as const;
 export type QueueName = (typeof queueNames)[number];
 export const queuePrefix = "marketpilot-jobs";
+export const botHeartbeatKey = "marketpilot:bots:workers:v1";
 export const heartbeatKey = "marketpilot:alerts:workers:v1";
 export const intervalSeconds: Record<MarketDataInterval, number> = {
   "1m": 60,

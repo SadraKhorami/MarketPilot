@@ -98,6 +98,8 @@ export class JobsService implements OnModuleDestroy {
   }
   async retry(name: string, id: string) {
     if (!/^[a-zA-Z0-9:_-]{1,180}$/.test(id)) throw new BadRequestException("Invalid job identifier.");
+    if (name === "external-notifications")
+      throw new BadRequestException("Use the bot delivery recovery controls; ambiguous acceptance cannot be replayed.");
     const queue = this.queue(name);
     try {
       const job = await this.bounded(queue.getJob(id));

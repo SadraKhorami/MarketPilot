@@ -1,6 +1,6 @@
 # Integrations and Security Boundaries
 
-This document records current provider integrations and known limits. Market data is fetched directly by MarketPilot's API through a MarketPilot-owned adapter. The Desktop `marketsentinel-marketfeed` project is reference material only: there is no runtime request, code import, token, or database dependency. RSS ingestion runs separately and remains disabled pending permission confirmation. OpenRouter AI research is implemented; Telegram, Discord and BullMQ remain future work.
+This document records current provider integrations and known limits. Market data is fetched directly by MarketPilot's API through a MarketPilot-owned adapter. The Desktop `marketsentinel-marketfeed` project is reference material only: there is no runtime request, code import, token, or database dependency. RSS ingestion runs separately and remains disabled pending permission confirmation. OpenRouter AI research and BullMQ alerts are implemented. Telegram and Discord share secure linking, private commands and independent external delivery; see [bot integrations](bot-integrations.md) for required credentials, HTTPS webhooks and delivery limits.
 
 ## Market-data provider
 
@@ -49,25 +49,13 @@ Keep an AI provider interface configured by server-only environment variables. S
 
 ## Telegram and Discord
 
-### Account linking
+Both providers are implemented through the server-only `packages/bots` transport and shared Nest domain services. Linking uses a hashed cryptographic one-time token, atomic candidate redemption, browser identity confirmation and destination uniqueness. Disconnect revokes pending tokens and delivery eligibility. Telegram accepts sensitive commands only in verified private chats; Discord link commands require bot DM and other responses are ephemeral. No raw internal account IDs or credentials are requested from users.
 
-An authenticated user requests a random, short-lived, single-use link challenge in the web app. Store only its hash and expiry. The user submits it in a private Telegram chat or Discord slash command. The bot verifies the challenge server-side, binds the platform's immutable user/account ID to the user, consumes the challenge atomically, and confirms in both interfaces. Do not link by username, display name, or an unauthenticated callback. Support unlink/revoke and log those actions.
+Commands are `/start` (Telegram), `/link` (Discord), `/help`, `/price`/`/market`, `/analyze`, `/ask`, `/watchlist` and `/alerts`. Price commands use existing catalog/source validation; research uses existing AI quotas, sourced tools and browser proposal confirmation. No trades, daily summaries or fabricated sentiment are added.
 
-Telegram bots should reject group use for linking and sensitive account commands. Prefer long polling for local/development operation; if production webhooks are used, require Telegram's configured secret token and a non-guessable route, validate payloads, and deduplicate update IDs.
+HTTPS webhooks are used for both local development (through an operator-provided tunnel) and production. Telegram secret headers and Discord Ed25519 raw-body/timestamp verification authenticate ingress. Durable encrypted command records carry unique platform event IDs; BullMQ jobs carry IDs only. Discord acknowledges promptly and edits the original private response. Private destinations, current account/rule status and preferences are checked again before sending.
 
-Discord interactions must validate the Ed25519 request signature against the raw request body and reject stale/invalid timestamps before parsing commands. Register least-privilege slash commands and acknowledge within Discord's response deadline; defer long work safely. Use OAuth only if a confirmed product requirement needs it; command-based single-use linking is sufficient for initial notifications.
-
-### Commands
-
-Start with a small allowlist: `/link`, `/unlink`, `/watchlist`, `/price`, `/news`, and `/help`. Add technical analysis/compare/alert commands only after supported market-data operations and safe parameter schemas are known. Every command reuses API services, enforces account scope, and returns data source/time or an explicit unavailable response. Never let a bot command execute a trade.
-
-### Notification flow
-
-Implemented in-app delivery stores personal notifications in PostgreSQL. The navbar polls once per minute while visible, refreshes on focus/actions, and synchronizes local tabs. ADMIN announcements use a reviewed draft and atomic fan-out; security/account notices come from actual events. See [notification center](notification-center.md) for current boundaries.
-
-The following external delivery flow remains planned:
-
-API commits the domain change and an `OutboxEvent` in one PostgreSQL transaction. A dispatcher publishes a BullMQ notification job; a worker loads the active, verified channel and renders a bounded message; the platform adapter sends it; delivery attempt/result is recorded with retry classification and idempotency key. Retry transient errors with backoff, dead-letter permanent failures, cap attempts, and allow channel disable/revoke. Never include API keys, sessions, or sensitive account information in messages/logs.
+The Phase 5 trigger transaction adds independent `ExternalDelivery` records only for verified opted-in destinations. The external outbox, attempts, provider receipts and ambiguous acceptance status never overwrite dashboard inbox state. Telegram uncertainty stops automatic replay; Discord uses a stable recent-message nonce with bounded recovery. Exactly-once external delivery is not promised. See [bot setup, privacy and recovery](bot-integrations.md) for complete configuration, installation and operational limits.
 
 ## Background queues
 
@@ -75,8 +63,9 @@ API commits the domain change and an `OutboxEvent` in one PostgreSQL transaction
 |---|---|---|
 | `market-refresh` | Scheduler/API enqueues refresh of only contract-supported assets/resources. | Deduplicate by provider + normalized query + time window; rate-limit globally and per provider; bounded concurrency and backoff. Schedule interval waits on freshness and rate-limit documentation. |
 | `alert-evaluation` | New validated observation or scheduled sweep checks enabled alert rules. | Unique alert + observation/version key; transactionally record state/trigger to avoid duplicate firing; cooldown and stale-data rules. |
-| `notifications` | Outbox dispatcher queues web, Telegram, or Discord delivery. | Per event/channel idempotency; retry transient only; bounded attempts and dead-letter visibility. |
-| `scheduled-summaries` (optional) | User-opted-in digest at the user's configured timezone/schedule. | Unique user + period; explicit opt-in, quiet hours, source timestamps, unsubscribe/revoke. Add only after product validation. |
+| `notifications` | Phase 5 dashboard inbox delivery. | Unique trigger/inbox key and transactional completion; independent of external channels. |
+| `external-notifications` | Independent Telegram/Discord alert outbox. | Per trigger/channel/destination uniqueness; current link/opt-in checks; durable attempt/receipt state and bounded ambiguity recovery. |
+| `bot-commands` | Authenticated platform commands consumed within the API. | Unique provider event ID; encrypted short-lived records; execution lease; shared owned services and AI budget. |
 
 Redis is not the system of record. PostgreSQL stores user/alert/notification intent; BullMQ jobs may be retried or rebuilt from durable state. Job payloads contain identifiers, not secrets or large market/news bodies.
 
@@ -87,8 +76,7 @@ Redis is not the system of record. PostgreSQL stores user/alert/notification int
 - API keys (implemented): 256-bit random secret plus a 64-bit random lookup prefix; SHA-256 hash only is stored; the secret is shown once and verification uses constant-time comparison. Keys support `market:read`, `news:read`, `watchlists:read`, and `alerts:read`, revocation, and last-used tracking. Keys cannot access account management or administration endpoints.
 - Rate limits (implemented): Redis-backed 60-second fixed windows allow 10 login/register attempts per IP, 120 requests per API key, and 300 authenticated browser requests per user. Key and browser buckets are independent. Authenticated logout remains available after a request bucket is exhausted. A bounded per-process fallback runs if Redis is unavailable; this fallback is not distributed across replicas.
 - Secret management: local values load from a root `.env` file ignored by Git; deployments should inject separate environment-specific credentials. Never log passwords, session/API-key secrets, or authorization headers. Market-data provider selection is server-side and never comes from user input.
-- Bot security (planned): verify Telegram webhook secrets; verify Discord Ed25519 signatures against raw request bytes and timestamps; deduplicate provider delivery IDs; allowlist commands; keep bot tokens server-side.
-- Bot security: verify Telegram webhook secret when using webhooks; verify Discord Ed25519 signatures on exact raw bytes and timestamp; deduplicate provider delivery IDs; allowlist commands; use least-privilege bot permissions; store bot tokens only server-side.
+- Bot security (implemented): authenticated webhooks, candidate plus browser-confirmed linking, unique platform IDs, encrypted command payloads, private responses, bounded retries and sanitized failures. See the bot guide for live setup requirements.
 - Upstream security: HTTPS to allowlisted provider hosts, strict timeouts, bounded response size, schema validation, bounded retry rules, and no user-controlled URL fetching. Avoid returning upstream stack traces or secrets.
 - Audit/privacy: record security changes and integration link/unlink/delivery events with minimal safe metadata; define retention and export/deletion behavior before launch.
 

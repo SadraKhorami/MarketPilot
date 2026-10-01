@@ -21,8 +21,8 @@ import {
 
 function deliveryLabel(item: TriggerRecord) {
   if (item.deliveryStatus === "delivered") return "Inbox delivered";
-  if (item.deliveryStatus === "suppressed") return "Delivery skipped";
-  return item.failureCode ? "Delivery needs recovery" : "Delivery pending";
+  if (item.deliveryStatus === "suppressed") return "Inbox skipped";
+  return item.failureCode ? "Inbox needs recovery" : "Inbox pending";
 }
 export function AlertDetails({ id, close }: { id: string | null; close: () => void }) {
   const [page, setPage] = useState(1);
@@ -64,7 +64,7 @@ export function AlertDetails({ id, close }: { id: string | null; close: () => vo
                   {data.assetId} · {conditionLabel(data)}
                 </p>
                 <p className="text-muted-foreground text-xs">
-                  {data.interval} candles · {data.cooldownMinutes} minute cooldown · Dashboard inbox
+                  {data.interval} candles · {data.cooldownMinutes} minute cooldown
                 </p>
               </div>
               <Badge variant={data.enabled ? "default" : "outline"}>{data.enabled ? "Active" : "Paused"}</Badge>
@@ -84,9 +84,17 @@ export function AlertDetails({ id, close }: { id: string | null; close: () => vo
                 </div>
               ))}
             </dl>
-            <Link className="text-sm underline underline-offset-4" href="/dashboard/settings">
-              Manage notification preferences
-            </Link>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+              <Link className="underline underline-offset-4" href="/dashboard/settings">
+                Inbox preferences
+              </Link>
+              <Link className="underline underline-offset-4" href="/dashboard/bots/telegram">
+                Telegram delivery
+              </Link>
+              <Link className="underline underline-offset-4" href="/dashboard/bots/discord">
+                Discord delivery
+              </Link>
+            </div>
             <div className="flex flex-col gap-3">
               <h3 className="font-medium">Trigger history</h3>
               <ResourceState {...history} retry={history.reload} />

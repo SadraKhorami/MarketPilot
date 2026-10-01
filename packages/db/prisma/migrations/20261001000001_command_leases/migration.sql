@@ -1,0 +1,1 @@
+ALTER TABLE "BotCommand" ADD COLUMN "leaseUntil" TIMESTAMPTZ(3), ADD COLUMN "leaseOwner" UUID;

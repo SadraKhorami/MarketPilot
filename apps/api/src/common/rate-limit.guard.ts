@@ -13,6 +13,20 @@ export class RateLimitGuard implements CanActivate {
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request & { user?: { id: string; apiKeyId?: string } }>();
     if (request.method === "POST" && request.path.endsWith("/auth/logout")) return true;
+    // Webhook acknowledgements have a three-second deadline. Use a cheap pre-auth IP guard;
+    // verified platform senders get distributed, fail-closed limits in BotRateService.
+    if (request.method === "POST" && /^\/(?:api\/v1\/)?bot-webhooks\/(telegram|discord)$/.test(request.path)) {
+      const now = Date.now();
+      const key = `webhook:${request.ip ?? "unknown"}`;
+      if (this.fallback.size > 10000) {
+        for (const [entry, bucket] of this.fallback) if (bucket.expiresAt <= now) this.fallback.delete(entry);
+        if (this.fallback.size > 10000) throw rateLimited();
+      }
+      const bucket = this.fallback.get(key);
+      if (!bucket || bucket.expiresAt <= now) this.fallback.set(key, { count: 1, expiresAt: now + 60000 });
+      else if (++bucket.count > 600) throw rateLimited();
+      return true;
+    }
     const identity = request.user?.apiKeyId ?? request.user?.id ?? request.ip ?? "unknown";
     const authAction = request.method === "POST" ? request.path.match(/\/auth\/(login|register)$/)?.[1] : undefined;
     const limit = authAction ? 10 : request.user?.apiKeyId ? API_KEY_RATE_LIMIT : request.user ? 300 : 120;
