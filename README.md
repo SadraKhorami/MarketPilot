@@ -28,6 +28,10 @@ The dashboard opens at `http://localhost:3000`; the API listens at `http://local
 
 Market-data requests use Coinbase Exchange public product endpoints directly from the MarketPilot API; no Desktop service or provider token is required for this adapter. Use exact product identifiers such as `BTC-USD`; a USDT pair is never silently converted to a USD pair. Investing.com RSS ingestion is disabled by default. Enable it only after written permission for the intended storage/display use, as described in [integration notes](docs/integrations.md).
 
+### In-app development guide
+
+With `pnpm dev`, open `/dashboard/dev-docs` or **Development → Developer guide** in the sidebar. It covers daily startup, updates, bot linking, sandbox billing and troubleshooting, with copyable commands. The sidebar submenu opens each guide section at its own URL. Architecture contains a top-to-bottom React Flow map with inspectable service nodes and illustrative looping research, alert and billing flows for local and Ubuntu environments; the Deploy to Ubuntu section covers Docker releases, migrations, Nginx, Cloudflare, provider webhooks, backups and recovery. The route checks `NODE_ENV` on the server and returns not-found outside development; the sidebar/search entry is also development-only. This restriction applies to this local guide, not to the customer-facing developer API documentation.
+
 ## Account and administration workspaces
 
 Developer API keys provide scoped read access to market data, sourced news, watchlists and alert rules. The Usage page counts API-key requests only; browser traffic is visible separately in Administration. The developer area groups keys, paginated owned request history and endpoint documentation. Its guide includes curl, Node.js and Python examples, exact scope/envelope/pagination contracts and actual rate-limit headers. Keys are displayed once, never recoverable, and explicit bearer requests cannot inherit a browser session. See [Phase 7 developer API](docs/developer-api.md) for setup, Redis outage behavior, data freshness and limitations.

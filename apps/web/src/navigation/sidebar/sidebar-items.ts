@@ -7,9 +7,12 @@ import {
   Bot,
   CandlestickChart,
   ChartNoAxesCombined,
+  Code2,
   CreditCard,
   KeyRound,
+  Layers3,
   LayoutDashboard,
+  LifeBuoy,
   type LucideIcon,
   MessageCircle,
   Newspaper,
@@ -20,6 +23,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Terminal,
   UserRound,
   Users,
 } from "lucide-react";
@@ -134,6 +138,34 @@ export const sidebarItems: NavGroup[] = [
     ],
   },
 ];
+
+if (process.env.NODE_ENV === "development") {
+  sidebarItems.push({
+    id: 5,
+    label: "Development",
+    items: [
+      {
+        id: "dev-docs",
+        title: "Developer guide",
+        icon: BookOpen,
+        subItems: [
+          { id: "docs-architecture", title: "Architecture", url: "/dashboard/dev-docs/architecture", icon: Layers3 },
+          { id: "docs-daily", title: "Quick start", url: "/dashboard/dev-docs/daily", icon: Terminal },
+          { id: "docs-setup", title: "Setup & updates", url: "/dashboard/dev-docs/setup", icon: Code2 },
+          { id: "docs-bots", title: "Bots", url: "/dashboard/dev-docs/bots", icon: Bot },
+          { id: "docs-billing", title: "Sandbox billing", url: "/dashboard/dev-docs/billing", icon: CreditCard },
+          { id: "docs-deploy", title: "Deploy to Ubuntu", url: "/dashboard/dev-docs/deploy", icon: Server },
+          {
+            id: "docs-troubleshooting",
+            title: "Troubleshooting",
+            url: "/dashboard/dev-docs/troubleshooting",
+            icon: LifeBuoy,
+          },
+        ],
+      },
+    ],
+  });
+}
 
 export const adminSidebarGroup: NavGroup = {
   id: 4,
