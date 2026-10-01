@@ -1,126 +1,102 @@
 "use client";
 
-import { ArrowUpRight, Focus } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import {
-  type ArchitectureEnvironment,
-  type ArchitectureService,
-  getService,
-  type ServiceId,
-} from "./architecture-data";
+import type { ArchitectureService } from "./architecture-data";
 import type { DiagramConnection } from "./architecture-diagram";
 
 export function ArchitectureInspector({
   selectedService,
   availableServices,
-  environment,
   connections,
-  onSelect,
-  onFocus,
+  open,
+  onOpenChange,
 }: {
   selectedService: ArchitectureService;
   availableServices: ArchitectureService[];
-  environment: ArchitectureEnvironment;
   connections: DiagramConnection[];
-  onSelect: (id: ServiceId) => void;
-  onFocus?: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const selectedId = selectedService.id;
-  const SelectedIcon = selectedService.icon;
+  const Icon = selectedService.icon;
   const relatedConnections = connections.filter(
-    (connection) => connection.source === selectedId || connection.target === selectedId,
+    (connection) => connection.source === selectedService.id || connection.target === selectedService.id,
   );
   return (
-    <Card className="min-w-0">
-      <CardHeader className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
-            <SelectedIcon className="size-5" />
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+        <SheetHeader className="gap-3 pr-12">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
+              <Icon className="size-5" />
+            </div>
+            <SheetTitle>{selectedService.title}</SheetTitle>
           </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <CardTitle>{selectedService.title}</CardTitle>
-            <CardDescription>{selectedService.subtitle}</CardDescription>
-          </div>
-        </div>
-        <Select
-          value={selectedId}
-          onValueChange={(value) => {
-            const service = availableServices.find((item) => item.id === value);
-            if (service) onSelect(service.id);
-          }}
-        >
-          <SelectTrigger className="w-full sm:w-60" aria-label="Inspect an architecture service">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {availableServices.map((service) => (
-                <SelectItem key={service.id} value={service.id}>
-                  {getService(service, environment).title}
-                </SelectItem>
+          <SheetDescription>{selectedService.subtitle}</SheetDescription>
+          <Badge variant="secondary" className="self-start">
+            {selectedService.layer}
+          </Badge>
+        </SheetHeader>
+        <Tabs key={selectedService.id} defaultValue="overview" className="min-h-0 flex-1 gap-4 px-4 pb-4">
+          <TabsList className="w-full" aria-label="Service details">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="connections">Connections</TabsTrigger>
+            <TabsTrigger value="technical">Technical</TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview" className="min-h-0 overflow-y-auto">
+            <ul className="flex list-disc flex-col gap-4 pl-5 text-sm leading-relaxed">
+              {selectedService.responsibilities.map((item) => (
+                <li key={item}>{item}</li>
               ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </CardHeader>
-      <CardContent className="grid min-w-0 gap-6 lg:grid-cols-3">
-        <section className="flex min-w-0 flex-col gap-3">
-          <h3 className="font-medium text-sm">Responsibilities</h3>
-          <ul className="flex list-disc flex-col gap-2 pl-4 text-muted-foreground text-xs leading-relaxed">
-            {selectedService.responsibilities.map((responsibility) => (
-              <li key={responsibility}>{responsibility}</li>
-            ))}
-          </ul>
-        </section>
-        <section className="flex min-w-0 flex-col gap-3">
-          <h3 className="font-medium text-sm">Connected services</h3>
-          <div className="flex flex-col gap-2">
-            {relatedConnections.map((connection) => {
-              const incoming = connection.target === selectedId;
-              const peer = availableServices.find(
-                (service) => service.id === (incoming ? connection.source : connection.target),
-              );
-              if (!peer) return null;
-              return (
-                <div
-                  key={`${connection.source}-${connection.target}`}
-                  className="flex items-start justify-between gap-3 text-xs"
-                >
-                  <span className="min-w-0">{getService(peer, environment).title}</span>
-                  <span className="shrink-0 text-muted-foreground">{incoming ? "Inbound" : "Outbound"}</span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-        <section className="flex min-w-0 flex-col gap-3">
-          <h3 className="font-medium text-sm">Ownership & boundaries</h3>
-          <code className="text-xs [overflow-wrap:anywhere]">{selectedService.location}</code>
-          <p className="text-muted-foreground text-xs leading-relaxed">{selectedService.boundary}</p>
-        </section>
-      </CardContent>
-      <CardFooter className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <Badge variant="secondary">{selectedService.layer}</Badge>
-        <div className="flex flex-wrap gap-2">
-          {onFocus && (
-            <Button size="sm" variant="outline" onClick={onFocus}>
-              <Focus data-icon="inline-start" />
-              Focus node
-            </Button>
-          )}
-          <Button asChild size="sm" variant="ghost">
-            <a href="http://localhost:4000/api/v1/docs" target="_blank" rel="noopener noreferrer">
-              API reference
-              <ArrowUpRight data-icon="inline-end" />
-            </a>
-          </Button>
-        </div>
-      </CardFooter>
-    </Card>
+            </ul>
+          </TabsContent>
+          <TabsContent value="connections" className="min-h-0 overflow-y-auto">
+            <div className="flex flex-col gap-3">
+              {relatedConnections.map((connection) => {
+                const incoming = connection.target === selectedService.id;
+                const peer = availableServices.find(
+                  (service) => service.id === (incoming ? connection.source : connection.target),
+                );
+                if (!peer) return null;
+                return (
+                  <div
+                    key={`${connection.source}-${connection.target}`}
+                    className="flex flex-col gap-2 rounded-lg border p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium">{peer.title}</span>
+                      <Badge variant="outline">{incoming ? "Incoming" : "Outgoing"}</Badge>
+                    </div>
+                    <p className="text-muted-foreground text-sm leading-relaxed">{connection.label}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </TabsContent>
+          <TabsContent value="technical" className="min-h-0 overflow-y-auto">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <h3 className="font-medium">Code location</h3>
+                <code className="rounded-lg bg-muted p-3 text-xs [overflow-wrap:anywhere]">
+                  {selectedService.location}
+                </code>
+              </div>
+              <p className="text-muted-foreground text-sm leading-relaxed">{selectedService.boundary}</p>
+              <Button asChild variant="outline" className="self-start">
+                <a href="http://localhost:4000/api/v1/docs" target="_blank" rel="noopener noreferrer">
+                  API reference
+                  <ArrowUpRight data-icon="inline-end" />
+                </a>
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </SheetContent>
+    </Sheet>
   );
 }

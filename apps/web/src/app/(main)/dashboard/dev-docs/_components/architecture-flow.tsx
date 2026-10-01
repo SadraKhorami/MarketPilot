@@ -11,10 +11,11 @@ import {
   ReactFlow,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import { Layers3, Maximize, Minus, Pause, Play, Plus } from "lucide-react";
+import { CircleHelp, Layers3, Maximize, Minus, Pause, Play, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 import { type ArchitectureEnvironment, type ArchitectureJourney, journeys, type ServiceId } from "./architecture-data";
@@ -51,6 +52,7 @@ export function ArchitectureFlow() {
   const compactView = useSyncExternalStore(subscribeCompactView, getCompactView, getServerCompactView);
   const [environment, setEnvironment] = useState<ArchitectureEnvironment>("server");
   const [journey, setJourney] = useState<ArchitectureJourney>("all");
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<ServiceId>("api");
   const instance = useRef<ReactFlowInstance<ServiceNode, ArchitectureFlowEdge> | null>(null);
   const diagram = useMemo(() => getDiagram(journey, environment), [journey, environment]);
@@ -102,16 +104,19 @@ export function ArchitectureFlow() {
     [connections, animationEnabled, journey, reducedMotion, selectedService.id],
   );
 
-  const onNodeClick = useCallback<NodeMouseHandler<ServiceNode>>(
-    (_event, node) => setSelectedId(node.data.service.id),
-    [],
-  );
+  const onNodeClick = useCallback<NodeMouseHandler<ServiceNode>>((_event, node) => {
+    setSelectedId(node.data.service.id);
+    setInspectorOpen(true);
+  }, []);
   const onNodesChange = useCallback(
     (changes: NodeChange<ServiceNode>[]) => {
       const selected = changes.find((change) => change.type === "select" && change.selected);
       if (selected?.type === "select") {
         const service = diagramServices.find((item) => item.id === selected.id);
-        if (service) setSelectedId(service.id);
+        if (service) {
+          setSelectedId(service.id);
+          setInspectorOpen(true);
+        }
       }
     },
     [diagramServices],
@@ -130,8 +135,7 @@ export function ArchitectureFlow() {
               Inside MarketPilot
             </CardTitle>
             <CardDescription className="max-w-2xl">
-              Start with the simple platform overview. Choose a workflow for its details, then select a service to
-              inspect its responsibilities.
+              Choose a workflow. Select a node to explore its role and connections.
             </CardDescription>
           </div>
           <ToggleGroup
@@ -150,31 +154,65 @@ export function ArchitectureFlow() {
           </ToggleGroup>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
-          <div className="min-w-0 overflow-x-auto pb-1">
-            <ToggleGroup
-              type="single"
-              value={journey}
-              variant="outline"
-              size="sm"
-              aria-label="Highlight an architecture journey"
-              onValueChange={(value) => {
-                const item = journeys.find((option) => option.id === value);
-                if (item) setJourney(item.id);
-              }}
-            >
-              {journeys.map((item) => (
-                <ToggleGroupItem key={item.id} value={item.id}>
-                  {item.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+          <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+            <div className="min-w-0 overflow-x-auto pb-1">
+              <ToggleGroup
+                type="single"
+                value={journey}
+                variant="outline"
+                size="sm"
+                aria-label="Highlight an architecture journey"
+                onValueChange={(value) => {
+                  const item = journeys.find((option) => option.id === value);
+                  if (item) setJourney(item.id);
+                }}
+              >
+                {journeys.map((item) => (
+                  <ToggleGroupItem key={item.id} value={item.id}>
+                    {item.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="sm" className="shrink-0 self-start">
+                  <CircleHelp data-icon="inline-start" />
+                  How it works
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+                <SheetHeader className="pr-12">
+                  <SheetTitle>How this workflow works</SheetTitle>
+                  <SheetDescription>{journeyDescription}</SheetDescription>
+                </SheetHeader>
+                <div className="flex min-h-0 flex-col gap-6 overflow-y-auto px-4 pb-4">
+                  <ol className="flex flex-col gap-4">
+                    {connections.map((connection, index) => (
+                      <li key={`${connection.source}-${connection.target}`} className="flex items-start gap-3">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted font-medium text-xs">
+                          {index + 1}
+                        </span>
+                        <p className="text-sm leading-relaxed">{connection.label}</p>
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="flex flex-col gap-2 rounded-lg border p-4">
+                    <h3 className="font-medium">{environment === "local" ? "Running locally" : "Ubuntu deployment"}</h3>
+                    <p className="text-muted-foreground text-sm leading-relaxed">
+                      {environment === "local"
+                        ? "Dashboard and API run on your machine; PostgreSQL and Redis run in Docker. A public tunnel lets Telegram, Discord and Stripe reach local webhooks."
+                        : "Cloudflare routes public traffic to Nginx over HTTPS. Nginx forwards requests to the dashboard and API; the database and job queue stay private."}
+                    </p>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    Animated dots illustrate data flow; they do not show live traffic.
+                  </p>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
           <p className="max-w-4xl text-muted-foreground text-sm leading-relaxed">{journeyDescription}</p>
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            {environment === "local"
-              ? "Local: dashboard and API run on your machine; PostgreSQL and Redis run in Docker. A public tunnel lets Telegram, Discord and Stripe reach local webhooks."
-              : "Ubuntu: Cloudflare routes public traffic to Nginx over HTTPS. Nginx forwards requests to the dashboard and API; the database and job queue stay private."}
-          </p>
           {compactView ? (
             <fieldset className="grid gap-3">
               <legend className="sr-only">Architecture services</legend>
@@ -185,7 +223,10 @@ export function ArchitectureFlow() {
                     key={service.id}
                     type="button"
                     aria-pressed={selectedService.id === service.id}
-                    onClick={() => setSelectedId(service.id)}
+                    onClick={() => {
+                      setSelectedId(service.id);
+                      setInspectorOpen(true);
+                    }}
                     className="flex items-start gap-3 rounded-xl border bg-background p-4 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring aria-pressed:border-primary"
                   >
                     <Icon className="mt-1 size-5 shrink-0" />
@@ -270,42 +311,12 @@ export function ArchitectureFlow() {
           </CardFooter>
         )}
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>How to read this view</CardTitle>
-          <CardDescription>
-            {compactView
-              ? "Read the connections below, then select a service above to inspect its responsibilities."
-              : "Arrows describe requests, stored data or delivered results. The animated dots illustrate the direction."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="grid gap-3 md:grid-cols-2">
-            {connections.map((connection, index) => (
-              <li key={`${connection.source}-${connection.target}`} className="flex items-start gap-3">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted font-medium text-xs">
-                  {index + 1}
-                </span>
-                <p className="text-muted-foreground text-sm leading-relaxed">{connection.label}</p>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
       <ArchitectureInspector
         selectedService={selectedService}
-        environment={environment}
         availableServices={diagramServices}
         connections={connections}
-        onSelect={setSelectedId}
-        onFocus={
-          compactView
-            ? undefined
-            : () =>
-                void instance.current?.setCenter(selectedService.position.x + 144, selectedService.position.y + 75, {
-                  zoom: 1,
-                })
-        }
+        open={inspectorOpen}
+        onOpenChange={setInspectorOpen}
       />
     </div>
   );
