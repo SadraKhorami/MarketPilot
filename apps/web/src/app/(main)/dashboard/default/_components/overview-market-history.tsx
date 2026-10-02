@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
+
 import { CandlestickChart } from "lucide-react";
+
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+
 import { MarketHistoryPanel } from "../../_components/market-history-panel";
 import type { Snapshot } from "./overview-cards";
-import { historyRanges, type HistoryRange } from "./overview-preferences";
+import { type HistoryRange, historyRanges } from "./overview-preferences";
 export function OverviewMarketHistory({
   symbol,
   range,
@@ -25,6 +28,7 @@ export function OverviewMarketHistory({
   if (snapshot && candles.length)
     return (
       <MarketHistoryPanel
+        compact
         data={{ ...snapshot.data, candles }}
         stale={snapshot.freshness === "stale"}
         toolbar={

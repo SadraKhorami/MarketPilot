@@ -1,21 +1,23 @@
-import { createHash } from "node:crypto";
 import {
   AIError,
   type AIMessage,
   type AIProvider,
   conductResearch,
+  permitsTradeSetup,
   ResearchResultSchema,
   type StreamEvent,
+  TradeContextSchema,
 } from "@marketpilot/ai";
 import { type AiRun, Prisma } from "@marketpilot/db";
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { EntitlementsService } from "../billing/entitlements.service";
 import { type PageQueryDto, pageResult } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
-import type { ResearchDto } from "./ai.dto";
 import { AiBudgetService } from "./ai-budget.service";
 import { AiProposalsService, serializeProposal } from "./ai-proposals.service";
 import { AiToolsService } from "./ai-tools.service";
+import type { ResearchDto } from "./ai.dto";
 
 export const AI_PROVIDER = Symbol("AI_PROVIDER");
 export function aiConfiguration() {
@@ -54,7 +56,7 @@ export class AiService {
     const eligible = Prisma.sql`
       SELECT "conversationId", (array_agg(input ORDER BY "createdAt", id))[1] AS title,
         MAX("createdAt") AS "updatedAt", COUNT(*)::int AS "turnCount"
-      FROM "AiRun" WHERE "userId" = ${userId}::uuid AND "expiresAt" > ${new Date()}
+      FROM "AiRun" WHERE "userId" = ${userId}::uuid AND purpose = 'research' AND "expiresAt" > ${new Date()}
       GROUP BY "conversationId" HAVING bool_or(input ILIKE ${search})`;
     const [items, count] = await Promise.all([
       this.db.$queryRaw<Array<{ conversationId: string; title: string; updatedAt: Date; turnCount: number }>>`
@@ -70,7 +72,7 @@ export class AiService {
   }
   async history(userId: string, conversationId: string) {
     const runs = await this.db.aiRun.findMany({
-      where: { userId, conversationId, expiresAt: { gt: new Date() } },
+      where: { userId, conversationId, purpose: "research", expiresAt: { gt: new Date() } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 20,
       include: { proposals: true },
@@ -83,6 +85,7 @@ export class AiService {
         run.status === "running" && run.createdAt.getTime() < Date.now() - 120_000 ? "AI_INTERRUPTED" : run.errorCode,
       result: this.readResult(run),
       createdAt: run.createdAt,
+      tradeContext: run.tradeContext,
     }));
   }
   private readResult(run: AiRun & { proposals: Parameters<typeof serializeProposal>[0][] }) {
@@ -99,9 +102,19 @@ export class AiService {
   }
   async research(userId: string, dto: ResearchDto, signal: AbortSignal, emit: (event: StreamEvent) => void) {
     const input = dto.input.trim();
+    const tradeContext = dto.tradeContext ? TradeContextSchema.safeParse(dto.tradeContext) : null;
+    if (permitsTradeSetup(input) && !tradeContext?.success)
+      throw new AIError("AI_INPUT_CONTEXT", "Confirm your timeframe and risk context before requesting a trade plan.");
     if (!input) throw new AIError("AI_INPUT_EMPTY", "Enter a research question.");
     const inputHash = createHash("sha256")
-      .update(JSON.stringify([input, dto.conversationId, dto.watchlistId ?? null]))
+      .update(
+        JSON.stringify([
+          input,
+          dto.conversationId,
+          dto.watchlistId ?? null,
+          tradeContext?.success ? tradeContext.data : null,
+        ]),
+      )
       .digest("hex");
     const existing = await this.db.aiRun.findUnique({
       where: { userId_requestId: { userId, requestId: dto.requestId } },
@@ -145,6 +158,7 @@ export class AiService {
             conversationId: dto.conversationId,
             input,
             inputHash,
+            ...(tradeContext?.success ? { tradeContext: tradeContext.data as Prisma.InputJsonValue } : {}),
             status: "running",
             model: provider.model,
             reservedUsd: config.reservationUsd,
@@ -181,6 +195,7 @@ export class AiService {
       const research = await conductResearch({
         provider: this.provider,
         input,
+        tradeContext: tradeContext?.success ? tradeContext.data : undefined,
         history,
         signal,
         execute: (() => {
@@ -190,6 +205,8 @@ export class AiService {
             signal,
             watchlistId: dto.watchlistId,
             snapshots: new Map(),
+            tradeSymbol: tradeContext?.success ? tradeContext.data.symbol : undefined,
+            tradeInterval: tradeContext?.success ? tradeContext.data.interval : undefined,
             propose: (args: unknown) => this.proposals.propose(userId, runId, args),
           };
           return (tool, args) => this.tools.execute(tool, args, context);

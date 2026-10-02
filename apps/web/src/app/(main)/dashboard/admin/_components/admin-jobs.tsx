@@ -32,7 +32,7 @@ interface JobsOverview {
   activeWorkers: number | null;
   pendingEvaluations: number | null;
   pendingNotifications: number | null;
-  queues: Array<{ name: string; paused: boolean; counts: Record<string, number> }> | null;
+  queues: Array<{ name: string; paused: boolean; counts: Record<string, number>; recentFailed: number }> | null;
 }
 interface JobRecord {
   id: string;
@@ -42,7 +42,7 @@ interface JobRecord {
   failedAt: string | null;
   reason: string | null;
 }
-const processingLabels = { healthy: "Healthy", degraded: "Needs attention", unavailable: "Unavailable" };
+const processingLabels = { healthy: "Workers ready", degraded: "Needs attention", unavailable: "Unavailable" };
 
 export function AdminJobs() {
   const [queue, setQueue] = useState("market-refresh");
@@ -134,7 +134,8 @@ export function AdminJobs() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="min-w-0 flex-1 text-muted-foreground text-xs">
                 Checked {new Date(overview.data.checkedAt).toLocaleTimeString()} · Recent heartbeats confirm readiness.
-                Completed jobs do not prove provider acceptance.
+                Recent failures cover the last 5 minutes. Older failures are retained history; readiness does not prove
+                market-data availability.
               </p>
               <div className="flex shrink-0 flex-wrap gap-2">
                 <Badge variant={overview.data.status === "healthy" ? "secondary" : "destructive"}>

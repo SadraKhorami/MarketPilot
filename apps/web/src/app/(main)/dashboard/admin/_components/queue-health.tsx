@@ -24,7 +24,7 @@ export function QueueHealth({
   queues,
   runtimes,
 }: {
-  queues: Array<{ name: string; paused: boolean; counts: Record<string, number> }>;
+  queues: Array<{ name: string; paused: boolean; counts: Record<string, number>; recentFailed: number }>;
   runtimes: QueueRuntime[] | null;
 }) {
   return (
@@ -45,7 +45,7 @@ export function QueueHealth({
         const lastFailure = consumers.find((consumer) => consumer.lastFailedAt === failedAt);
         let status = ready ? "Consumers ready" : "No ready consumers";
         if (queue.name === "bot-commands") status = "Inspect bot runtime below";
-        if (failed > 0) status = "Failures to review";
+        if (queue.recentFailed > 0) status = "Recent failures";
         if (queue.paused) status = "Paused";
         return (
           <div key={queue.name} className="flex min-w-0 flex-col gap-4 rounded-lg border p-4">
@@ -61,7 +61,9 @@ export function QueueHealth({
             <dl className="grid grid-cols-3 gap-x-3 gap-y-4">
               {states.map((state) => (
                 <div key={state} className="flex flex-col gap-1">
-                  <dt className="text-muted-foreground text-xs capitalize">{state}</dt>
+                  <dt className="text-muted-foreground text-xs capitalize">
+                    {state === "failed" ? "Retained failures" : state}
+                  </dt>
                   <dd className="font-medium tabular-nums">{(queue.counts[state] ?? 0).toLocaleString()}</dd>
                 </div>
               ))}
@@ -88,14 +90,20 @@ export function QueueHealth({
                 ) : null}
               </dl>
             ) : null}
-            <div className="border-t pt-3">
+            <div className="flex flex-wrap items-center gap-2 border-t pt-3">
               <Badge
                 variant={
-                  failed > 0 || queue.paused || (queue.name !== "bot-commands" && !ready) ? "destructive" : "outline"
+                  queue.recentFailed > 0 || queue.paused || (queue.name !== "bot-commands" && !ready)
+                    ? "destructive"
+                    : "outline"
                 }
               >
                 {status}
               </Badge>
+              {failed > 0 ? <Badge variant="outline">{failed.toLocaleString()} retained failures</Badge> : null}
+              {queue.recentFailed > 0 ? (
+                <span className="text-muted-foreground text-xs">{queue.recentFailed} in the last 5 minutes</span>
+              ) : null}
             </div>
           </div>
         );

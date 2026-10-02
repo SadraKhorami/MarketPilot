@@ -7,6 +7,7 @@ export const ANNOUNCEMENT_PATHS = [
   "/dashboard/markets",
   "/dashboard/watchlist",
   "/dashboard/analytics",
+  "/dashboard/journal",
   "/dashboard/news-and-sentiment",
   "/dashboard/alerts",
   "/dashboard/api/documentation",

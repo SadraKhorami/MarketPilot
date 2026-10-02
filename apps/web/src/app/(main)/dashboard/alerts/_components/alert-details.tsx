@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useApiResource } from "@/hooks/use-api-resource";
 
 import { CollectionPagination, type PagedResult } from "../../_components/collection-pagination";
@@ -24,7 +25,20 @@ function deliveryLabel(item: TriggerRecord) {
   if (item.deliveryStatus === "suppressed") return "Inbox skipped";
   return item.failureCode ? "Inbox needs recovery" : "Inbox pending";
 }
-export function AlertDetails({ id, close }: { id: string | null; close: () => void }) {
+export function AlertDetails({
+  id,
+  close,
+  presentation = "dialog",
+}: {
+  id: string | null;
+  close: () => void;
+  presentation?: "dialog" | "sheet";
+}) {
+  const Root = presentation === "sheet" ? Sheet : Dialog;
+  const Content = presentation === "sheet" ? SheetContent : DialogContent;
+  const Header = presentation === "sheet" ? SheetHeader : DialogHeader;
+  const Title = presentation === "sheet" ? SheetTitle : DialogTitle;
+  const Description = presentation === "sheet" ? SheetDescription : DialogDescription;
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const rule = useApiResource<AlertRecord>(id ? `/alerts/${id}` : null, { keepDataOnReload: true });
@@ -42,19 +56,25 @@ export function AlertDetails({ id, close }: { id: string | null; close: () => vo
   }, [id, rule.reload, history.reload]);
   const data = rule.data;
   return (
-    <Dialog
+    <Root
       open={id !== null}
       onOpenChange={(open) => {
         if (!open) close();
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{data?.name ?? "Alert details"}</DialogTitle>
-          <DialogDescription>
+      <Content
+        className={
+          presentation === "sheet"
+            ? "overflow-y-auto p-4 data-[side=right]:w-full sm:max-w-lg"
+            : "max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+        }
+      >
+        <Header className={presentation === "sheet" ? "p-0 pr-8" : undefined}>
+          <Title>{data?.name ?? "Alert details"}</Title>
+          <Description>
             Rule status and trigger history · {Intl.DateTimeFormat().resolvedOptions().timeZone}
-          </DialogDescription>
-        </DialogHeader>
+          </Description>
+        </Header>
         <ResourceState {...rule} retry={rule.reload} />
         {data && !rule.error && !rule.loading ? (
           <div className="flex flex-col gap-4">
@@ -147,7 +167,7 @@ export function AlertDetails({ id, close }: { id: string | null; close: () => vo
             </div>
           </div>
         ) : null}
-      </DialogContent>
-    </Dialog>
+      </Content>
+    </Root>
   );
 }

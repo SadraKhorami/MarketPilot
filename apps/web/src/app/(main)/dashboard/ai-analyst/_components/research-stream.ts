@@ -1,10 +1,16 @@
-import { type StreamEvent, StreamEventSchema } from "@marketpilot/ai/contracts";
+import { type StreamEvent, StreamEventSchema, type TradeContext } from "@marketpilot/ai/contracts";
 
 import { ApiError } from "@/lib/api/client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 export async function streamResearch(
-  input: { requestId: string; conversationId: string; input: string; watchlistId?: string },
+  input: {
+    requestId: string;
+    conversationId: string;
+    input: string;
+    watchlistId?: string;
+    tradeContext?: TradeContext;
+  },
   signal: AbortSignal,
   receive: (event: StreamEvent) => void,
 ) {

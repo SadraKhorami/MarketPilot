@@ -1,9 +1,11 @@
 "use client";
 import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { MarketSymbolField } from "../../_components/market-symbol-field";
 export interface ResearchWatchlist {
   id: string;
@@ -21,6 +23,7 @@ interface Props {
   disabled: boolean;
   running: boolean;
   onSubmit: (prompt: string) => void;
+  onTradeSetup: () => void;
 }
 function QuestionChoices({
   symbol,
@@ -33,6 +36,7 @@ function QuestionChoices({
   disabled,
   running,
   onSubmit,
+  onTradeSetup,
   compact = false,
 }: Props & { compact?: boolean }) {
   const prefix = compact ? "followup" : "starter";
@@ -63,11 +67,7 @@ function QuestionChoices({
               variant="outline"
               className="h-auto min-h-10 whitespace-normal py-2 text-left"
               disabled={disabled}
-              onClick={() =>
-                onSubmit(
-                  `Give me a conditional BUY or SELL trade setup for ${symbol} after a pullback and confirmation, with Entry, Stop loss, TP 1 and TP 2. Use current completed candles. If there is no valid setup, say so. Offer an optional near-entry alert, but do not create it without my confirmation.`,
-                )
-              }
+              onClick={onTradeSetup}
             >
               Entry, stop loss & targets
             </Button>
@@ -130,6 +130,10 @@ export function ResearchSuggestions(props: Props & { compact?: boolean }) {
         <QuestionChoices
           {...props}
           compact
+          onTradeSetup={() => {
+            setOpen(false);
+            props.onTradeSetup();
+          }}
           onSubmit={(prompt) => {
             setOpen(false);
             props.onSubmit(prompt);

@@ -12,8 +12,8 @@ import { ActivityService } from "../common/activity.service";
 import { PageQueryDto, pageResult } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
 import { MarketCatalogService } from "../market-data/market-catalog.service";
-import { CreateAlertDto, UpdateAlertDto } from "./alerts.dto";
 import { AlertsQueryDto } from "./alerts-query.dto";
+import { CreateAlertDto, UpdateAlertDto } from "./alerts.dto";
 
 @Injectable()
 export class AlertsService {
@@ -27,6 +27,7 @@ export class AlertsService {
   async list(userId: string, query = new AlertsQueryDto()) {
     const where: Prisma.AlertWhereInput = {
       userId,
+      ...(query.assetId ? { assetId: query.assetId } : {}),
       ...(query.status === "all" ? {} : { enabled: query.status === "active" }),
       ...(query.search
         ? {

@@ -1,15 +1,4 @@
-import type { Metadata } from "next";
-
-import { MarketDataWorkspace } from "../_components/market-data-workspace";
-
-export const metadata: Metadata = { title: "Analytics · MarketPilot" };
-
+import { redirect } from "next/navigation";
 export default function AnalyticsPage() {
-  return (
-    <MarketDataWorkspace
-      title="Analytics"
-      description="Study one product across price history, momentum, trend, volatility, and provider-derived levels."
-      mode="analytics"
-    />
-  );
+  redirect("/dashboard/journal");
 }

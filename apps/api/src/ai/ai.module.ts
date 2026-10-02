@@ -2,22 +2,27 @@ import { OpenRouterProvider } from "@marketpilot/ai";
 import { Module } from "@nestjs/common";
 import { AlertsService } from "../alerts/alerts.service";
 import { ActivityService } from "../common/activity.service";
+import { JournalMonitorService } from "../journal/journal-monitor.service";
+import { JournalController } from "../journal/journal.controller";
+import { JournalService } from "../journal/journal.service";
 import { MarketDataModule } from "../market-data/market-data.module";
 import { NewsService } from "../news/news.service";
 import { WatchlistsService } from "../watchlists/watchlists.service";
-import { AiController } from "./ai.controller";
-import { AI_PROVIDER, AiService, aiConfiguration } from "./ai.service";
 import { AiBudgetService } from "./ai-budget.service";
 import { AiProposalsService } from "./ai-proposals.service";
 import { AiSessionGuard } from "./ai-session.guard";
 import { AiToolsService } from "./ai-tools.service";
+import { AiController } from "./ai.controller";
+import { AI_PROVIDER, AiService, aiConfiguration } from "./ai.service";
 import { EntryAlertsService } from "./entry-alerts.service";
 @Module({
   imports: [MarketDataModule],
-  controllers: [AiController],
+  controllers: [AiController, JournalController],
   exports: [AiService],
   providers: [
     AiService,
+    JournalService,
+    JournalMonitorService,
     AiToolsService,
     EntryAlertsService,
     AiBudgetService,

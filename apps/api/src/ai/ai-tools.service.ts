@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   AIError,
   AlertInputSchema,
@@ -10,16 +9,17 @@ import {
   toolSchemas,
 } from "@marketpilot/ai";
 import {
-  normalizeInstrumentSymbol,
-  referenceMarkets,
   calculateSupportResistance,
   calculateTechnicalIndicators,
   calculateTrend,
   type MarketCandle,
   type MarketDataInterval,
   MarketObservationSchema,
+  normalizeInstrumentSymbol,
+  referenceMarkets,
 } from "@marketpilot/market-data";
 import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { MarketDataService, type MarketSnapshot } from "../market-data/market-data.service";
 import { NewsService } from "../news/news.service";
 import { WatchlistsService } from "../watchlists/watchlists.service";
@@ -30,6 +30,8 @@ export interface ResearchContext {
   runId: string;
   signal: AbortSignal;
   watchlistId?: string;
+  tradeSymbol?: string;
+  tradeInterval?: MarketDataInterval;
   snapshots: Map<string, Promise<MarketSnapshot>>;
   propose: (input: {
     symbol: string;
@@ -155,10 +157,15 @@ export class AiToolsService {
       );
     } else if (tool === "getTradeSetup") {
       const args = toolSchemas.getTradeSetup.parse(input);
+      if (context.tradeSymbol) args.symbol = context.tradeSymbol;
+      if (context.tradeInterval) args.interval = context.tradeInterval;
       const symbol = resolveResearchSymbol(args.symbol);
       const snapshot = await this.snapshot(symbol, args.interval, context);
       const source = this.marketSource(snapshot, 50, tool);
-      const scenario = calculateTradeSetup(snapshot, args.direction, source.id);
+      const higher = { "1m": "15m", "5m": "1h", "15m": "1h", "1h": "6h", "6h": "1d", "1d": "1d" } as const;
+      const contextSnapshot = await this.snapshot(symbol, higher[args.interval], context);
+      const contextSource = this.marketSource(contextSnapshot, 50, "getTrendAnalysis");
+      const scenario = calculateTradeSetup(snapshot, args.direction, source.id, Date.now(), contextSnapshot);
       result.tradeSetup = scenario.plan;
       result.error = scenario.reason;
       if (scenario.plan) {
@@ -174,14 +181,17 @@ export class AiToolsService {
           { label: "Stop basis", value: "Recent swing extreme plus a quarter ATR buffer", unit: "method" },
           { label: "Conditional entry", value: scenario.plan.entry, unit: scenario.plan.quote },
           { label: "Scenario stop loss", value: scenario.plan.stopLoss, unit: scenario.plan.quote },
-          { label: "TP 1 (one risk unit)", value: scenario.plan.targets[0], unit: scenario.plan.quote },
-          { label: "TP 2 (two risk units)", value: scenario.plan.targets[1], unit: scenario.plan.quote },
+          ...scenario.plan.targets.map((target, index) => ({
+            label: `Target ${index + 1} (observed structural level)`,
+            value: target,
+            unit: scenario.plan!.quote,
+          })),
         );
       } else {
         source.status = "partial";
         source.error = scenario.reason;
       }
-      result.sources = [SourceSchema.parse(source)];
+      result.sources = [SourceSchema.parse(source), contextSource];
     } else if (tool === "createAlert") {
       const args = AlertInputSchema.parse(input);
       const symbol = resolveResearchSymbol(args.symbol);

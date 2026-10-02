@@ -86,6 +86,8 @@ model User {
   subscription       Subscription?
   payments           BillingPayment[]
   quotaUsage         QuotaUsage[]
+  tradePreferences   TradePreferences?
+  journalEntries     JournalEntry[]
 
   @@index([status, createdAt])
 }
@@ -311,25 +313,27 @@ model NotificationAnnouncement {
 }
 
 model AiRun {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @db.Uuid
-  requestId      String   @db.Uuid
-  conversationId String   @db.Uuid
-  input          String   @db.VarChar(2000)
-  inputHash      String   @db.Char(64)
-  status         String   @db.VarChar(20)
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @db.Uuid
+  requestId      String            @db.Uuid
+  conversationId String            @db.Uuid
+  input          String            @db.VarChar(2000)
+  inputHash      String            @db.Char(64)
+  purpose        String            @default("research") @db.VarChar(24)
+  tradeContext   Json?
+  status         String            @db.VarChar(20)
   result         Json?
-  errorCode      String?  @db.VarChar(80)
-  model          String   @db.VarChar(160)
-  inputTokens    Int      @default(0)
-  outputTokens   Int      @default(0)
+  errorCode      String?           @db.VarChar(80)
+  model          String            @db.VarChar(160)
+  inputTokens    Int               @default(0)
+  outputTokens   Int               @default(0)
   costUsd        Float?
-  reservedUsd    Float    @default(0)
-  toolCount      Int      @default(0)
-  latencyMs      Int      @default(0)
-  createdAt      DateTime @default(now()) @db.Timestamptz(3)
-  expiresAt      DateTime @db.Timestamptz(3)
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservedUsd    Float             @default(0)
+  toolCount      Int               @default(0)
+  latencyMs      Int               @default(0)
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  expiresAt      DateTime          @db.Timestamptz(3)
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   proposals      AiAlertProposal[]
 
   @@unique([userId, requestId])
@@ -475,7 +479,6 @@ model BotRuntime {
   failureCode  String?         @db.VarChar(80)
 }
 
-
 enum PlanName {
   FREE
   PRO
@@ -531,4 +534,60 @@ model QuotaUsage {
 
   @@id([userId, day, resource])
   @@index([day])
+}
+
+model TradePreferences {
+  userId      String   @id @db.Uuid
+  capital     Float?
+  currency    String   @default("USD") @db.VarChar(3)
+  riskPercent Float    @default(1)
+  interval    String   @default("15m") @db.VarChar(4)
+  holding     String   @default("day") @db.VarChar(12)
+  autoReview  Boolean  @default(false)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model JournalEntry {
+  id               String         @id @default(uuid()) @db.Uuid
+  userId           String         @db.Uuid
+  runId            String         @db.Uuid
+  symbol           String         @db.VarChar(32)
+  status           String         @default("planned") @db.VarChar(12)
+  plan             Json
+  context          Json
+  analysis         Json
+  notes            String         @default("") @db.VarChar(4000)
+  entryPrice       Float?
+  exitPrice        Float?
+  quantity         Float?
+  fees             Float          @default(0)
+  openedAt         DateTime?      @db.Timestamptz(3)
+  closedAt         DateTime?      @db.Timestamptz(3)
+  checkedAt        DateTime?      @db.Timestamptz(3)
+  monitoringStatus String?        @db.VarChar(160)
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events           JournalEvent[]
+
+  @@unique([userId, runId])
+  @@index([userId, symbol, createdAt])
+  @@index([status, checkedAt])
+}
+
+model JournalEvent {
+  id              String       @id @default(uuid()) @db.Uuid
+  entryId         String       @db.Uuid
+  key             String       @db.VarChar(80)
+  kind            String       @db.VarChar(20)
+  occurredAt      DateTime     @db.Timestamptz(3)
+  evidence        Json
+  review          String?      @db.VarChar(2000)
+  reviewStatus    String       @default("pending") @db.VarChar(20)
+  reviewStartedAt DateTime?    @db.Timestamptz(3)
+  entry           JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, key])
+  @@index([entryId, occurredAt])
 }

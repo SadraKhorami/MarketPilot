@@ -1,5 +1,5 @@
 import { TradeSetupSchema, type TradeSetup } from "@marketpilot/ai";
-import { calculateTechnicalIndicators, referenceMarkets } from "@marketpilot/market-data";
+import { calculateSupportResistance, calculateTechnicalIndicators, referenceMarkets } from "@marketpilot/market-data";
 import type { MarketSnapshot } from "../market-data/market-data.service";
 
 const durations = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "6h": 21_600_000, "1d": 86_400_000 };
@@ -21,6 +21,7 @@ export function calculateTradeSetup(
   requested: "AUTO" | "BUY" | "SELL",
   sourceId: string,
   now = Date.now(),
+  context?: MarketSnapshot,
 ): { plan: TradeSetup | null; reason: string | null } {
   const unavailable = (reason: string) => ({ plan: null, reason });
   const { data } = snapshot;
@@ -38,6 +39,19 @@ export function calculateTradeSetup(
   if (!indicators.atr || !indicators.sma50) return unavailable("Volatility or moving-average context is unavailable.");
   const direction = requested === "AUTO" ? (last.close >= indicators.sma50 ? "BUY" : "SELL") : requested;
   const buy = direction === "BUY";
+  if (context) {
+    const contextCandles = context.data.candles.filter(
+      (candle) => Date.parse(candle.time) + durations[context.data.interval] <= now,
+    );
+    const contextAverage = calculateTechnicalIndicators(contextCandles).sma50;
+    const contextClose = contextCandles.at(-1)?.close;
+    if (context.freshness !== "fresh" || !contextAverage || !contextClose)
+      return unavailable("Higher-timeframe context is unavailable. Recheck before forming a plan.");
+    if (buy ? contextClose < contextAverage : contextClose > contextAverage)
+      return unavailable(
+        "The entry timeframe and higher-timeframe trend disagree. Wait for alignment rather than forcing a direction.",
+      );
+  }
   const range = candles.slice(-21, -1);
   const recent = candles.slice(-6);
   const pipSize = scenarioPipSize(data.symbol);
@@ -65,8 +79,23 @@ export function calculateTradeSetup(
     .some((candle, index) => (buy ? candle.close < recent[index].close : candle.close > recent[index].close));
   const crossed = buy ? previous.close <= entry && last.close > entry : previous.close >= entry && last.close < entry;
   const stage = pullback && crossed ? "confirmed" : pullback ? "waiting_reclaim" : "waiting_pullback";
-  const sign = buy ? 1 : -1;
-  const targets: [number, number] = [round(entry + sign * risk), round(entry + sign * risk * 2)];
+  const levels = calculateSupportResistance(candles);
+  const contextLevels = context
+    ? calculateSupportResistance(
+        context.data.candles.filter((candle) => Date.parse(candle.time) + durations[context.data.interval] <= now),
+      )
+    : null;
+  const candidates = buy
+    ? [...levels.resistance, ...(contextLevels?.resistance ?? [])]
+    : [...levels.support, ...(contextLevels?.support ?? [])];
+  const targets = [...new Set(candidates.map(round))]
+    .filter((target) => (buy ? target > entry : target < entry) && Math.abs(target - entry) >= risk * 0.5)
+    .sort((a, b) => (buy ? a - b : b - a))
+    .slice(0, 3);
+  if (!targets.length)
+    return unavailable(
+      "No supported target beyond Entry offers a meaningful reward relative to the stop distance. Wait for a clearer structure.",
+    );
   if (targets.some((target) => target <= 0)) return unavailable("Risk-based targets fall outside a valid price range.");
   const plan = TradeSetupSchema.parse({
     symbol: data.symbol,
@@ -76,9 +105,11 @@ export function calculateTradeSetup(
     entry,
     stopLoss,
     targets,
+    targetBasis: "Observed support/resistance beyond entry, ordered by distance; not price predictions.",
+    ...(context ? { contextInterval: context.data.interval } : {}),
     observedPrice: data.price,
     observedAt: data.timestamp,
-    expiresAt: new Date(now + 10 * 60_000).toISOString(),
+    expiresAt: new Date(now + Math.max(10 * 60_000, duration * 3)).toISOString(),
     quote: data.symbol.split("-")[1],
     pipSize,
     sourceId,

@@ -5,8 +5,8 @@ import {
   parseWorkerSnapshot,
   type QueueName,
   queueNames,
-  type WorkerSnapshot,
   workerRegistryKey,
+  type WorkerSnapshot,
   workerStatusPrefix,
 } from "@marketpilot/jobs";
 import { BadRequestException, Injectable, type OnModuleDestroy, ServiceUnavailableException } from "@nestjs/common";
@@ -62,11 +62,15 @@ export class JobsService implements OnModuleDestroy {
           this.redis.client.zcount(heartbeatKey, Date.now() - 45000, "+inf"),
           this.redis.client.zrangebyscore(workerRegistryKey, Date.now() - 45000, "+inf", "LIMIT", 0, 50),
           Promise.all(
-            queueNames.map(async (name) => ({
-              name,
-              counts: await this.queue(name).getJobCounts("waiting", "active", "delayed", "failed", "completed"),
-              paused: await this.queue(name).isPaused(),
-            })),
+            queueNames.map(async (name) => {
+              const queue = this.queue(name);
+              const [counts, paused, recentFailed] = await Promise.all([
+                queue.getJobCounts("waiting", "active", "delayed", "failed", "completed"),
+                queue.isPaused(),
+                this.redis.client.zcount(queue.toKey("failed"), Date.now() - 5 * 60_000, "+inf"),
+              ]);
+              return { name, counts, paused, recentFailed };
+            }),
           ),
         ]),
       );
@@ -83,7 +87,7 @@ export class JobsService implements OnModuleDestroy {
         workers.length !== instances.length ||
         !workers.length ||
         workers.some((worker) => !worker.ready) ||
-        queues.some((queue) => queue.paused || (queue.counts.failed ?? 0) > 0);
+        queues.some((queue) => queue.paused || queue.recentFailed > 0);
       let status = degraded ? "degraded" : "healthy";
       if (pendingEvaluations === null || pendingNotifications === null) status = "unavailable";
       return {

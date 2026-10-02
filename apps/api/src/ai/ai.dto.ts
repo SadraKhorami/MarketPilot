@@ -17,6 +17,8 @@ export class ResearchDto {
   @ApiProperty({ description: "Client-generated UUID; reused requests never start another provider run." })
   @IsUUID()
   requestId!: string;
+  @IsOptional()
+  tradeContext?: unknown;
   @ApiProperty() @IsUUID() conversationId!: string;
   @ApiProperty({ maxLength: 2000 }) @IsString() @MinLength(1) @MaxLength(2000) input!: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() watchlistId?: string;

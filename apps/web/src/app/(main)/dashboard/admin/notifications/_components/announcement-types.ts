@@ -32,7 +32,7 @@ export const destinations = [
   ["/dashboard/default", "Dashboard"],
   ["/dashboard/markets", "Markets"],
   ["/dashboard/watchlist", "Watchlist"],
-  ["/dashboard/analytics", "Analytics"],
+  ["/dashboard/journal", "Journal"],
   ["/dashboard/news-and-sentiment", "News"],
   ["/dashboard/alerts", "Alert rules"],
   ["/dashboard/api/documentation", "API guide"],

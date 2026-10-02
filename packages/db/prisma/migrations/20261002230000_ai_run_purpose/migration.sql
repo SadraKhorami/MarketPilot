@@ -1,0 +1,1 @@
+ALTER TABLE "AiRun" ADD COLUMN "purpose" VARCHAR(24) NOT NULL DEFAULT 'research';

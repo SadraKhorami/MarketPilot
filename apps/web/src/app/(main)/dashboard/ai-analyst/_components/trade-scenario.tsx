@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+
 import Link from "next/link";
+
 import type { Proposal, ResearchResult, TradeSetup } from "@marketpilot/ai/contracts";
 import { BellPlus, LoaderCircle, Target } from "lucide-react";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +14,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
+
+import { SaveJournalPlan } from "./save-journal-plan";
 
 export function TradeScenario({
   plan,
@@ -95,12 +100,15 @@ export function TradeScenario({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        <SaveJournalPlan runId={result.runId} expired={expired} persian={persian} />
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             [text("Entry trigger", "شرط ورود"), plan.entry],
             [text("Stop loss", "حد ضرر"), plan.stopLoss],
-            ["TP 1 · 1R", plan.targets[0]],
-            ["TP 2 · 2R", plan.targets[1]],
+            ...plan.targets.map((target, index) => [
+              `TP ${index + 1} · ${(Math.abs(target - plan.entry) / Math.abs(plan.entry - plan.stopLoss)).toFixed(1)}R`,
+              target,
+            ]),
           ].map(([label, value]) => (
             <div key={label} className="flex min-w-0 flex-col gap-1">
               <dt className="text-muted-foreground text-xs">{label}</dt>
@@ -135,8 +143,8 @@ export function TradeScenario({
           <div className="mt-2 flex flex-col gap-2 text-muted-foreground text-xs leading-relaxed">
             <p>
               {text(
-                "Entry uses the previous candle range. Stop loss uses recent swing extremes and an ATR buffer. Targets are 1R and 2R, not price predictions; fees, spread and slippage are excluded.",
-                "ورود بر اساس محدودهٔ کندل‌های قبلی، حد ضرر بر اساس اکسترمم اصلاح اخیر و حاشیهٔ ATR است. تارگت‌ها ۱ و ۲ برابر ریسک هستند، نه پیش‌بینی قیمت؛ کارمزد، اسپرد و لغزش لحاظ نشده‌اند.",
+                "Entry uses the previous candle range. Stop loss uses recent swing extremes and an ATR buffer. Targets use observed structural levels, not price predictions; fees, spread and slippage are excluded.",
+                "ورود بر اساس محدودهٔ کندل‌های قبلی، حد ضرر بر اساس اکسترمم اصلاح اخیر و حاشیهٔ ATR است. تارگت‌ها سطوح واقعی ساختار قیمت هستند، نه پیش‌بینی قیمت؛ کارمزد، اسپرد و لغزش لحاظ نشده‌اند.",
               )}
             </p>
             <p>

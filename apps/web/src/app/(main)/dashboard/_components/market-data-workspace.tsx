@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import Link from "next/link";
 
-import { marketSourceLabel, type MarketDataInterval, type MarketObservation } from "@marketpilot/market-data";
-import { ArrowLeft, ArrowUpRight, CircleAlert } from "lucide-react";
+import { type MarketDataInterval, type MarketObservation, marketSourceLabel } from "@marketpilot/market-data";
+import { ArrowLeft, ArrowUpRight, CircleAlert, Pause, Play, RefreshCw } from "lucide-react";
 
 import { MarketSymbolField } from "@/app/(main)/dashboard/_components/market-symbol-field";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,8 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
-import { MarketHistoryPanel } from "./market-history-panel";
+import { MarketAlertHistory } from "../markets/_components/market-alert-history";
+import { pricePrecision } from "./market-chart-utils";
 import { MarketPilotPage } from "./marketpilot-page";
 import { MomentumPanel } from "./momentum-panel";
 
@@ -41,11 +42,15 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const inFlight = useRef<number | null>(null);
   const lastAttempt = useRef(0);
   const requestVersion = useRef(0);
 
   const load = useCallback(async () => {
+    if (inFlight.current !== null) return;
     const version = ++requestVersion.current;
+    inFlight.current = version;
     lastAttempt.current = Date.now();
     setLoading(true);
     setError(null);
@@ -58,12 +63,21 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
       if (version === requestVersion.current)
         setError(reason instanceof Error ? reason.message : "Market data is unavailable.");
     } finally {
+      if (inFlight.current === version) inFlight.current = null;
       if (version === requestVersion.current) setLoading(false);
     }
   }, [interval, symbol]);
 
   useEffect(() => {
+    inFlight.current = null;
     void load();
+    return () => {
+      requestVersion.current++;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
     }, 65_000);
@@ -72,11 +86,10 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
     };
     document.addEventListener("visibilitychange", resume);
     return () => {
-      requestVersion.current++;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", resume);
     };
-  }, [load]);
+  }, [load, autoRefresh]);
 
   const data = snapshot?.data;
   const firstCandleOpen = data?.candles[0]?.open;
@@ -170,27 +183,52 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
               detail={data.symbol}
             />
             <MetricCard
-              label="History window move"
+              label="Window change"
               value={formatChange(relativeChange)}
-              detail="First candle open to latest price"
+              detail="Across the loaded history"
               change={relativeChange}
             />
             <MetricCard
               label="Trend"
               value={data.trend ? formatTrend(data.trend) : "Unavailable"}
-              detail="Calculated from validated candles"
+              detail="From observed candles"
             />
             <MetricCard
               label="ATR volatility"
               value={
                 data.volatility.atrPercentage === null ? "Unavailable" : `${data.volatility.atrPercentage.toFixed(2)}%`
               }
-              detail="Average range relative to price"
+              detail="Average candle range"
             />
           </section>
 
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,0.8fr)]">
-            <MarketHistoryPanel data={data} stale={isStale} />
+            <MarketAlertHistory
+              data={data}
+              stale={isStale}
+              status={
+                <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+                  <span>{isStale ? "Cached data" : autoRefresh ? "Auto · every minute" : "Updates paused"}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={autoRefresh ? "Pause automatic updates" : "Resume automatic updates"}
+                    onClick={() => setAutoRefresh((value) => !value)}
+                  >
+                    {autoRefresh ? <Pause /> : <Play />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Refresh market data"
+                    disabled={loading}
+                    onClick={() => void load()}
+                  >
+                    <RefreshCw className={loading ? "animate-spin" : undefined} />
+                  </Button>
+                </div>
+              }
+            />
             <div className="flex min-w-0 flex-col gap-4">
               <MomentumPanel data={data} />
 
@@ -293,9 +331,9 @@ function MetricCard({
   if (change !== undefined && change !== null) valueClass = change >= 0 ? "text-emerald-600" : "text-rose-500";
   return (
     <Card className="py-0 shadow-none">
-      <CardContent className="p-4">
+      <CardContent className="p-3 sm:p-4">
         <p className="text-muted-foreground text-sm">{label}</p>
-        <p className={`mt-2 break-words font-semibold text-xl tabular-nums tracking-tight sm:text-2xl ${valueClass}`}>
+        <p className={`mt-1 break-words font-semibold text-xl tabular-nums tracking-tight sm:text-2xl ${valueClass}`}>
           {value}
         </p>
         <p className="mt-1 text-muted-foreground text-xs">{detail}</p>
@@ -330,7 +368,7 @@ function Indicator({
 
 function formatPrice(value: number, symbol: string) {
   const currency = symbol.split("-").at(-1);
-  const maximumFractionDigits = Math.abs(value) < 1 ? 6 : 2;
+  const maximumFractionDigits = pricePrecision(Math.abs(value));
   if (currency && /^[A-Z]{3}$/.test(currency)) {
     return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits }).format(value);
   }

@@ -90,7 +90,7 @@ const descriptions: Record<ToolName, string> = {
   createAlert:
     "Propose a rule only when the current user explicitly requests an alert. Never saves it. Separate user confirmation is required.",
   getTradeSetup:
-    "Only on an explicit entry/exit or trade setup request. Calculate a conditional pullback/reclaim scenario from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use one/two risk multiples. AUTO selects only the side from moving-average context. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
+    "Only on an explicit entry/exit or trade setup request. Calculate a conditional pullback/reclaim scenario from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use observed structural levels, with one to three targets when supported. AUTO selects a conditional side only when entry and higher-timeframe context align. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
 };
 export function toolDefinitions(allowAlert: boolean, allowTrade = false) {
   return Object.entries(toolSchemas)
@@ -164,7 +164,9 @@ export const TradeSetupSchema = z
     stage: z.enum(["waiting_pullback", "waiting_reclaim", "confirmed"]),
     entry: z.number().positive().finite(),
     stopLoss: z.number().positive().finite(),
-    targets: z.tuple([z.number().positive().finite(), z.number().positive().finite()]),
+    targets: z.array(z.number().positive().finite()).min(1).max(3),
+    targetBasis: z.string().max(300).optional(),
+    contextInterval: IntervalSchema.optional(),
     observedPrice: z.number().positive().finite(),
     observedAt: z.string().datetime({ offset: true }),
     expiresAt: z.string().datetime({ offset: true }),
@@ -176,8 +178,12 @@ export const TradeSetupSchema = z
   .superRefine((plan, context) => {
     const valid =
       plan.direction === "BUY"
-        ? plan.stopLoss < plan.entry && plan.entry < plan.targets[0] && plan.targets[0] < plan.targets[1]
-        : plan.stopLoss > plan.entry && plan.entry > plan.targets[0] && plan.targets[0] > plan.targets[1];
+        ? plan.stopLoss < plan.entry &&
+          plan.entry < plan.targets[0] &&
+          plan.targets.every((target, i) => i === 0 || target > plan.targets[i - 1])
+        : plan.stopLoss > plan.entry &&
+          plan.entry > plan.targets[0] &&
+          plan.targets.every((target, i) => i === 0 || target < plan.targets[i - 1]);
     if (!valid) context.addIssue({ code: "custom", message: "Invalid scenario level ordering" });
   });
 export type TradeSetup = z.infer<typeof TradeSetupSchema>;
@@ -301,3 +307,5 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
+
+export * from "./journal";

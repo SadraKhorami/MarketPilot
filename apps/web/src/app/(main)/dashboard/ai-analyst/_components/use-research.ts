@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-import type { ResearchResult, StreamEvent } from "@marketpilot/ai/contracts";
+import type { ResearchResult, StreamEvent, TradeContext } from "@marketpilot/ai/contracts";
 
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
@@ -10,6 +10,7 @@ import { streamResearch, toolLabels } from "./research-stream";
 export interface ResearchTurn {
   requestId: string;
   input: string;
+  tradeContext?: TradeContext;
   result: ResearchResult | null;
   status: string;
   error?: string;
@@ -70,7 +71,12 @@ export function useResearch() {
     if (mounted.current)
       setTurns((current) => current.map((turn) => (turn.requestId === id ? { ...turn, ...change } : turn)));
   }
-  async function send(input: string, watchlistId?: string, requestId = crypto.randomUUID()) {
+  async function send(
+    input: string,
+    watchlistId?: string,
+    requestId = crypto.randomUUID(),
+    tradeContext?: TradeContext,
+  ) {
     if (!conversationId || active.current || !input.trim()) return;
     active.current = true;
     setRunning(true);
@@ -83,11 +89,17 @@ export function useResearch() {
         ? current.map((turn) =>
             turn.requestId === requestId ? { ...turn, error: undefined, status: "running" } : turn,
           )
-        : [...current, { requestId, input, result: null, status: "running" }],
+        : [...current, { requestId, input, tradeContext, result: null, status: "running" }],
     );
     try {
       await streamResearch(
-        { requestId, conversationId, input, ...(watchlistId ? { watchlistId } : {}) },
+        {
+          requestId,
+          conversationId,
+          input,
+          ...(watchlistId ? { watchlistId } : {}),
+          ...(tradeContext ? { tradeContext } : {}),
+        },
         AbortSignal.any([controller.signal, AbortSignal.timeout(100_000)]),
         (event) => {
           if (!mounted.current) return;
