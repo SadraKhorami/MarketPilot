@@ -97,3 +97,13 @@ Automated tests and browser tabs were not run for Phase 6, per the user's instru
 Daily summaries, sentiment-change subscriptions, group watchlist disclosure, trading, billing and deployment are outside this scope. Bots use the actual existing catalog/market/research availability; configuration badges are not proof of connectivity.
 
 Official references inspected for this implementation: [Telegram Bot API](https://core.telegram.org/bots/api), [deep linking](https://core.telegram.org/bots/features#deep-linking), [Telegram limits](https://core.telegram.org/bots/faq#my-bot-is-hitting-limits-how-do-i-avoid-this), [Discord signed interactions](https://docs.discord.com/developers/quick-start/getting-started), [private responses and deferral](https://docs.discord.com/developers/interactions/receiving-and-responding), [slash command registration/contexts](https://docs.discord.com/developers/interactions/application-commands), and [Discord message nonce/deduplication](https://docs.discord.com/developers/resources/message#create-message).
+
+## Complete local startup
+
+`pnpm dev:full` reuses an existing API tunnel or starts ngrok for configured integrations.
+It stores `BOT_API_URL` with the required `/api/v1` path in local `.env`, registers
+Telegram commands/webhook, and registers Discord commands and updates the application's
+Interactions Endpoint URL through Discord's API. Failed provider checks remain visible
+in Quick start and `pnpm dev:status`. Credentials and user linking are still required.
+
+For manual registration, `pnpm bots:setup` rejects API URLs without `/api/v1`.

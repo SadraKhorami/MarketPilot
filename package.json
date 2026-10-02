@@ -17,7 +17,9 @@
     "ci": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build",
     "bots:setup": "node --env-file=.env packages/bots/dist/setup.js",
     "db:deploy": "pnpm --filter @marketpilot/db migrate:deploy",
-    "billing:setup-webhook": "node --env-file=.env apps/api/scripts/setup-billing-webhook.mjs"
+    "billing:setup-webhook": "node --env-file=.env apps/api/scripts/setup-billing-webhook.mjs",
+    "dev:full": "node scripts/dev/full.mjs",
+    "dev:status": "node scripts/dev/status.mjs"
   },
   "devDependencies": {
     "turbo": "^2.5.6"

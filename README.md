@@ -4,6 +4,25 @@
 
 MarketPilot is a market intelligence SaaS for monitoring assets, trends, news, alerts, and integrations. The Next.js dashboard connects to a NestJS API. MarketPilot fetches Coinbase Exchange product prices and candles through its own provider adapter, validates the response, and calculates technical indicators in a shared TypeScript package. Unsupported products and unavailable observations are shown as unavailable. The AI Analyst is implemented using OpenRouter and authenticated application tools; a server key and compatible model are required. Telegram/Discord linking, commands and alert delivery are implemented; live use requires server credentials and webhook registration.
 
+## Complete local startup
+
+After installing dependencies and configuring `.env`, Docker/Colima and ngrok:
+
+```bash
+pnpm dev:full
+```
+
+The launcher waits for healthy local infrastructure, builds shared runtime packages,
+applies pending migrations before a new API starts, synchronizes configured bot and
+Stripe sandbox webhooks, then starts the worker and dashboard. Existing services are
+reused. Stop an existing API first when migrations are pending. No reset or seed is run.
+
+Keep the terminal open. Ctrl+C stops only processes started by the launcher;
+Docker containers and their data remain. Check services with `pnpm dev:status`
+or open `/dashboard/dev-docs/daily` in development. After a later tunnel URL change,
+rerun the launcher to synchronize endpoints. It requires local database/Redis URLs
+and API port 4000. Missing integration credentials are reported rather than invented.
+
 ## Workspace
 
 The web app is based on the completed [Next.js shadcn admin dashboard](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), substantially adapted for MarketPilot. The source dashboard's MIT notice is retained at `apps/web/LICENSE`; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

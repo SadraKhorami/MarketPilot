@@ -2,6 +2,23 @@ import { z } from "zod";
 import { botConfiguration, botProviders } from "./config";
 import { BotProviderError, discordRequest, telegramRequest } from "./transport";
 
+// Providers add fields such as IDs and versions. Compare only the managed definition.
+function matchesDefinition(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected))
+    return (
+      Array.isArray(actual) &&
+      actual.length === expected.length &&
+      expected.every((item, index) => matchesDefinition(actual[index], item))
+    );
+  if (expected !== null && typeof expected === "object")
+    return (
+      actual !== null &&
+      typeof actual === "object" &&
+      Object.entries(expected).every(([key, value]) => matchesDefinition(Reflect.get(actual, key), value))
+    );
+  return actual === expected;
+}
+
 async function setup() {
   const provider = botProviders.find((item) => item.toLowerCase() === process.argv[2]?.toLowerCase());
   if (!provider) throw new Error("Use: pnpm bots:setup telegram|discord");
@@ -11,6 +28,8 @@ async function setup() {
   const api = new URL(process.env.BOT_API_URL ?? "");
   if (api.protocol !== "https:" || api.username || api.password || api.search || api.hash)
     throw new Error("BOT_API_URL must be a public HTTPS API base URL, such as https://api.example.com/api/v1");
+  if (api.pathname.replace(/\/$/, "") !== "/api/v1")
+    throw new Error("BOT_API_URL must include /api/v1. Example: https://api.example.com/api/v1");
   const base = api.toString().replace(/\/$/, "");
   if (provider === "TELEGRAM") {
     const identity = z
@@ -86,13 +105,33 @@ async function setup() {
         ],
       })),
     ];
-    for (const command of commands)
-      await discordRequest(`applications/${process.env.DISCORD_APPLICATION_ID}/commands`, "POST", {
+    const registered = z
+      .array(z.object({ name: z.string() }).passthrough())
+      .parse(
+        await discordRequest(
+          `applications/${process.env.DISCORD_APPLICATION_ID}/commands`,
+          "GET",
+          undefined,
+          true,
+          false,
+        ),
+      );
+    for (const command of commands) {
+      const definition = {
         type: 1,
         integration_types: [0],
         contexts: [0, 1],
         ...command,
-      });
+      };
+      if (
+        matchesDefinition(
+          registered.find((item) => item.name === command.name),
+          definition,
+        )
+      )
+        continue;
+      await discordRequest(`applications/${process.env.DISCORD_APPLICATION_ID}/commands`, "POST", definition);
+    }
     console.log(
       `Discord commands registered. Set the application's Interactions Endpoint URL to ${base}/bot-webhooks/discord in the Developer Portal, then install the bot. /link is available only in the bot's DM.`,
     );

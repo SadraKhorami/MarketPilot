@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { ArchitectureOverview } from "./architecture-overview";
 import { CommandBlock } from "./command-block";
 import { DeploymentGuide } from "./deployment-guide";
+import { LocalServiceStatus } from "./local-service-status";
 import { type GuideStep, guides, troubleshooting } from "./guide-data";
 
 type DocsSection = "architecture" | "daily" | "setup" | "bots" | "billing" | "deploy" | "troubleshooting";
@@ -49,6 +50,7 @@ export function DevelopmentDocs({ section }: { section: DocsSection }) {
         <h2 className="font-semibold text-lg">{guide.title}</h2>
         <p className="max-w-3xl text-muted-foreground text-sm">{guide.description}</p>
       </div>
+      {section === "daily" && <LocalServiceStatus />}
       <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
         {guide.steps.map((step, index) => (
           <StepCard key={step.title} step={step} index={index} />

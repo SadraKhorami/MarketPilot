@@ -82,3 +82,12 @@ For the sandbox flow, use Stripe's [test cards](https://docs.stripe.com/testing)
 - Temporary verification accounts and test-clock customers were removed. The existing user's plan and data were not used for payment verification. Tunnel availability remains required for unattended webhook delivery.
 
 References: [Stripe Checkout subscriptions](https://docs.stripe.com/payments/checkout/build-subscriptions), [Webhook signatures](https://docs.stripe.com/webhooks/signature), [Stripe test environments](https://docs.stripe.com/sandboxes).
+
+### Reusing a sandbox webhook
+
+`pnpm dev:full` calls the sandbox setup helper after public API readiness. When local
+`.env` contains the managed endpoint ID and signing secret, the helper verifies that
+it belongs to MarketPilot and is a test endpoint, updates its URL, and preserves its
+signing secret. It does not create a new endpoint for each tunnel change. A newly
+created signing secret causes a launcher-owned API to restart; an API started in
+another terminal must be restarted by its operator.

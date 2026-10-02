@@ -29,6 +29,15 @@ async function setup() {
   if (!ready.ok) throw new Error("The public API is not ready. No webhook endpoint was created.");
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { timeout: 10000, maxNetworkRetries: 1 });
   const url = new URL("/api/v1/billing/webhook", api).href;
+  if (process.env.STRIPE_WEBHOOK_ENDPOINT_ID && process.env.STRIPE_WEBHOOK_SECRET?.startsWith("whsec_")) {
+    const registered = await stripe.webhookEndpoints.retrieve(process.env.STRIPE_WEBHOOK_ENDPOINT_ID);
+    if (registered.livemode || registered.metadata.application !== "marketpilot")
+      throw new Error("The configured endpoint is not a MarketPilot sandbox webhook.");
+    if (registered.url !== url || registered.status !== "enabled")
+      await stripe.webhookEndpoints.update(registered.id, { url, disabled: false });
+    console.log("Existing Stripe sandbox webhook synchronized. Its signing secret is preserved.");
+    return;
+  }
   const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
   const existing = endpoints.data.find(
     (endpoint) =>

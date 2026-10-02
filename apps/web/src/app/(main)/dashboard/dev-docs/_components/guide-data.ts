@@ -17,30 +17,39 @@ export const guides: Guide[] = [
   {
     id: "daily",
     label: "Quick start",
-    title: "Two terminals. One workspace.",
+    title: "One command. Your local workspace.",
     description:
-      "Run commands from the repository root. Keep the app and tunnel terminals open while using the integrations.",
+      "Start from the repository root. The launcher prepares local services and keeps their status up to date.",
     steps: [
       {
-        title: "Keep infrastructure running",
+        title: "Start everything",
         description:
-          "PostgreSQL and Redis run in two separate Docker containers. Open Docker or Colima. If these services are already healthy, skip the startup command.",
-        code: "docker ps",
-        note: "Expected containers: marketpilot-postgres (5432) and marketpilot-redis (6379). If stopped, run pnpm dev:infra.",
-      },
-      {
-        title: "Terminal 1 · Start MarketPilot",
-        description:
-          "Starts the dashboard, API and alert worker together. The API also processes bot commands when bot credentials are configured.",
-        code: "pnpm dev",
+          "Starts Colima when needed, waits for PostgreSQL and Redis, builds shared packages and applies migrations before starting a new API. Then prepares the API tunnel and configured integrations, followed by the worker and dashboard.",
+        code: "pnpm dev:full",
+        note: "Install dependencies once with pnpm install --frozen-lockfile. Configure .env, Docker/Colima and ngrok's authtoken first. Existing services are reused; stop an existing API before running this command if migrations are pending. No database reset or automatic seed.",
         link: { label: "Open dashboard", href: "/dashboard/default" },
       },
       {
-        title: "Terminal 2 · Open the API tunnel",
+        title: "Check service status",
         description:
-          "Telegram, Discord and Stripe need a public HTTPS route to API port 4000. A tunnel is unnecessary for dashboard-only development.",
-        code: "ngrok http 4000",
-        note: "Use the existing tunnel if it is already running. A changed public URL needs the registration steps in Bots and Stripe.",
+          "Inspect local containers, dashboard, API, worker and the public API tunnel. The panel above reads the launcher's latest snapshot; stale snapshots are marked rather than presented as live.",
+        code: "pnpm dev:status",
+        note: "Integration status confirms configuration synchronization, not message delivery. Detailed queues, bot failures and provider checks are in System.",
+        link: { label: "Open system status", href: "/dashboard/admin/system" },
+      },
+      {
+        title: "Use the integrations",
+        description:
+          "Configured Telegram and Discord bots synchronize with the current tunnel. Stripe sandbox keeps its existing endpoint and signing secret when the tunnel changes. User account linking and alert preferences still happen in the dashboard.",
+        note: "Keep dev:full open. Ctrl+C stops only processes launched by this command; containers, saved data and an existing tunnel are preserved. If ngrok's URL changes later, rerun dev:full. Missing credentials leave that integration unconfigured.",
+        link: { label: "Connect bots", href: "/dashboard/bots/telegram" },
+      },
+      {
+        title: "Dashboard without integrations",
+        description:
+          "The manual startup commands remain available when you want to control individual processes. A public tunnel is only needed for inbound bot and Stripe webhooks.",
+        code: "pnpm dev:infra\npnpm dev",
+        note: "dev:full requires local database and Redis URLs and API port 4000. It refuses production configuration.",
       },
     ],
   },
