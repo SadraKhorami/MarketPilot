@@ -28,4 +28,6 @@ services:
 
 volumes:
   marketpilot-postgres:
+    name: marketpilot-postgres
   marketpilot-redis:
+    name: marketpilot-redis

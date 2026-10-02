@@ -4,12 +4,18 @@ import { memo } from "react";
 
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import { cn } from "cn";
+import { Info } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
+import type { ServiceId } from "./architecture-data";
 import type { DiagramService } from "./architecture-diagram";
 
-export type ServiceNode = Node<{ service: DiagramService; active: boolean }, "service">;
+export type ServiceNode = Node<
+  { service: DiagramService; active: boolean; onInspect: (id: ServiceId) => void },
+  "service"
+>;
 
 const positions = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left };
 
@@ -49,7 +55,23 @@ export const ArchitectureNode = memo(function ArchitectureNode({ data, selected 
         >
           <Icon className="size-5" />
         </div>
-        <Badge variant="outline">{service.layer}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">{service.layer}</Badge>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="nodrag nopan rounded-full"
+            aria-label={`Details for ${service.title}`}
+            title="Service details"
+            onKeyDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onInspect(service.id);
+            }}
+          >
+            <Info />
+          </Button>
+        </div>
       </div>
       <div className="flex flex-col gap-1.5">
         <p className="font-semibold text-lg tracking-tight">{service.title}</p>

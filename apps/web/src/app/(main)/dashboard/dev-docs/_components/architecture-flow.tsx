@@ -11,7 +11,7 @@ import {
   ReactFlow,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import { CircleHelp, Layers3, Maximize, Minus, Pause, Play, Plus } from "lucide-react";
+import { CircleHelp, Info, Layers3, Maximize, Minus, Pause, Play, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +60,10 @@ export function ArchitectureFlow() {
   const selectedService = diagramServices.find((service) => service.id === selectedId) ?? diagramServices[0];
   const animationLabel = animationEnabled ? "Pause flow" : "Play flow";
   const journeyDescription = journeys.find((item) => item.id === journey)?.description;
+  const inspectService = useCallback((id: ServiceId) => {
+    setSelectedId(id);
+    setInspectorOpen(true);
+  }, []);
 
   const nodes = useMemo<ServiceNode[]>(
     () =>
@@ -70,14 +74,15 @@ export function ArchitectureFlow() {
         data: {
           service,
           active: true,
+          onInspect: inspectService,
         },
         selected: selectedService.id === service.id,
-        ariaLabel: `${service.title}. Press Enter to inspect.`,
+        ariaLabel: `${service.title}. Use the info button for details.`,
         className: "rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring",
         draggable: false,
         deletable: false,
       })),
-    [diagramServices, selectedService.id],
+    [diagramServices, selectedService.id, inspectService],
   );
 
   const edges = useMemo<ArchitectureFlowEdge[]>(
@@ -106,7 +111,6 @@ export function ArchitectureFlow() {
 
   const onNodeClick = useCallback<NodeMouseHandler<ServiceNode>>((_event, node) => {
     setSelectedId(node.data.service.id);
-    setInspectorOpen(true);
   }, []);
   const onNodesChange = useCallback(
     (changes: NodeChange<ServiceNode>[]) => {
@@ -115,7 +119,6 @@ export function ArchitectureFlow() {
         const service = diagramServices.find((item) => item.id === selected.id);
         if (service) {
           setSelectedId(service.id);
-          setInspectorOpen(true);
         }
       }
     },
@@ -135,7 +138,7 @@ export function ArchitectureFlow() {
               Inside MarketPilot
             </CardTitle>
             <CardDescription className="max-w-2xl">
-              Choose a workflow. Select a node to explore its role and connections.
+              Choose a workflow. Use a node’s info button to explore its role and connections.
             </CardDescription>
           </div>
           <ToggleGroup
@@ -219,22 +222,23 @@ export function ArchitectureFlow() {
               {diagramServices.map((service) => {
                 const Icon = service.icon;
                 return (
-                  <button
-                    key={service.id}
-                    type="button"
-                    aria-pressed={selectedService.id === service.id}
-                    onClick={() => {
-                      setSelectedId(service.id);
-                      setInspectorOpen(true);
-                    }}
-                    className="flex items-start gap-3 rounded-xl border bg-background p-4 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring aria-pressed:border-primary"
-                  >
+                  <div key={service.id} className="flex items-start gap-3 rounded-xl border bg-background p-4">
                     <Icon className="mt-1 size-5 shrink-0" />
-                    <span className="flex min-w-0 flex-col gap-1">
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="font-semibold text-base">{service.title}</span>
                       <span className="text-muted-foreground text-sm leading-relaxed">{service.subtitle}</span>
                     </span>
-                  </button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0 rounded-full"
+                      aria-label={`Details for ${service.title}`}
+                      title="Service details"
+                      onClick={() => inspectService(service.id)}
+                    >
+                      <Info />
+                    </Button>
+                  </div>
                 );
               })}
             </fieldset>
@@ -270,7 +274,7 @@ export function ArchitectureFlow() {
         {!compactView && (
           <CardFooter className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
             <p className="text-muted-foreground text-xs">
-              Drag to pan · Select a node to inspect · Movement illustrates a flow, not live traffic
+              Drag to pan · Info opens service details · Movement illustrates a flow, not live traffic
             </p>
             <div className="flex shrink-0 flex-wrap items-center gap-1">
               <Button

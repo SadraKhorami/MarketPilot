@@ -60,6 +60,7 @@ export function MarketSymbolField({
   allowAll = false,
   excluded = [],
   allowUnavailable = false,
+  compact = false,
 }: {
   id: string;
   value: string;
@@ -70,6 +71,7 @@ export function MarketSymbolField({
   allowAll?: boolean;
   excluded?: string[];
   allowUnavailable?: boolean;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const catalog = useMarketCatalog();
@@ -109,14 +111,15 @@ export function MarketSymbolField({
           aria-expanded={open}
           aria-controls={`${id}-list`}
           disabled={disabled}
+          title={selected ? `${selected.name} · ${selected.symbol}` : value || undefined}
           className={cn("h-10 w-full justify-between", className)}
         >
           <span className="flex min-w-0 items-center gap-2 truncate">
-            {value ? <AssetMark symbol={value} small /> : null}
+            {value && !compact ? <AssetMark symbol={value} small /> : null}
             {selected ? (
               <>
-                <span>{selected.name}</span>
-                <span className="text-muted-foreground">{selected.symbol}</span>
+                <span className="truncate">{selected.name}</span>
+                {!compact && <span className="text-muted-foreground">{selected.symbol}</span>}
               </>
             ) : (
               value || (allowAll ? "All assets" : placeholder)

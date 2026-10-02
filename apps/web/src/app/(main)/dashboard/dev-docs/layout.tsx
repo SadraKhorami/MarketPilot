@@ -4,10 +4,6 @@ import { notFound } from "next/navigation";
 
 import type { Metadata } from "next";
 
-import { Badge } from "@/components/ui/badge";
-
-import { MarketPilotPage } from "../_components/marketpilot-page";
-
 export const metadata: Metadata = {
   title: "Development docs · MarketPilot",
   robots: { index: false, follow: false },
@@ -17,12 +13,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   if (process.env.NODE_ENV !== "development") notFound();
 
   return (
-    <MarketPilotPage
-      title="Development docs"
-      description="Your workspace playbook. Run locally, understand the architecture and prepare an Ubuntu deployment."
-      actions={<Badge variant="secondary">Development only</Badge>}
-    >
+    <div className="@container/main mx-auto flex w-full min-w-0 max-w-screen-2xl flex-col gap-5 md:gap-6">
+      <h1 className="sr-only">Development docs</h1>
       {children}
-    </MarketPilotPage>
+    </div>
   );
 }

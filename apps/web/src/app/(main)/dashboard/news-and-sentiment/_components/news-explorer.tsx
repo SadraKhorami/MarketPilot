@@ -3,24 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { articleMatchesAsset } from "@marketpilot/market-data";
-import { cn } from "cn";
-import { Bookmark, Globe2, Newspaper, Search, X } from "lucide-react";
+import { Bookmark, Globe2, Newspaper, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
 import { useMarketCatalog } from "../../_components/market-catalog-provider";
-import { MarketSymbolField } from "../../_components/market-symbol-field";
 import { ResourceState } from "../../_components/resource-state";
 import { NewsArticlePreview } from "./news-article-preview";
 import { NewsCoverageSidebar } from "./news-coverage-sidebar";
+import { NewsFilters } from "./news-filters";
 import { NewsPagination } from "./news-pagination";
+import { type NewsPeriod, publicationWindow } from "./news-period";
 import { NewsStoryCard } from "./news-story-card";
 import type { Article, NewsResponse } from "./news-types";
 
@@ -31,6 +29,9 @@ export function NewsExplorer() {
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [asset, setAsset] = useState("");
+  const [period, setPeriod] = useState<NewsPeriod>("all");
+  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [response, setResponse] = useState<NewsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +58,12 @@ export function NewsExplorer() {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (search) params.set("search", search);
       if (asset) params.set("asset", asset);
+      if (category) params.set("category", category);
+      const publicationBounds = publicationWindow(period);
+      if (publicationBounds) {
+        params.set("publishedFrom", publicationBounds.from.toISOString());
+        params.set("publishedTo", publicationBounds.to.toISOString());
+      }
       const result = await apiRequest<ApiEnvelope<NewsResponse>>(`/news?${params}`);
       if (version !== requestVersion.current) return;
       if (result.data.totalPages > 0 && page > result.data.totalPages) {
@@ -64,6 +71,7 @@ export function NewsExplorer() {
         return;
       }
       setResponse(result.data);
+      setCategories(result.data.categories ?? []);
       setError(null);
     } catch (reason) {
       if (version === requestVersion.current)
@@ -71,7 +79,7 @@ export function NewsExplorer() {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [asset, page, search]);
+  }, [asset, category, page, period, search]);
 
   useEffect(() => {
     setResponse(null);
@@ -90,12 +98,21 @@ export function NewsExplorer() {
     };
   }, [load]);
 
+  const publicationBounds = publicationWindow(period);
   const savedArticles = Object.values(saved).filter((article) => {
     const matchesAsset =
       !asset ||
       articleMatchesAsset(article, asset, catalog.data?.instruments.find((item) => item.symbol === asset)?.name);
     const text = `${article.title} ${article.source} ${article.description ?? ""}`.toLowerCase();
-    return matchesAsset && (!search || text.includes(search.toLowerCase()));
+    return (
+      matchesAsset &&
+      (!publicationBounds ||
+        (article.publishedAt !== null &&
+          new Date(article.publishedAt) >= publicationBounds.from &&
+          new Date(article.publishedAt) <= publicationBounds.to)) &&
+      (!category || article.sourceCategories.includes(category)) &&
+      (!search || text.includes(search.toLowerCase()))
+    );
   });
   const articles = view === "saved" ? savedArticles : (response?.articles ?? []);
   const sources = new Set(articles.map((article) => article.source));
@@ -128,7 +145,8 @@ export function NewsExplorer() {
           {
             label: "Matching headlines",
             value: response ? String(response.total) : "—",
-            detail: search || asset ? "For your current filters" : "In your news library",
+            detail:
+              search || asset || category || period !== "all" ? "For your current filters" : "In your news library",
             icon: Newspaper,
           },
           {
@@ -158,67 +176,34 @@ export function NewsExplorer() {
           </Card>
         ))}
       </section>
-      <Card>
-        <CardContent>
-          <FieldGroup
-            className={cn(
-              "grid min-w-0 grid-cols-1 items-end gap-3",
-              searchDraft || asset
-                ? "@2xl/main:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto]"
-                : "@2xl/main:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]",
-            )}
-          >
-            <Field className="min-w-0 @2xl/main:max-w-md">
-              <FieldLabel htmlFor="news-search">Search coverage</FieldLabel>
-              <InputGroup className="h-10">
-                <InputGroupAddon>
-                  <Search />
-                </InputGroupAddon>
-                <InputGroupInput
-                  id="news-search"
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  placeholder="Company, topic or headline…"
-                />
-              </InputGroup>
-            </Field>
-            <Field className="min-w-0">
-              <FieldLabel htmlFor="news-asset">Asset</FieldLabel>
-              <MarketSymbolField
-                id="news-asset"
-                value={asset}
-                onChange={(value) => {
-                  setAsset(value);
-                  setPage(1);
-                }}
-                allowAll
-                allowUnavailable
-              />
-            </Field>
-            {searchDraft || asset ? (
-              <Button
-                variant="ghost"
-                className="h-10 shrink-0"
-                onClick={() => {
-                  setSearchDraft("");
-                  setSearch("");
-                  setAsset("");
-                  setPage(1);
-                }}
-              >
-                <X data-icon="inline-start" />
-                Clear
-              </Button>
-            ) : null}
-          </FieldGroup>
-          {asset && response?.assetFilter?.symbol === asset ? (
-            <p className="mt-3 text-muted-foreground text-xs">
-              Matching asset tags or headline/excerpt keywords: {response.assetFilter.terms.join(" · ")}. Search
-              coverage narrows these results further.
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
+      <NewsFilters
+        search={searchDraft}
+        asset={asset}
+        category={category}
+        categories={categories}
+        period={period}
+        onSearch={setSearchDraft}
+        onAsset={(value) => {
+          setAsset(value);
+          setPage(1);
+        }}
+        onCategory={(value) => {
+          setCategory(value);
+          setPage(1);
+        }}
+        onPeriod={(value) => {
+          setPeriod(value);
+          setPage(1);
+        }}
+        onClear={() => {
+          setSearchDraft("");
+          setSearch("");
+          setAsset("");
+          setCategory("");
+          setPeriod("all");
+          setPage(1);
+        }}
+      />
       {error ? (
         <ResourceState loading={false} error={error} title="Coverage could not be updated" retry={() => void load()} />
       ) : null}
@@ -230,7 +215,7 @@ export function NewsExplorer() {
           aria-busy={view === "all" && loading}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+            <div className="flex flex-col items-start gap-2">
               <ToggleGroup
                 type="single"
                 value={view}
@@ -302,6 +287,9 @@ export function NewsExplorer() {
                     setSearchDraft("");
                     setSearch("");
                     setAsset("");
+                    setCategory("");
+                    setPeriod("all");
+                    setPage(1);
                     if (exploreFromEmptyList) setView("all");
                   }}
                 >

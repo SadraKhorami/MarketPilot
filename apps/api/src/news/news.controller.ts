@@ -1,13 +1,23 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { ApiOperation, ApiPropertyOptional, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 import { ApiReadAuth, ApiStandardResponses } from "../common/api-documentation";
 import { ApiScopes } from "../common/auth";
 import { NewsService } from "./news.service";
 
 class NewsQueryDto {
+  @ApiPropertyOptional({ description: "Inclusive publication window start (ISO 8601)." })
+  @IsOptional()
+  @IsDateString()
+  publishedFrom?: string;
+
+  @ApiPropertyOptional({ description: "Inclusive publication window end (ISO 8601)." })
+  @IsOptional()
+  @IsDateString()
+  publishedTo?: string;
+
   @ApiPropertyOptional({ description: "Catalog symbol or asset keyword; matches stored tags or article text." })
   @IsOptional()
   @IsString()

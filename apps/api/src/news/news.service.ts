@@ -10,6 +10,8 @@ export interface NewsQueryDto {
   search?: string;
   page?: number;
   pageSize?: number;
+  publishedFrom?: string;
+  publishedTo?: string;
 }
 @Injectable()
 export class NewsService {
@@ -39,6 +41,14 @@ export class NewsService {
       });
     }
     if (query.category) conditions.push({ sourceCategories: { has: query.category } });
+    if (query.publishedFrom || query.publishedTo) {
+      conditions.push({
+        publishedAt: {
+          ...(query.publishedFrom ? { gte: new Date(query.publishedFrom) } : {}),
+          ...(query.publishedTo ? { lte: new Date(query.publishedTo) } : {}),
+        },
+      });
+    }
     if (search)
       conditions.push({
         OR: [
@@ -50,7 +60,7 @@ export class NewsService {
     const where: Prisma.NewsArticleWhereInput = { AND: conditions };
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const [articles, total, refreshState] = await Promise.all([
+    const [articles, total, refreshState, categoryGroups] = await Promise.all([
       this.db.newsArticle.findMany({
         where,
         orderBy: [{ publishedAt: "desc" }, { fetchedAt: "desc" }, { id: "desc" }],
@@ -59,6 +69,9 @@ export class NewsService {
       }),
       this.db.newsArticle.count({ where }),
       this.readRefreshState(),
+      this.db.newsArticle.groupBy({
+        by: ["sourceCategories"],
+      }),
     ]);
     return {
       data: {
@@ -67,6 +80,9 @@ export class NewsService {
         page,
         pageSize,
         totalPages: Math.ceil(total / pageSize),
+        categories: [...new Set(categoryGroups.flatMap((article) => article.sourceCategories))]
+          .filter((category) => category.trim())
+          .sort((a, b) => a.localeCompare(b)),
         refreshState,
         sentiment: null as null,
         assetFilter: asset ? { symbol: asset, terms, match: "tags_or_text" } : null,
