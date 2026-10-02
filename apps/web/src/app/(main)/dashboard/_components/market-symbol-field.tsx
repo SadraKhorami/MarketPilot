@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { marketSourceLabel, normalizeInstrumentSymbol, referenceMarkets } from "@marketpilot/market-data";
-import { useMarketCatalog } from "./market-catalog-provider";
 import { cn } from "cn";
-import { ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown, Star } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+import { useMarketCatalog } from "./market-catalog-provider";
 
 export const marketOptions = [
   { symbol: "BTC-USD", name: "Bitcoin", mark: "₿" },
@@ -61,6 +62,7 @@ export function MarketSymbolField({
   excluded = [],
   allowUnavailable = false,
   compact = false,
+  favorites,
 }: {
   id: string;
   value: string;
@@ -72,8 +74,19 @@ export function MarketSymbolField({
   excluded?: string[];
   allowUnavailable?: boolean;
   compact?: boolean;
+  favorites?: { symbols: string[]; toggle: (symbol: string) => void; ready: boolean };
 }) {
   const [open, setOpen] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const favoriteButtons = useRef(new Map<string, HTMLButtonElement>());
+  const pendingFavoriteFocus = useRef<string | null>(null);
+  useEffect(() => {
+    const symbol = pendingFavoriteFocus.current;
+    if (symbol) {
+      (favoriteButtons.current.get(symbol) ?? searchInput.current)?.focus();
+      pendingFavoriteFocus.current = null;
+    }
+  });
   const catalog = useMarketCatalog();
   const [search, setSearch] = useState("");
   const instruments = catalog.data?.instruments ?? [];
@@ -85,10 +98,12 @@ export function MarketSymbolField({
       .replace(/[^\p{L}\p{N}]/gu, "")
       .includes(query),
   );
+  const favoriteMatches = favorites ? matches.filter((market) => favorites.symbols.includes(market.symbol)) : [];
+  const regularMatches = favorites ? matches.filter((market) => !favorites.symbols.includes(market.symbol)) : matches;
   const visible = query
-    ? matches.slice(0, 80)
+    ? regularMatches.slice(0, 80)
     : (["crypto", "forex", "commodity", "stock"] as const).flatMap((type) =>
-        matches.filter((item) => item.assetClass === type).slice(0, 20),
+        regularMatches.filter((item) => item.assetClass === type).slice(0, 20),
       );
   const select = (symbol: string) => {
     onChange(symbol);
@@ -131,6 +146,7 @@ export function MarketSymbolField({
       <PopoverContent align="start" className="w-(--radix-popover-trigger-width) min-w-64 max-w-[calc(100vw-2rem)] p-0">
         <Command shouldFilter={false}>
           <CommandInput
+            ref={searchInput}
             value={search}
             onValueChange={setSearch}
             placeholder="Search name or symbol, e.g. Bitcoin, XAUUSD…"
@@ -145,45 +161,85 @@ export function MarketSymbolField({
                 </CommandItem>
               </CommandGroup>
             ) : null}
-            {(["crypto", "forex", "commodity", "stock"] as const).map((assetClass) => {
-              const group = visible.filter((market) => market.assetClass === assetClass);
-              if (!group.length) return null;
-              return (
-                <CommandGroup
-                  key={assetClass}
-                  heading={{ crypto: "Crypto", forex: "Forex", commodity: "Metals", stock: "Stocks" }[assetClass]}
-                >
-                  {group.map((market) => (
-                    <CommandItem
+            {[
+              { key: "favorites", title: "Favorites", markets: favoriteMatches },
+              ...(["crypto", "forex", "commodity", "stock"] as const).map((assetClass) => ({
+                key: assetClass,
+                title: { crypto: "Crypto", forex: "Forex", commodity: "Metals", stock: "Stocks" }[assetClass],
+                markets: visible.filter((market) => market.assetClass === assetClass),
+              })),
+            ]
+              .filter((group) => group.markets.length > 0)
+              .map((group) => (
+                <CommandGroup key={group.key} heading={group.title}>
+                  {group.markets.map((market) => (
+                    <div
                       key={market.symbol}
-                      value={market.symbol}
-                      disabled={excluded.includes(market.symbol) || (!market.available && !allowUnavailable)}
-                      onSelect={() => select(market.symbol)}
+                      className="flex items-center rounded-sm pr-1 hover:bg-muted focus-within:bg-muted has-[[data-selected=true]]:bg-muted"
                     >
-                      <AssetMark symbol={market.symbol} small />
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate font-medium">{market.name}</span>
-                        <span className="truncate text-muted-foreground text-xs">
-                          {market.symbol} · {marketSourceLabel(market.provider)}
+                      <CommandItem
+                        className="min-w-0 flex-1 data-selected:bg-transparent"
+                        value={market.symbol}
+                        disabled={excluded.includes(market.symbol) || (!market.available && !allowUnavailable)}
+                        onSelect={() => select(market.symbol)}
+                      >
+                        <AssetMark symbol={market.symbol} small />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate font-medium">{market.name}</span>
+                          <span className="truncate text-muted-foreground text-xs">
+                            {market.symbol} · {marketSourceLabel(market.provider)}
+                          </span>
+                          {!market.available ? (
+                            <span className="text-muted-foreground text-xs">
+                              Market data needs a provider connection
+                            </span>
+                          ) : null}
                         </span>
-                        {!market.available ? (
-                          <span className="text-muted-foreground text-xs">Market data needs a provider connection</span>
-                        ) : null}
-                      </span>
-                    </CommandItem>
+                      </CommandItem>
+                      {favorites ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={!favorites.ready}
+                          aria-label={`${favorites.symbols.includes(market.symbol) ? "Remove" : "Add"} ${market.name} (${market.symbol}) ${favorites.symbols.includes(market.symbol) ? "from" : "to"} favorites`}
+                          aria-pressed={favorites.symbols.includes(market.symbol)}
+                          ref={(node) => {
+                            if (node) favoriteButtons.current.set(market.symbol, node);
+                            else favoriteButtons.current.delete(market.symbol);
+                          }}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                          }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            pendingFavoriteFocus.current = market.symbol;
+                            favorites.toggle(market.symbol);
+                          }}
+                        >
+                          <Star
+                            className={
+                              favorites.symbols.includes(market.symbol)
+                                ? "fill-amber-500 text-amber-500"
+                                : "text-muted-foreground"
+                            }
+                          />
+                        </Button>
+                      ) : null}
+                    </div>
                   ))}
                 </CommandGroup>
-              );
-            })}
+              ))}
           </CommandList>
           {catalog.loading ? (
             <p role="status" className="border-t p-2 text-muted-foreground text-xs">
               Loading market catalog…
             </p>
           ) : null}
-          {matches.length > visible.length ? (
+          {matches.length > visible.length + favoriteMatches.length ? (
             <p className="p-2 text-muted-foreground text-xs">
-              Showing {visible.length} of {matches.length}. Type to narrow the list.
+              Showing {visible.length + favoriteMatches.length} of {matches.length}. Type to narrow the list.
             </p>
           ) : null}
           {catalog.error || catalog.data?.error ? (

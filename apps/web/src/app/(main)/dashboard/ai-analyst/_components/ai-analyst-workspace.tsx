@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-import { ArrowUp, Plus, Sparkles, Square } from "lucide-react";
+import { ArrowUp, Info, Plus, Sparkles, Square } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -15,18 +15,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiResource } from "@/hooks/use-api-resource";
 
-import { MarketSymbolField } from "../../_components/market-symbol-field";
 import { ResourceState } from "../../_components/resource-state";
 import { ResearchConversation } from "./research-conversation";
 import { ResearchHistory } from "./research-history";
 import { toolLabels } from "./research-stream";
+import { ResearchSuggestions, type ResearchWatchlist } from "./research-suggestions";
 import { useResearch } from "./use-research";
 
 interface AiStatus {
@@ -34,55 +33,54 @@ interface AiStatus {
   status: string;
   message: string;
 }
-interface Watchlist {
-  id: string;
-  name: string;
-  items: Array<{ assetId: string }>;
-}
 function activityLabel(event: { state: string; status?: string }, running: boolean) {
   if (event.state === "running") return running ? "Working" : "Interrupted";
   return event.status === "ok" ? "Received" : "Limited";
 }
 export function AIAnalystWorkspace() {
   const status = useApiResource<AiStatus>("/ai/status");
-  const lists = useApiResource<Watchlist[]>("/watchlists");
+  const lists = useApiResource<ResearchWatchlist[]>("/watchlists");
   const research = useResearch();
   const [input, setInput] = useState("");
   const [symbol, setSymbol] = useState("BTC-USD");
   const [watchlistId, setWatchlistId] = useState("default");
   const disabled = !status.data?.configured || !research.ready || research.running;
-  const suggestions = [
-    {
-      title: "Analyze BTC",
-      prompt: "Analyze BTC using current price, technical indicators, trend and available stored news.",
-    },
-    { title: "Compare BTC and ETH", prompt: "Compare BTC and ETH using the same hourly candle window." },
-    {
-      title: "Summarize my watchlist",
-      prompt: "Summarize my selected watchlist with actual market observations and their limitations.",
-    },
-    {
-      title: "Find an entry, stop loss & targets",
-      prompt: `Give me a conditional BUY or SELL trade setup for ${symbol} after a pullback and confirmation, with Entry, Stop loss, TP 1 and TP 2. Use current completed candles. If there is no valid setup, say so. Offer an optional near-entry alert, but do not create it without my confirmation.`,
-    },
-  ];
   function submit(value: string) {
     if (disabled || !value.trim()) return;
     setInput("");
     void research.send(value, watchlistId === "default" ? undefined : watchlistId);
   }
   return (
-    <div className="grid min-h-0 min-w-0 flex-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:grid-rows-[minmax(0,1fr)]">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <Card className="h-[70dvh] min-h-0 min-w-0 xl:h-full">
         <CardHeader className="flex shrink-0 flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
+          <div className="min-w-0 flex-1 basis-full space-y-1 sm:basis-auto">
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="size-4" />
               Market research
             </CardTitle>
             <CardDescription>Observed facts and cited interpretation, using your MarketPilot sources.</CardDescription>
           </div>
-          <CardAction className="flex shrink-0 flex-wrap justify-end gap-2">
+          <CardAction className="flex w-full shrink-0 flex-wrap justify-end gap-2 sm:w-auto">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="About AI research">
+                  <Info />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] p-4">
+                <h2 className="font-medium">How research works</h2>
+                <p className="text-muted-foreground text-sm">
+                  Market choices fill the suggested asset questions. Your watchlist choice also applies when your typed
+                  question refers to your watchlist.
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  Bare asset names use USD pairs. Sentiment scoring and historical watchlist changes are unavailable.
+                  Private research is retained for seven days; conversations show the latest twenty turns. Alerts always
+                  require your confirmation.
+                </p>
+              </PopoverContent>
+            </Popover>
             <ResearchHistory
               currentId={research.conversationId}
               disabled={research.running || !research.ready}
@@ -115,32 +113,19 @@ export function AIAnalystWorkspace() {
           ) : null}
           {!research.ready ? <Skeleton className="min-h-0 flex-1" /> : null}
           {research.ready && !research.turns.length ? (
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-              <Empty>
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <Sparkles />
-                  </EmptyMedia>
-                  <EmptyTitle>Start with a market question</EmptyTitle>
-                  <EmptyDescription>
-                    Explore a supported asset, compare market observations or research your watchlist. Each lookup
-                    preserves its source, time and missing data.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {suggestions.map((suggestion) => (
-                  <Button
-                    key={suggestion.title}
-                    variant="outline"
-                    className="h-auto justify-start whitespace-normal py-3 text-left"
-                    disabled={disabled}
-                    onClick={() => submit(suggestion.prompt)}
-                  >
-                    {suggestion.title}
-                  </Button>
-                ))}
-              </div>
+            <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-6 overflow-y-auto py-4 md:justify-center">
+              <ResearchSuggestions
+                symbol={symbol}
+                onSymbolChange={setSymbol}
+                watchlistId={watchlistId}
+                onWatchlistChange={setWatchlistId}
+                lists={lists.data}
+                listsLoading={lists.loading}
+                listsError={lists.error}
+                disabled={disabled}
+                running={research.running}
+                onSubmit={submit}
+              />
             </div>
           ) : null}
           {research.ready && research.turns.length > 0 ? (
@@ -149,6 +134,13 @@ export function AIAnalystWorkspace() {
           {research.running ? (
             <p role="status" aria-live="polite" className="shrink-0 text-muted-foreground text-sm">
               {research.progress}
+              {research.activity
+                .filter((event, i, all) => all.findLastIndex((entry) => entry.tool === event.tool) === i)
+                .map((event) => (
+                  <Badge key={event.tool} variant="outline" className="ml-2">
+                    {toolLabels[event.tool]} · {activityLabel(event, true)}
+                  </Badge>
+                ))}
             </p>
           ) : null}
         </CardContent>
@@ -182,6 +174,21 @@ export function AIAnalystWorkspace() {
                     }}
                   />
                   <InputGroupAddon align="block-end" className="flex-wrap">
+                    {research.turns.length > 0 && !research.running ? (
+                      <ResearchSuggestions
+                        compact
+                        symbol={symbol}
+                        onSymbolChange={setSymbol}
+                        watchlistId={watchlistId}
+                        onWatchlistChange={setWatchlistId}
+                        lists={lists.data}
+                        listsLoading={lists.loading}
+                        listsError={lists.error}
+                        disabled={disabled}
+                        running={research.running}
+                        onSubmit={submit}
+                      />
+                    ) : null}
                     <span className="mr-auto text-xs">{input.length}/2000 · Shift+Enter for a new line</span>
                     {research.running ? (
                       <Button type="button" size="sm" variant="outline" onClick={research.cancel}>
@@ -201,80 +208,6 @@ export function AIAnalystWorkspace() {
           </form>
         </CardFooter>
       </Card>
-      <aside className="flex min-w-0 flex-col gap-4 xl:max-h-full xl:overflow-y-auto">
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Research context</CardTitle>
-            <CardDescription>Choose context for the suggested questions.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="research-market">Market</FieldLabel>
-                <MarketSymbolField
-                  id="research-market"
-                  value={symbol}
-                  onChange={setSymbol}
-                  disabled={research.running}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="research-watchlist">Watchlist</FieldLabel>
-                <Select
-                  value={watchlistId}
-                  onValueChange={setWatchlistId}
-                  disabled={research.running || lists.loading || !!lists.error}
-                >
-                  <SelectTrigger id="research-watchlist" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="default">First watchlist</SelectItem>
-                      {lists.data?.map((list) => (
-                        <SelectItem key={list.id} value={list.id}>
-                          {list.name} · {list.items.length} assets
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                {lists.error ? <p className="text-muted-foreground text-xs">Watchlists could not be loaded.</p> : null}
-                {!lists.error && lists.data?.length === 0 ? (
-                  <p className="text-muted-foreground text-xs">You have no watchlists yet.</p>
-                ) : null}
-              </Field>
-            </FieldGroup>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Source activity</CardTitle>
-            <CardDescription>{research.running ? "Lookups in progress" : "Latest research request"}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {research.activity.length ? (
-              <ul className="flex flex-col gap-2">
-                {research.activity
-                  .filter((event, i, all) => all.findLastIndex((entry) => entry.tool === event.tool) === i)
-                  .map((event) => (
-                    <li key={event.tool} className="flex items-center justify-between gap-2 text-xs">
-                      <span>{toolLabels[event.tool]}</span>
-                      <Badge variant="outline">{activityLabel(event, research.running)}</Badge>
-                    </li>
-                  ))}
-              </ul>
-            ) : (
-              <p className="text-muted-foreground text-xs">Actual lookups appear when research begins.</p>
-            )}
-          </CardContent>
-        </Card>
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          Bare asset names use USD pairs. Sentiment scoring and historical watchlist changes are unavailable. Private
-          research is retained for seven days; the conversation shows the latest twenty turns. Alert rules require your
-          confirmation.
-        </p>
-      </aside>
     </div>
   );
 }

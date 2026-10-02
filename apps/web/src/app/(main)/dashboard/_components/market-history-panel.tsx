@@ -22,11 +22,13 @@ export function MarketHistoryPanel({
   stale = false,
   toolbar,
   className,
+  settings,
 }: {
   data: MarketObservation;
   stale?: boolean;
   toolbar?: ReactNode;
   className?: string;
+  settings?: ReactNode;
 }) {
   const [view, setView] = useState("price");
   const fillId = useId().replace(/:/g, "");
@@ -58,7 +60,7 @@ export function MarketHistoryPanel({
           {data.symbol} · {data.interval} candles ·{" "}
           {stale ? "Cached observation" : marketSourceLabel(data.source ?? "coinbase-exchange")}
         </CardDescription>
-        <CardAction>
+        <CardAction className="flex items-center gap-2">
           <ToggleGroup
             type="single"
             value={chartView}
@@ -75,6 +77,7 @@ export function MarketHistoryPanel({
               Volume
             </ToggleGroupItem>
           </ToggleGroup>
+          {settings}
         </CardAction>
         {toolbar ? <div className="col-span-full pt-3">{toolbar}</div> : null}
       </CardHeader>

@@ -12,18 +12,26 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
-import { MarketRow, PulseCard, type Snapshot, SummaryCard } from "./overview-cards";
+import { useAccountPreference } from "../../_components/use-account-preference";
+import { MarketPulse } from "./market-pulse";
+import { MarketRow, type Snapshot, SummaryCard } from "./overview-cards";
 import { OverviewHeadlines, type OverviewNews } from "./overview-headlines";
 import { OverviewMarketHistory } from "./overview-market-history";
+
+import { defaultOverviewPreferences, historyRanges, isOverviewPreferences } from "./overview-preferences";
+import { OverviewSettings, OverviewSettingsButton, type SettingsSection } from "./overview-settings";
 
 type Watchlist = { id: string; name: string; items: Array<{ id: string; assetId: string }> };
 type AlertSummary = { total: number; active: number };
 
 const refreshInterval = 65_000;
-const marketPulseSymbols = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"];
 
 export function DashboardOverview() {
-  const [chartSymbol, setChartSymbol] = useState("BTC-USD");
+  const preference = useAccountPreference("overview", defaultOverviewPreferences, isOverviewPreferences);
+  const settings = preference.value;
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  const [chartSnapshot, setChartSnapshot] = useState<Snapshot | null>(null);
+  const requestSequence = useRef(0);
   const [watchlists, setWatchlists] = useState<Watchlist[] | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, Snapshot | null>>({});
   const [news, setNews] = useState<OverviewNews | null>(null);
@@ -31,22 +39,36 @@ export function DashboardOverview() {
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
-  const inFlight = useRef(false);
+
   const lastAttempt = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+    if (!preference.ready) return;
+    const sequence = ++requestSequence.current;
+    const query = new URLSearchParams({ page: "1", pageSize: "6" });
+    for (const asset of settings.newsAssets) query.append("assets", asset);
+    for (const category of settings.newsCategories) query.append("categories", category);
+    const range = historyRanges[settings.historyRange];
+    setLoading(true);
     lastAttempt.current = Date.now();
 
     try {
-      const [watchlistResult, newsResult, alertsResult] = await Promise.allSettled([
+      const [watchlistResult, newsResult, alertsResult, historyResult] = await Promise.allSettled([
         apiRequest<ApiEnvelope<Watchlist[]>>("/watchlists"),
-        apiRequest<ApiEnvelope<OverviewNews>>("/news?page=1&pageSize=6"),
+        apiRequest<ApiEnvelope<OverviewNews>>(`/news?${query}`),
         apiRequest<ApiEnvelope<AlertSummary>>("/alerts/summary"),
+        apiRequest<ApiEnvelope<Snapshot>>(
+          `/market-data/${encodeURIComponent(settings.historySymbol)}?interval=${range.interval}`,
+        ),
       ]);
 
+      if (sequence !== requestSequence.current) return;
       const nextErrors: string[] = [];
+      if (historyResult.status === "fulfilled") setChartSnapshot(historyResult.value.data);
+      else {
+        setChartSnapshot(null);
+        nextErrors.push("history");
+      }
       let lists: Watchlist[] | null = null;
       if (watchlistResult.status === "fulfilled") {
         lists = watchlistResult.value.data;
@@ -58,7 +80,7 @@ export function DashboardOverview() {
       else nextErrors.push("alerts");
 
       const trackedSymbols = lists?.[0]?.items.slice(0, 8).map((item) => item.assetId) ?? [];
-      const symbols = [...new Set([...marketPulseSymbols, ...trackedSymbols])];
+      const symbols = [...new Set([...settings.pulse, ...trackedSymbols])];
       const marketResults = await Promise.allSettled(
         symbols.map(async (symbol) => {
           const { data } = await apiRequest<ApiEnvelope<Snapshot>>(
@@ -67,6 +89,7 @@ export function DashboardOverview() {
           return [symbol, data] as const;
         }),
       );
+      if (sequence !== requestSequence.current) return;
       let hasMarketError = false;
       marketResults.forEach((result, index) => {
         if (result.status === "fulfilled") return;
@@ -75,12 +98,12 @@ export function DashboardOverview() {
         if (trackedSymbols.includes(symbols[index])) nextErrors.push(`market data (${symbols[index]})`);
       });
       setSnapshots((previous) => {
-        const next = { ...previous };
+        const next: Record<string, Snapshot | null> = {};
         marketResults.forEach((result, index) => {
           if (result.status === "fulfilled") next[result.value[0]] = result.value[1];
           else {
-            const previous = next[symbols[index]];
-            next[symbols[index]] = previous ? { ...previous, freshness: "stale" } : null;
+            const cached = previous[symbols[index]];
+            next[symbols[index]] = cached ? { ...cached, freshness: "stale" } : null;
           }
         });
         return next;
@@ -89,12 +112,13 @@ export function DashboardOverview() {
       setErrors(nextErrors);
       if (nextErrors.length === 0) setLastChecked(new Date());
     } finally {
-      setLoading(false);
-      inFlight.current = false;
+      if (sequence === requestSequence.current) setLoading(false);
     }
-  }, []);
+  }, [preference.ready, settings]);
 
   useEffect(() => {
+    setChartSnapshot(null);
+    setNews(null);
     void refresh();
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
@@ -104,6 +128,7 @@ export function DashboardOverview() {
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
+      requestSequence.current += 1;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
@@ -121,7 +146,6 @@ export function DashboardOverview() {
     const prefix = stale ? "Cached or partially updated · checked" : "Checked automatically";
     freshnessLabel = `${prefix} ${lastChecked.toLocaleTimeString()}`;
   }
-  const chartSnapshot = snapshots[chartSymbol];
 
   return (
     <div className="@container/main mx-auto flex w-full max-w-screen-2xl flex-col gap-5 md:gap-6">
@@ -156,7 +180,7 @@ export function DashboardOverview() {
         <SummaryCard
           href="/dashboard/watchlist"
           label="Markets followed"
-          value={loading ? "…" : String(items.length)}
+          value={loading && watchlists === null ? "…" : String(items.length)}
           detail={current?.name ?? "Add markets to build your watchlist"}
           icon={CandlestickChart}
         />
@@ -186,17 +210,16 @@ export function DashboardOverview() {
               Follow the market at a glance. Moves cover the returned candle history.
             </p>
           </div>
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard/markets">
-              Explore markets <ArrowRight data-icon="inline-end" />
-            </Link>
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard/markets">
+                Explore markets <ArrowRight data-icon="inline-end" />
+              </Link>
+            </Button>
+            <OverviewSettingsButton section="pulse" onOpen={setSettingsSection} disabled={!preference.ready} />
+          </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {marketPulseSymbols.map((symbol) => (
-            <PulseCard key={symbol} symbol={symbol} snapshot={snapshots[symbol]} loading={loading} />
-          ))}
-        </div>
+        <MarketPulse symbols={settings.pulse} snapshots={snapshots} loading={loading} />
       </section>
 
       <section
@@ -204,13 +227,22 @@ export function DashboardOverview() {
         className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.8fr)]"
       >
         <OverviewMarketHistory
-          symbol={chartSymbol}
-          symbols={marketPulseSymbols}
-          onSymbolChange={setChartSymbol}
+          symbol={settings.historySymbol}
+          range={settings.historyRange}
+          settings={
+            <OverviewSettingsButton section="history" onOpen={setSettingsSection} disabled={!preference.ready} />
+          }
           snapshot={chartSnapshot}
           loading={loading}
         />
-        <OverviewHeadlines news={news} loading={loading} />
+        <OverviewHeadlines
+          news={news}
+          loading={loading}
+          filtered={!!(settings.newsAssets.length || settings.newsCategories.length)}
+          settings={
+            <OverviewSettingsButton section="headlines" onOpen={setSettingsSection} disabled={!preference.ready} />
+          }
+        />
       </section>
 
       <Card className="min-w-0 shadow-none">
@@ -282,6 +314,16 @@ export function DashboardOverview() {
           ) : null}
         </CardContent>
       </Card>
+      {settingsSection ? (
+        <OverviewSettings
+          key={settingsSection}
+          section={settingsSection}
+          onClose={() => setSettingsSection(null)}
+          preferences={settings}
+          onChange={preference.update}
+          categories={news?.categories ?? []}
+        />
+      ) : null}
     </div>
   );
 }

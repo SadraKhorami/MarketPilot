@@ -84,9 +84,9 @@ export function PulseCard({
   return (
     <Link
       href={`/dashboard/markets/${encodeURIComponent(symbol)}`}
-      className="group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group block h-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Card className="py-0 shadow-none transition-colors group-hover:bg-muted/30">
+      <Card className="h-full py-0 shadow-none transition-colors group-hover:bg-muted/30">
         <CardContent className="flex flex-col gap-3 p-4">
           <div className="flex items-center justify-between gap-2">
             <div>

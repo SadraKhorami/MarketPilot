@@ -7,10 +7,7 @@ export const metadata: Metadata = { title: "Watchlist · MarketPilot" };
 
 export default function WatchlistPage() {
   return (
-    <MarketPilotPage
-      title="Watchlist"
-      description="Manage saved symbols and load provider-backed price and trend data."
-    >
+    <MarketPilotPage title="Watchlist" description="Your saved markets, prices and recent movement in one place.">
       <WatchlistManager />
     </MarketPilotPage>
   );

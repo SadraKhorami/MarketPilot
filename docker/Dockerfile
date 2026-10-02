@@ -24,10 +24,11 @@ RUN --mount=type=cache,id=marketpilot-pnpm,target=/pnpm/store \
 
 FROM build AS services-build
 RUN pnpm exec turbo run build --filter=@marketpilot/api... --filter=@marketpilot/worker...
+# Restored build layers may outlive the cache mount; allow missing deploy tarballs to be fetched.
 RUN --mount=type=cache,id=marketpilot-pnpm,target=/pnpm/store \
-    pnpm --store-dir /pnpm/store --offline --filter @marketpilot/api deploy --prod --no-optional --frozen-lockfile /prod/api \
+    pnpm --store-dir /pnpm/store --prefer-offline --filter @marketpilot/api deploy --prod --no-optional --frozen-lockfile /prod/api \
     && node docker/copy-prisma-client.mjs /prod/api \
-    && pnpm --store-dir /pnpm/store --offline --filter @marketpilot/worker deploy --prod --no-optional --frozen-lockfile /prod/worker \
+    && pnpm --store-dir /pnpm/store --prefer-offline --filter @marketpilot/worker deploy --prod --no-optional --frozen-lockfile /prod/worker \
     && node docker/copy-prisma-client.mjs /prod/worker
 
 FROM runtime AS api
@@ -75,8 +76,9 @@ CMD ["node", "apps/web/server.js"]
 
 # Separate operator-only tool image: CLI/dev dependencies never enter app runners.
 FROM services-build AS migration-build
+# Restored build layers may outlive the cache mount; allow missing deploy tarballs to be fetched.
 RUN --mount=type=cache,id=marketpilot-pnpm,target=/pnpm/store \
-    pnpm --store-dir /pnpm/store --offline --filter @marketpilot/db deploy --frozen-lockfile /prod/migrations
+    pnpm --store-dir /pnpm/store --prefer-offline --filter @marketpilot/db deploy --frozen-lockfile /prod/migrations
 
 FROM runtime AS migrate
 COPY --from=migration-build --chown=node:node /prod/migrations ./

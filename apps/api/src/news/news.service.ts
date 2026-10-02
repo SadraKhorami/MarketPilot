@@ -6,6 +6,8 @@ import { DatabaseService } from "../database.module";
 import { RedisService } from "../redis.service";
 export interface NewsQueryDto {
   asset?: string;
+  assets?: string[];
+  categories?: string[];
   category?: string;
   search?: string;
   page?: number;
@@ -25,22 +27,34 @@ export class NewsService {
     const conditions: Prisma.NewsArticleWhereInput[] = [];
     const asset = query.asset?.trim().toUpperCase().replace("/", "-");
     let terms: string[] = [];
-    if (asset) {
+    const assets = [
+      ...new Set(
+        [...(query.assets ?? []), ...(asset ? [asset] : [])]
+          .map((value) => value.trim().toUpperCase().replace("/", "-"))
+          .filter(Boolean),
+      ),
+    ];
+    if (assets.length) {
       const catalog = await this.catalog.list();
-      const instrument = catalog.instruments.find((item) => item.symbol === asset || item.baseAsset === asset);
-      terms = assetSearchTerms(asset, instrument?.name);
-      const base = asset.split("-")[0];
       conditions.push({
-        OR: [
-          { affectedAssets: { hasSome: [asset, base] } },
-          ...terms.flatMap((term) => [
-            { title: { contains: term, mode: "insensitive" as const } },
-            { description: { contains: term, mode: "insensitive" as const } },
-          ]),
-        ],
+        OR: assets.map((symbol) => {
+          const instrument = catalog.instruments.find((item) => item.symbol === symbol || item.baseAsset === symbol);
+          const searchTerms = assetSearchTerms(symbol, instrument?.name);
+          if (symbol === asset) terms = searchTerms;
+          return {
+            OR: [
+              { affectedAssets: { hasSome: [symbol, symbol.split("-")[0]] } },
+              ...searchTerms.flatMap((term) => [
+                { title: { contains: term, mode: "insensitive" as const } },
+                { description: { contains: term, mode: "insensitive" as const } },
+              ]),
+            ],
+          };
+        }),
       });
     }
-    if (query.category) conditions.push({ sourceCategories: { has: query.category } });
+    const categories = [...new Set([...(query.categories ?? []), ...(query.category ? [query.category] : [])])];
+    if (categories.length) conditions.push({ sourceCategories: { hasSome: categories } });
     if (query.publishedFrom || query.publishedTo) {
       conditions.push({
         publishedAt: {

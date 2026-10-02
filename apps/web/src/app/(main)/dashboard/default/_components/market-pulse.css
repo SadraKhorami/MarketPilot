@@ -1,0 +1,108 @@
+.market-pulse {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.market-pulse .pulse-track {
+  display: flex;
+  gap: 0.75rem;
+}
+.market-pulse .pulse-group {
+  display: flex;
+  gap: 0.75rem;
+  min-width: 100%;
+}
+.market-pulse .pulse-item {
+  flex: 0 0 min(80vw, 20rem);
+}
+.market-pulse .pulse-item > a {
+  height: 100%;
+}
+.market-pulse .pulse-copy {
+  display: none;
+}
+@media (min-width: 768px) {
+  .market-pulse:not(.market-pulse-loop) .pulse-group {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+  .market-pulse-loop {
+    overflow: hidden;
+  }
+  .market-pulse-loop .pulse-track {
+    width: max-content;
+    animation: market-pulse-travel 90s linear infinite;
+  }
+  .market-pulse-loop .pulse-item {
+    flex-basis: auto;
+    width: clamp(15rem, 20vw, 22rem);
+  }
+  .market-pulse-loop .pulse-group {
+    min-width: 0;
+  }
+  .market-pulse-loop .pulse-copy {
+    display: flex;
+  }
+  .market-pulse-loop:hover .pulse-track,
+  .market-pulse-loop:focus-within .pulse-track,
+  .market-pulse-loop[data-paused="true"] .pulse-track {
+    animation-play-state: paused;
+  }
+}
+@media (min-width: 768px) {
+  .market-pulse-loop:focus-within {
+    overflow-x: auto;
+  }
+  .market-pulse-loop:focus-within .pulse-track {
+    animation: none;
+  }
+  .market-pulse-loop:focus-within .pulse-copy {
+    display: none;
+  }
+}
+@keyframes market-pulse-travel {
+  to {
+    transform: translateX(calc(-50% - 0.375rem));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .market-pulse-loop {
+    overflow-x: auto;
+  }
+  .market-pulse-loop .pulse-track {
+    animation: none;
+  }
+  .market-pulse-loop .pulse-copy {
+    display: none;
+  }
+}
+
+.pulse-viewport {
+  position: relative;
+}
+.pulse-shadow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.pulse-shadow-left {
+  left: 0;
+  background: linear-gradient(to right, var(--background), transparent);
+}
+.pulse-shadow-right {
+  right: 0;
+  background: linear-gradient(to left, var(--background), transparent);
+}
+.pulse-viewport[data-left="true"] .pulse-shadow-left,
+.pulse-viewport[data-right="true"] .pulse-shadow-right {
+  opacity: 1;
+}
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .pulse-viewport[data-loop="true"] .pulse-shadow {
+    opacity: 1;
+  }
+}

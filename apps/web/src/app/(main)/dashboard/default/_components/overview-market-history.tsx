@@ -1,73 +1,63 @@
+import type { ReactNode } from "react";
 import { CandlestickChart } from "lucide-react";
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
 import { MarketHistoryPanel } from "../../_components/market-history-panel";
 import type { Snapshot } from "./overview-cards";
-
+import { historyRanges, type HistoryRange } from "./overview-preferences";
 export function OverviewMarketHistory({
   symbol,
-  symbols,
-  onSymbolChange,
+  range,
   snapshot,
   loading,
+  settings,
 }: {
   symbol: string;
-  symbols: string[];
-  onSymbolChange: (symbol: string) => void;
+  range: HistoryRange;
   snapshot?: Snapshot | null;
   loading: boolean;
+  settings: ReactNode;
 }) {
-  const selector = (
-    <ToggleGroup
-      type="single"
-      value={symbol}
-      onValueChange={(value) => {
-        if (value) onSymbolChange(value);
-      }}
-      variant="outline"
-      size="sm"
-      spacing={0}
-      aria-label="Market history asset"
-    >
-      {symbols.map((value) => (
-        <ToggleGroupItem key={value} value={value}>
-          {value.split("-")[0]}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  );
-
-  if (snapshot)
+  const window = historyRanges[range];
+  const candles =
+    snapshot?.data.candles.filter((candle) => Date.parse(candle.time) >= Date.now() - window.milliseconds) ?? [];
+  if (snapshot && candles.length)
     return (
       <MarketHistoryPanel
-        data={snapshot.data}
+        data={{ ...snapshot.data, candles }}
         stale={snapshot.freshness === "stale"}
-        toolbar={selector}
+        toolbar={
+          <p className="text-muted-foreground text-xs">
+            {window.label} · Showing available completed candles within this range.
+          </p>
+        }
+        settings={settings}
         className="h-full"
       />
     );
-
   return (
     <Card className="h-full min-w-0">
       <CardHeader>
         <CardTitle>Market history</CardTitle>
-        <div className="pt-3">{selector}</div>
+        <CardDescription>
+          {symbol} · {window.label}
+        </CardDescription>
+        <CardAction>{settings}</CardAction>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">
         {loading ? (
-          <Skeleton className="h-80 w-full flex-1" />
+          <Skeleton className="h-80 w-full" />
         ) : (
-          <Empty className="flex-1">
+          <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <CandlestickChart />
               </EmptyMedia>
-              <EmptyTitle>Price history is temporarily unavailable</EmptyTitle>
-              <EmptyDescription>We’ll retry automatically. You can also explore another market above.</EmptyDescription>
+              <EmptyTitle>No history available in this range</EmptyTitle>
+              <EmptyDescription>
+                Try another market or range in settings. Data refreshes automatically.
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}

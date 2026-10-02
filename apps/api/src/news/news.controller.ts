@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { ApiOperation, ApiPropertyOptional, ApiTags } from "@nestjs/swagger";
-import { Type } from "class-transformer";
-import { IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { Transform, Type } from "class-transformer";
+import { ArrayMaxSize, IsArray, IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 import { ApiReadAuth, ApiStandardResponses } from "../common/api-documentation";
 import { ApiScopes } from "../common/auth";
@@ -29,6 +29,24 @@ class NewsQueryDto {
   @IsString()
   @MaxLength(100)
   category?: string;
+
+  @ApiPropertyOptional({ type: [String], description: "Match any selected asset (up to 12)." })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === "string" ? [value] : value))
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  assets?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: "Match any selected stored category (up to 20)." })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === "string" ? [value] : value))
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  categories?: string[];
 
   @ApiPropertyOptional({ description: "Search article title, description or source." })
   @IsOptional()

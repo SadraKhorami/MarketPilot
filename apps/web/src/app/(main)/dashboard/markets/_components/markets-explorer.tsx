@@ -12,7 +12,6 @@ import {
   MarketSymbolField,
   marketName,
   normalizeMarketSymbol,
-  suggestedMarketSymbols,
 } from "@/app/(main)/dashboard/_components/market-symbol-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,10 +29,13 @@ type LookupState =
   | { status: "ready"; snapshot: Snapshot; warning?: string }
   | { status: "error"; message: string };
 
+import { useMarketFavorites } from "./market-favorites";
+
 export function MarketsExplorer() {
   const catalog = useMarketCatalog();
+  const favorites = useMarketFavorites();
   const [query, setQuery] = useState("");
-  const [symbols, setSymbols] = useState(suggestedMarketSymbols);
+  const symbols = favorites.symbols;
   const [lookups, setLookups] = useState<Record<string, LookupState>>({});
   const lookupRef = useRef<(symbol: string) => Promise<void>>(() => Promise.resolve());
   const symbolsRef = useRef(symbols);
@@ -45,7 +47,6 @@ export function MarketsExplorer() {
   const lookup = useCallback(async (symbol: string) => {
     const normalized = normalizeMarketSymbol(symbol);
     if (!normalized) return;
-    setSymbols((current) => (current.includes(normalized) ? current : [normalized, ...current].slice(0, 12)));
     setLookups((current) => {
       const existing = current[normalized];
       const oldSnapshot = existing && existing.status !== "error" ? existing.snapshot : undefined;
@@ -76,12 +77,13 @@ export function MarketsExplorer() {
   }, [lookup]);
 
   useEffect(() => {
-    for (const symbol of suggestedMarketSymbols) void lookup(symbol);
+    if (!favorites.ready) return;
+    for (const symbol of symbols) void lookup(symbol);
     let lastAutoRefresh = Date.now();
     const refresh = () => {
       if (document.visibilityState === "visible" && Date.now() - lastAutoRefresh >= 65_000) {
         lastAutoRefresh = Date.now();
-        for (const symbol of symbolsRef.current.slice(0, 8)) void lookupRef.current(symbol);
+        for (const symbol of symbolsRef.current) void lookupRef.current(symbol);
       }
     };
     const timer = window.setInterval(refresh, 65_000);
@@ -90,7 +92,7 @@ export function MarketsExplorer() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [lookup]);
+  }, [lookup, favorites.ready, symbols]);
 
   const visibleSymbols = useMemo(
     () =>
@@ -109,12 +111,13 @@ export function MarketsExplorer() {
             <Field>
               <FieldLabel htmlFor="market-product-search">Explore markets</FieldLabel>
               <MarketSymbolField
+                favorites={favorites}
                 id="market-product-search"
                 value={query}
+                placeholder="Find markets to favorite"
                 allowAll
                 onChange={(value) => {
                   setQuery(value);
-                  if (value) void lookup(value);
                 }}
               />
             </Field>
@@ -135,7 +138,7 @@ export function MarketsExplorer() {
             <h2 id="markets-list-title" className="font-semibold text-lg tracking-tight">
               {query
                 ? `${catalog.data?.instruments.find((item) => item.symbol === query)?.name ?? marketName(query)} market`
-                : "Market explorer"}
+                : "Favorite markets"}
             </h2>
             <p className="text-muted-foreground text-sm">Price, momentum and recent candle history at a glance.</p>
           </div>
@@ -152,9 +155,11 @@ export function MarketsExplorer() {
           <Card className="shadow-none">
             <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
               <CandlestickChart className="size-6 text-muted-foreground" aria-hidden="true" />
-              <p className="font-medium">No matching market in this list</p>
+              <p className="font-medium">
+                {symbols.length ? "No matching favorite market" : "Your favorite markets appear here"}
+              </p>
               <p className="max-w-md text-muted-foreground text-sm">
-                Choose a market above to load observations from its data source.
+                Star a market in the selector above to add its price and analysis here.
               </p>
             </CardContent>
           </Card>

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import Link from "next/link";
 
 import { ArrowRight } from "lucide-react";
@@ -9,10 +11,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export type OverviewNews = {
   total: number;
+  categories: string[];
   articles: Array<{ id: string; source: string; title: string; originalUrl: string; publishedAt: string | null }>;
 };
 
-export function OverviewHeadlines({ news, loading }: { news: OverviewNews | null; loading: boolean }) {
+export function OverviewHeadlines({
+  news,
+  loading,
+  settings,
+  filtered,
+}: {
+  news: OverviewNews | null;
+  loading: boolean;
+  settings: ReactNode;
+  filtered: boolean;
+}) {
   const articles = news?.articles ?? [];
   const pending = loading && !news;
 
@@ -20,9 +33,12 @@ export function OverviewHeadlines({ news, loading }: { news: OverviewNews | null
     <Card className="h-full min-w-0">
       <CardHeader>
         <CardTitle>Latest headlines</CardTitle>
-        <CardDescription>Your market briefing</CardDescription>
-        <CardAction>
-          <Badge variant="outline">{news?.total ?? "—"} stories</Badge>
+        <CardDescription>{filtered ? "Your selected coverage" : "Your market briefing"}</CardDescription>
+        <CardAction className="flex items-center gap-2">
+          <Badge variant="outline">
+            {news?.total ?? "—"} {news?.total === 1 ? "story" : "stories"}
+          </Badge>
+          {settings}
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">
@@ -60,7 +76,9 @@ export function OverviewHeadlines({ news, loading }: { news: OverviewNews | null
         ) : null}
         {!pending && articles.length === 0 ? (
           <p className="flex flex-1 items-center justify-center rounded-lg border bg-muted/20 p-4 text-center text-muted-foreground text-sm">
-            {news ? "No stored headlines are available yet." : "Headline data is unavailable."}
+            {news
+              ? "No headlines match your selection. Adjust your settings or return later."
+              : "Headline data is unavailable."}
           </p>
         ) : null}
         <Button variant="outline" size="sm" className="mt-4 w-full" asChild>
