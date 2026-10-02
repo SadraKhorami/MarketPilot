@@ -62,6 +62,7 @@ export const toolSchemas = {
     })
     .strict(),
   createAlert: AlertInputSchema,
+  getTradeSetup: z.object({ symbol, interval: IntervalSchema, direction: z.enum(["AUTO", "BUY", "SELL"]) }).strict(),
 };
 export const ToolNameSchema = z.enum([
   "getMarketPrice",
@@ -71,6 +72,7 @@ export const ToolNameSchema = z.enum([
   "getWatchlist",
   "compareAssets",
   "createAlert",
+  "getTradeSetup",
 ]);
 export type ToolName = z.infer<typeof ToolNameSchema>;
 const descriptions: Record<ToolName, string> = {
@@ -87,10 +89,13 @@ const descriptions: Record<ToolName, string> = {
     "Compare up to four exact supported products with a consistent interval/window. Preserve individual errors and quote units.",
   createAlert:
     "Propose a rule only when the current user explicitly requests an alert. Never saves it. Separate user confirmation is required.",
+  getTradeSetup:
+    "Only on an explicit entry/exit or trade setup request. Calculate a conditional pullback/reclaim scenario from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use one/two risk multiples. AUTO selects only the side from moving-average context. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
 };
-export function toolDefinitions(allowAlert: boolean) {
+export function toolDefinitions(allowAlert: boolean, allowTrade = false) {
   return Object.entries(toolSchemas)
     .filter(([name]) => name !== "createAlert" || allowAlert)
+    .filter(([name]) => name !== "getTradeSetup" || allowTrade)
     .map(([name, schema]) => ({
       type: "function" as const,
       function: {
@@ -146,16 +151,43 @@ export const ProposalSchema = z
     symbol: z.string().max(32),
     condition: z.enum(["PRICE_ABOVE", "PRICE_BELOW", "RSI_ABOVE", "RSI_BELOW"]),
     threshold: z.number().positive().finite(),
+    interval: IntervalSchema.optional(),
     state: z.enum(["pending", "confirmed", "cancelled"]),
     alertId: z.string().uuid().nullable(),
   })
   .strict();
+export const TradeSetupSchema = z
+  .object({
+    symbol: z.string().min(1).max(32),
+    interval: IntervalSchema,
+    direction: z.enum(["BUY", "SELL"]),
+    stage: z.enum(["waiting_pullback", "waiting_reclaim", "confirmed"]),
+    entry: z.number().positive().finite(),
+    stopLoss: z.number().positive().finite(),
+    targets: z.tuple([z.number().positive().finite(), z.number().positive().finite()]),
+    observedPrice: z.number().positive().finite(),
+    observedAt: z.string().datetime({ offset: true }),
+    expiresAt: z.string().datetime({ offset: true }),
+    quote: z.string().min(1).max(16),
+    pipSize: z.number().positive().finite().nullable(),
+    sourceId: z.string().min(1).max(100),
+  })
+  .strict()
+  .superRefine((plan, context) => {
+    const valid =
+      plan.direction === "BUY"
+        ? plan.stopLoss < plan.entry && plan.entry < plan.targets[0] && plan.targets[0] < plan.targets[1]
+        : plan.stopLoss > plan.entry && plan.entry > plan.targets[0] && plan.targets[0] > plan.targets[1];
+    if (!valid) context.addIssue({ code: "custom", message: "Invalid scenario level ordering" });
+  });
+export type TradeSetup = z.infer<typeof TradeSetupSchema>;
 export const ToolResultSchema = z
   .object({
     tool: ToolNameSchema,
     status: z.enum(["ok", "partial", "unavailable"]),
     sources: z.array(SourceSchema).max(6),
     proposal: ProposalSchema.nullable(),
+    tradeSetup: TradeSetupSchema.nullable().optional(),
     error: z.string().max(160).nullable(),
   })
   .strict();
@@ -181,6 +213,7 @@ export const ResearchResultSchema = z
     answer: AnswerSchema,
     sources: z.array(SourceSchema).max(48),
     proposals: z.array(ProposalSchema).max(1),
+    tradeSetup: TradeSetupSchema.nullable().optional(),
     tools: z
       .array(
         z
@@ -231,7 +264,13 @@ export interface AICompletion {
 export interface AIProvider {
   readonly model: string;
   check(signal: AbortSignal): Promise<{ reservationUsd: number }>;
-  complete(messages: AIMessage[], allowAlert: boolean, final: boolean, signal: AbortSignal): Promise<AICompletion>;
+  complete(
+    messages: AIMessage[],
+    allowAlert: boolean,
+    final: boolean,
+    signal: AbortSignal,
+    allowTrade?: boolean,
+  ): Promise<AICompletion>;
 }
 export class AIError extends Error {
   constructor(

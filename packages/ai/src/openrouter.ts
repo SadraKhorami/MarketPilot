@@ -114,11 +114,12 @@ export class OpenRouterProvider implements AIProvider {
     allowAlert: boolean,
     final: boolean,
     signal: AbortSignal,
+    allowTrade = false,
   ): Promise<AICompletion> {
     const body = {
       model: this.model,
       messages,
-      tools: toolDefinitions(allowAlert),
+      tools: toolDefinitions(allowAlert, allowTrade),
       tool_choice: final ? "none" : "auto",
       max_tokens: 1200,
       stream: false,

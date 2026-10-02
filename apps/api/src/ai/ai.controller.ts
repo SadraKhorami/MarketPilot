@@ -17,7 +17,8 @@ import type { Request, Response } from "express";
 import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
 import { type AuthenticatedUser, CurrentUser, Roles } from "../common/auth";
 import { PageQueryDto } from "../common/request-query.dto";
-import { ProposalDecisionDto, ResearchDto } from "./ai.dto";
+import { EntryAlertDto, ProposalDecisionDto, ResearchDto } from "./ai.dto";
+import { EntryAlertsService } from "./entry-alerts.service";
 import { AiService } from "./ai.service";
 import { AiProposalsService } from "./ai-proposals.service";
 import { AiSessionGuard } from "./ai-session.guard";
@@ -27,7 +28,7 @@ export function aiHttpError(error: unknown) {
     error instanceof AIError ? error : new AIError("AI_UNAVAILABLE", "The research operation could not be completed.");
   const status = /NOT_FOUND/.test(safe.code)
     ? 404
-    : /BUSY|CONFLICT|RESOLVED|EXPIRED|FINISHED/.test(safe.code)
+    : /BUSY|CONFLICT|RESOLVED|EXPIRED|FINISHED|REACHED/.test(safe.code)
       ? 409
       : /RATE_LIMITED|BUDGET/.test(safe.code)
         ? 429
@@ -45,6 +46,7 @@ export class AiController {
   constructor(
     private readonly service: AiService,
     private readonly proposals: AiProposalsService,
+    private readonly entryAlerts: EntryAlertsService,
   ) {}
   @Get("status")
   @ApiOperation({ summary: "Browser session: AI configuration status; no provider secrets" })
@@ -131,6 +133,24 @@ export class AiController {
   ) {
     try {
       return { data: await this.proposals.decide(user.id, id, dto) };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw aiHttpError(error);
+    }
+  }
+  @Post("runs/:id/entry-alert")
+  @ApiOperation({
+    summary: "Confirm a near-entry alert from an owned, fresh, server-calculated scenario",
+    description:
+      "Only distance, unit and explicit confirmation are accepted. Entry, side and symbol come from the saved run. Repeat confirmation is idempotent. Evaluated on one-minute observations, not tick-level execution.",
+  })
+  async entryAlert(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: EntryAlertDto,
+  ) {
+    try {
+      return { data: await this.entryAlerts.create(user.id, id, dto) };
     } catch (error) {
       if (error instanceof HttpException) throw error;
       throw aiHttpError(error);

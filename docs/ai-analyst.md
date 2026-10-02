@@ -21,7 +21,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
 Use an exact OpenRouter catalog model supporting tools, tool choice and structured outputs. No model is guessed and no provider fallback exists. Restart the API after changing configuration. `/ai/status` reports configuration, not a successful inference or provider connection. Model discovery and published pricing are checked before inference, cached for five minutes, with one shared bounded in-flight catalog read per API process. Keys never enter browser bundles, tool arguments, prompts, fixtures, logs or the repository. Prompts and bounded news/watchlist data necessarily go to OpenRouter and the selected upstream provider; review provider privacy requirements for your deployment.
 
-Sentiment scoring, historical watchlist-change analysis, trades and payments are unavailable. Phase 5 evaluates saved alerts, and Phase 6 adds private bot research through this same service; bot alert proposals still require the existing authenticated browser confirmation. RSS ingestion remains subject to its existing permission/configuration requirements. This phase reads only already stored news.
+Sentiment scoring, historical watchlist-change analysis, trade execution and payments through AI are unavailable. Phase 5 evaluates saved alerts, and Phase 6 adds private bot research through this same service; bot alert proposals still require the existing authenticated browser confirmation. RSS ingestion remains subject to its existing permission/configuration requirements. This phase reads only already stored news.
 
 ## Browser-session API
 
@@ -100,3 +100,15 @@ Phase 5 follow-up: confirmed proposals create the same active, owned 15m alert r
 ### Conversation history
 
 The AI Analyst History panel lists the signed-in account’s unexpired research conversations, including bot-originated research. `/api/v1/ai/conversations` supports bounded pagination and searches stored questions. Selecting a conversation loads its latest twenty turns and keeps a `conversation` URL parameter for reopening it. Research remains subject to the existing seven-day retention policy; empty new conversations are not stored. Switching conversations is disabled during an active research request.
+
+### Conditional entry scenarios
+
+Only a current, explicit request for a trade setup, entry/exit, BUY/SELL scenario or targets enables `getTradeSetup`. Ordinary research cannot call it. The model explains the scenario; numeric levels are calculated on the server from fresh completed candles, never generated in the interpretation text. This initial strategy uses the previous completed-candle range for its breakout trigger, recent swing extremes plus an ATR buffer for the stop, and one/two entry-to-stop risk multiples for TP 1/TP 2. AUTO chooses a direction from moving-average context. The response distinguishes waiting for a pullback, waiting for a breakout, and an observed breakout. It can return no scenario for old/missing data, an invalidated or already-passed entry, or an excessively wide stop. These are conditional strategy levels, not forecasts, backtested performance claims or executable broker orders. Fees, spread and slippage are excluded.
+
+The dashboard offers a configurable warning distance and explicit **Yes, create alert** action. `POST /ai/runs/:id/entry-alert` accepts only `{distance, unit, confirm:true}`. The server loads the owned completed scenario, checks its ten-minute validity and a fresh market observation, derives the price threshold, and saves the alert/confirmation atomically. Repeated identical confirmation returns the existing rule; another distance conflicts instead of creating a duplicate. No model approval or bare conversational yes can create it. Alert evaluation uses one-minute observations, the existing first-observation baseline and channel preferences; it is neither tick-level monitoring nor confirmation that the trade setup passed. Dashboard history preserves the saved interval.
+
+Forex pips follow the reference OANDA currency convention; XAU-USD uses the explicit OANDA cent convention. Other instruments use their quote-price distance. The card always shows the conversion. References: [OANDA forex pips](https://www.oanda.com/bvi-en/skills-and-insights/education/introduction-to-trading/basics/what-is-a-pip/), [OANDA XAU-USD convention](https://help.oanda.jp/oanda/faq/show/2126?site_domain=default).
+
+### Response layout
+
+Conditional scenarios lead with Entry, Stop loss and targets. The near-entry action shows the actual trigger price prominently; the editable amount is explicitly labeled as the distance before Entry (quote currency or pips). Interpretation, source evidence and lookup details remain available under **Analysis & sources**. Confirmed near-entry alerts appear once, with their saved threshold and an Alerts management link. Expired scenarios cannot create new alerts.

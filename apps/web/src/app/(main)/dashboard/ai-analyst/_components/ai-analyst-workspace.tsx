@@ -62,8 +62,8 @@ export function AIAnalystWorkspace() {
       prompt: "Summarize my selected watchlist with actual market observations and their limitations.",
     },
     {
-      title: "Explain the technical indicators",
-      prompt: `Explain the current technical indicators for ${symbol} and their limitations.`,
+      title: "Find an entry, stop loss & targets",
+      prompt: `Give me a conditional BUY or SELL trade setup for ${symbol} after a pullback and confirmation, with Entry, Stop loss, TP 1 and TP 2. Use current completed candles. If there is no valid setup, say so. Offer an optional near-entry alert, but do not create it without my confirmation.`,
     },
   ];
   function submit(value: string) {

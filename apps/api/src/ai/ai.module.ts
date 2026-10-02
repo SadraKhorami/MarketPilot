@@ -11,6 +11,7 @@ import { AiBudgetService } from "./ai-budget.service";
 import { AiProposalsService } from "./ai-proposals.service";
 import { AiSessionGuard } from "./ai-session.guard";
 import { AiToolsService } from "./ai-tools.service";
+import { EntryAlertsService } from "./entry-alerts.service";
 @Module({
   imports: [MarketDataModule],
   controllers: [AiController],
@@ -18,6 +19,7 @@ import { AiToolsService } from "./ai-tools.service";
   providers: [
     AiService,
     AiToolsService,
+    EntryAlertsService,
     AiBudgetService,
     AiProposalsService,
     AiSessionGuard,

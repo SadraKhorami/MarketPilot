@@ -71,4 +71,5 @@ export const toolLabels = {
   getWatchlist: "Your watchlist",
   compareAssets: "Asset comparison",
   createAlert: "Alert proposal",
+  getTradeSetup: "Conditional entry scenario",
 } satisfies Record<string, string>;

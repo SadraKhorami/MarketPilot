@@ -23,6 +23,7 @@ import { Injectable } from "@nestjs/common";
 import { MarketDataService, type MarketSnapshot } from "../market-data/market-data.service";
 import { NewsService } from "../news/news.service";
 import { WatchlistsService } from "../watchlists/watchlists.service";
+import { calculateTradeSetup } from "./trade-setup";
 
 export interface ResearchContext {
   userId: string;
@@ -152,6 +153,35 @@ export class AiToolsService {
         args.window,
         context,
       );
+    } else if (tool === "getTradeSetup") {
+      const args = toolSchemas.getTradeSetup.parse(input);
+      const symbol = resolveResearchSymbol(args.symbol);
+      const snapshot = await this.snapshot(symbol, args.interval, context);
+      const source = this.marketSource(snapshot, 50, tool);
+      const scenario = calculateTradeSetup(snapshot, args.direction, source.id);
+      result.tradeSetup = scenario.plan;
+      result.error = scenario.reason;
+      if (scenario.plan) {
+        source.facts.push(
+          {
+            label: "Entry basis",
+            value:
+              scenario.plan.direction === "BUY"
+                ? "Prior completed-candle range high"
+                : "Prior completed-candle range low",
+            unit: "method",
+          },
+          { label: "Stop basis", value: "Recent swing extreme plus a quarter ATR buffer", unit: "method" },
+          { label: "Conditional entry", value: scenario.plan.entry, unit: scenario.plan.quote },
+          { label: "Scenario stop loss", value: scenario.plan.stopLoss, unit: scenario.plan.quote },
+          { label: "TP 1 (one risk unit)", value: scenario.plan.targets[0], unit: scenario.plan.quote },
+          { label: "TP 2 (two risk units)", value: scenario.plan.targets[1], unit: scenario.plan.quote },
+        );
+      } else {
+        source.status = "partial";
+        source.error = scenario.reason;
+      }
+      result.sources = [SourceSchema.parse(source)];
     } else if (tool === "createAlert") {
       const args = AlertInputSchema.parse(input);
       const symbol = resolveResearchSymbol(args.symbol);

@@ -89,7 +89,13 @@ export class AiService {
     if (run.status !== "completed") return null;
     const parsed = ResearchResultSchema.safeParse(run.result);
     if (!parsed.success) return null;
-    return { ...parsed.data, proposals: run.proposals.map(serializeProposal) };
+    return {
+      ...parsed.data,
+      proposals: run.proposals.map((proposal) => ({
+        ...serializeProposal(proposal),
+        interval: parsed.data.proposals.find((saved) => saved.id === proposal.id)?.interval,
+      })),
+    };
   }
   async research(userId: string, dto: ResearchDto, signal: AbortSignal, emit: (event: StreamEvent) => void) {
     const input = dto.input.trim();
@@ -205,6 +211,7 @@ export class AiService {
         answer: research.answer,
         sources: [...new Map(research.results.flatMap((r) => r.sources.map((s) => [s.id, s] as const))).values()],
         proposals: research.results.flatMap((r) => (r.proposal ? [r.proposal] : [])),
+        tradeSetup: research.results.find((r) => r.tradeSetup)?.tradeSetup ?? null,
         tools: research.tools,
       });
       await this.db.aiRun.update({

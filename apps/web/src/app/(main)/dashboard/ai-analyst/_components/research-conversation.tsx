@@ -12,9 +12,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 
-import { AlertProposal } from "./alert-proposal";
-import { ResearchSources } from "./research-sources";
-import { toolLabels } from "./research-stream";
+import { ResearchResponse } from "./research-response";
 import type { useResearch } from "./use-research";
 export function ResearchConversation({
   research,
@@ -49,61 +47,11 @@ export function ResearchConversation({
                     {turn.result ? (
                       <Message>
                         <MessageContent>
-                          <MessageHeader>MarketPilot · Interpretation</MessageHeader>
-                          <Bubble variant="ghost">
-                            <BubbleContent>
-                              <div className="flex flex-col gap-3">
-                                {turn.result.answer.interpretation.map((item, index) => (
-                                  <div key={item.text} className="flex flex-col gap-1">
-                                    <p className="font-medium text-sm">
-                                      {["Summary", "Technical interpretation", "Context & limitations"][index] ??
-                                        "Additional analysis"}
-                                    </p>
-                                    <p className="whitespace-pre-wrap">{item.text}</p>
-                                    {item.sourceIds.length ? (
-                                      <p className="mt-1 text-muted-foreground text-xs">
-                                        Sources:{" "}
-                                        {[
-                                          ...new Set(
-                                            item.sourceIds
-                                              .map((id) => turn.result?.sources.find((s) => s.id === id)?.title)
-                                              .filter(Boolean),
-                                          ),
-                                        ].join(" · ")}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                ))}
-                              </div>
-                            </BubbleContent>
-                          </Bubble>
-                          <h3 className="font-medium text-sm">Retrieved evidence</h3>
-                          <ResearchSources sources={turn.result.sources} />
-                          {turn.result.proposals.map((proposal) => (
-                            <AlertProposal
-                              key={proposal.id}
-                              proposal={proposal}
-                              change={(updated) => {
-                                if (turn.result)
-                                  research.changeResult({
-                                    ...turn.result,
-                                    proposals: turn.result.proposals.map((p) => (p.id === updated.id ? updated : p)),
-                                  });
-                              }}
-                            />
-                          ))}
-                          <details>
-                            <summary className="cursor-pointer text-muted-foreground text-xs">
-                              Research activity · {turn.result.tools.length} lookups
-                            </summary>
-                            <ul className="mt-2 flex flex-col gap-1 text-muted-foreground text-xs">
-                              {turn.result.tools.map((tool) => (
-                                <li key={tool.id}>
-                                  {toolLabels[tool.tool]} · {tool.status} · {tool.latencyMs} ms
-                                </li>
-                              ))}
-                            </ul>
-                          </details>
+                          <ResearchResponse
+                            result={turn.result}
+                            change={research.changeResult}
+                            persian={/[\u0600-\u06ff]/u.test(turn.input)}
+                          />
                         </MessageContent>
                       </Message>
                     ) : null}
