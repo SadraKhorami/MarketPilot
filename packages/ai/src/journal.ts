@@ -6,7 +6,7 @@ export const TradePreferencesSchema = z
     currency: z.enum(["USD", "EUR", "GBP"]),
     riskPercent: z.number().min(0.01).max(10),
     interval: z.enum(["1m", "5m", "15m", "1h", "6h", "1d"]),
-    holding: z.enum(["scalp", "day", "swing"]),
+    holding: z.enum(["scalp", "day", "swing", "hybrid"]),
     autoReview: z.boolean(),
   })
   .strict();

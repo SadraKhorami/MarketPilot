@@ -8,6 +8,10 @@ import { JournalService } from "../journal/journal.service";
 import { MarketDataModule } from "../market-data/market-data.module";
 import { NewsService } from "../news/news.service";
 import { WatchlistsService } from "../watchlists/watchlists.service";
+import { AiConversationsService } from "./ai-conversations.service";
+import { AiModelsService } from "./ai-models.service";
+import { AiSettingsController } from "./ai-settings.controller";
+import { AiSettingsService } from "./ai-settings.service";
 import { AiBudgetService } from "./ai-budget.service";
 import { AiProposalsService } from "./ai-proposals.service";
 import { AiSessionGuard } from "./ai-session.guard";
@@ -17,10 +21,13 @@ import { AI_PROVIDER, AiService, aiConfiguration } from "./ai.service";
 import { EntryAlertsService } from "./entry-alerts.service";
 @Module({
   imports: [MarketDataModule],
-  controllers: [AiController, JournalController],
+  controllers: [AiController, AiSettingsController, JournalController],
   exports: [AiService],
   providers: [
     AiService,
+    AiSettingsService,
+    AiModelsService,
+    AiConversationsService,
     JournalService,
     JournalMonitorService,
     AiToolsService,

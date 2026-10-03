@@ -87,6 +87,7 @@ model User {
   payments           BillingPayment[]
   quotaUsage         QuotaUsage[]
   tradePreferences   TradePreferences?
+  aiSettings         AiSettings?
   journalEntries     JournalEntry[]
 
   @@index([status, createdAt])
@@ -320,11 +321,14 @@ model AiRun {
   input          String            @db.VarChar(2000)
   inputHash      String            @db.Char(64)
   purpose        String            @default("research") @db.VarChar(24)
+  billingSource  String            @default("platform") @db.VarChar(12)
+  archivedAt     DateTime?         @db.Timestamptz(3)
+  deletedAt      DateTime?         @db.Timestamptz(3)
   tradeContext   Json?
   status         String            @db.VarChar(20)
   result         Json?
   errorCode      String?           @db.VarChar(80)
-  model          String            @db.VarChar(160)
+  model          String            @db.VarChar(200)
   inputTokens    Int               @default(0)
   outputTokens   Int               @default(0)
   costUsd        Float?
@@ -343,16 +347,16 @@ model AiRun {
 }
 
 model AiAlertProposal {
-  id        String    @id @default(uuid()) @db.Uuid
-  runId     String    @unique @db.Uuid
-  symbol    String    @db.VarChar(32)
+  id        String         @id @default(uuid()) @db.Uuid
+  runId     String         @unique @db.Uuid
+  symbol    String         @db.VarChar(32)
   condition AlertCondition
-  threshold Decimal   @db.Decimal(24, 10)
-  state     String    @default("pending") @db.VarChar(20)
-  alertId   String?   @db.Uuid
-  expiresAt DateTime  @db.Timestamptz(3)
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  run       AiRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  threshold Decimal        @db.Decimal(24, 10)
+  state     String         @default("pending") @db.VarChar(20)
+  alertId   String?        @db.Uuid
+  expiresAt DateTime       @db.Timestamptz(3)
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+  run       AiRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
 }
@@ -496,28 +500,28 @@ model Subscription {
   status               String          @default("free") @db.VarChar(32)
   stripeCustomerId     String?         @unique @db.VarChar(120)
   stripeSubscriptionId String?         @unique @db.VarChar(120)
-  currentPeriodEnd      DateTime?       @db.Timestamptz(3)
-  cancelAtPeriodEnd     Boolean         @default(false)
+  currentPeriodEnd     DateTime?       @db.Timestamptz(3)
+  cancelAtPeriodEnd    Boolean         @default(false)
   updatedAt            DateTime        @updatedAt @db.Timestamptz(3)
   user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model BillingPayment {
-  id              String          @id @default(uuid()) @db.Uuid
-  userId          String          @db.Uuid
-  requestId       String          @db.Uuid
-  provider        BillingProvider
-  status          String          @default("pending") @db.VarChar(32)
-  amountCents     Int             @default(0)
-  currency        String          @default("usd") @db.VarChar(3)
-  stripeSessionId String?         @unique @db.VarChar(120)
-  stripeInvoiceId String?         @unique @db.VarChar(120)
-  checkoutUrl     String?         @db.Text
-  hostedInvoiceUrl String?        @db.Text
-  paidAt          DateTime?       @db.Timestamptz(3)
-  expiresAt       DateTime?       @db.Timestamptz(3)
-  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
-  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String          @id @default(uuid()) @db.Uuid
+  userId           String          @db.Uuid
+  requestId        String          @db.Uuid
+  provider         BillingProvider
+  status           String          @default("pending") @db.VarChar(32)
+  amountCents      Int             @default(0)
+  currency         String          @default("usd") @db.VarChar(3)
+  stripeSessionId  String?         @unique @db.VarChar(120)
+  stripeInvoiceId  String?         @unique @db.VarChar(120)
+  checkoutUrl      String?         @db.Text
+  hostedInvoiceUrl String?         @db.Text
+  paidAt           DateTime?       @db.Timestamptz(3)
+  expiresAt        DateTime?       @db.Timestamptz(3)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, requestId])
   @@index([userId, createdAt])
@@ -525,12 +529,12 @@ model BillingPayment {
 }
 
 model QuotaUsage {
-  userId      String   @db.Uuid
-  day         String   @db.Char(10)
-  resource    String   @db.VarChar(24)
-  count       Int      @default(0)
-  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  day       String   @db.Char(10)
+  resource  String   @db.VarChar(24)
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([userId, day, resource])
   @@index([day])
@@ -590,4 +594,32 @@ model JournalEvent {
 
   @@unique([entryId, key])
   @@index([entryId, occurredAt])
+}
+
+model AiSettings {
+  userId        String   @id @db.Uuid
+  language      String   @default("auto") @db.VarChar(8)
+  memory        String   @default("") @db.VarChar(1200)
+  source        String   @default("platform") @db.VarChar(12)
+  encryptedKey  String?
+  keyLast4      String?  @db.VarChar(4)
+  modelId       String?  @db.VarChar(200)
+  requestBudget Float    @default(1)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AiModel {
+  id                  String   @id @db.VarChar(200)
+  name                String   @db.VarChar(300)
+  contextLength       Int
+  supportedParameters String[]
+  promptPrice         Float
+  completionPrice     Float
+  requestPrice        Float
+  compatible          Boolean
+  active              Boolean  @default(true)
+  syncedAt            DateTime @db.Timestamptz(3)
+
+  @@index([active, compatible, name])
 }

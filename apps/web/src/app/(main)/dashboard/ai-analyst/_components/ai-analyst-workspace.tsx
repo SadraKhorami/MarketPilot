@@ -2,7 +2,7 @@
 import { useState } from "react";
 
 import { permitsTradeSetup, type TradeContext } from "@marketpilot/ai/contracts";
-import { ArrowUp, Info, Plus, Sparkles, Square } from "lucide-react";
+import { ArrowUp, Info, Plus, Sparkles, Slash, Square, Target } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -18,13 +18,17 @@ import {
 } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiResource } from "@/hooks/use-api-resource";
 
 import { ResourceState } from "../../_components/resource-state";
+import { MarketSymbolField } from "../../_components/market-symbol-field";
+import { AiSettings } from "./ai-settings";
 import { ResearchConversation } from "./research-conversation";
 import { ResearchHistory } from "./research-history";
+import { researchCommands, ResearchCommandMenu, type ResearchCommand } from "./research-command-menu";
 import { toolLabels } from "./research-stream";
 import { ResearchSuggestions, type ResearchWatchlist } from "./research-suggestions";
 import { TradeContextQuestion } from "./trade-context-question";
@@ -45,11 +49,45 @@ export function AIAnalystWorkspace() {
   const research = useResearch();
   const [tradeRequest, setTradeRequest] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [commandsDismissed, setCommandsDismissed] = useState(false);
+  const [selectedCommand, setSelectedCommand] = useState("setup");
   const [symbol, setSymbol] = useState("BTC-USD");
   const [watchlistId, setWatchlistId] = useState("default");
-  const disabled = !status.data?.configured || !research.ready || research.running;
+  const disabled = !status.data?.configured || !research.ready || research.running || research.archived;
+  const commandsOpen = !disabled && !commandsDismissed && /^\/[a-z]*$/i.test(input);
+  const commands = researchCommands.filter(
+    (command) =>
+      command.id.startsWith(input.slice(1).toLowerCase()) &&
+      (command.id !== "watchlist" || (!lists.loading && !lists.error && !!lists.data?.length)),
+  );
+  const activeCommand = commands.find((command) => command.id === selectedCommand) ?? commands[0];
+  function runCommand(command: ResearchCommand) {
+    if (disabled) return;
+    setInput("");
+    setCommandsDismissed(true);
+    if (command === "setup") requestSetup();
+    else if (command === "analyze")
+      submit(`Analyze ${symbol} using current price, technical indicators, trend and available stored news.`);
+    else if (command === "market") document.getElementById("composer-market")?.click();
+    else if (lists.data?.length && !lists.error)
+      submit("Summarize my selected watchlist with actual market observations and their limitations.");
+  }
+  function conversationsChanged(ids?: string[]) {
+    if (!ids || ids.includes(research.conversationId ?? "")) {
+      setTradeRequest(null);
+      research.newConversation();
+    }
+  }
   function submit(value: string) {
     if (disabled || !value.trim()) return;
+    if (value.trim().startsWith("/")) {
+      const command = commandsOpen
+        ? activeCommand
+        : researchCommands.find((entry) => `/${entry.id}` === value.trim().toLowerCase());
+      if (command) runCommand(command.id);
+      else setCommandsDismissed(false);
+      return;
+    }
     if (permitsTradeSetup(value)) {
       setTradeRequest(value);
       return;
@@ -101,10 +139,20 @@ export function AIAnalystWorkspace() {
                 </p>
               </PopoverContent>
             </Popover>
+            <AiSettings
+              currentId={research.conversationId}
+              disabled={research.running || !research.ready}
+              changed={status.reload}
+              conversationsChanged={conversationsChanged}
+            />
             <ResearchHistory
               currentId={research.conversationId}
               disabled={research.running || !research.ready}
-              onSelect={research.openConversation}
+              onSelect={(id) => {
+                setTradeRequest(null);
+                return research.openConversation(id);
+              }}
+              onChanged={conversationsChanged}
             />
             <Button
               variant="ghost"
@@ -129,6 +177,14 @@ export function AIAnalystWorkspace() {
             <Alert className="shrink-0">
               <AlertTitle>AI research is not configured</AlertTitle>
               <AlertDescription>{status.data?.message}</AlertDescription>
+            </Alert>
+          ) : null}
+          {research.archived ? (
+            <Alert>
+              <AlertTitle>Archived conversation</AlertTitle>
+              <AlertDescription>
+                You can read this chat. Restore it in History to continue, or start a new conversation.
+              </AlertDescription>
             </Alert>
           ) : null}
           {research.historyError ? (
@@ -196,53 +252,171 @@ export function AIAnalystWorkspace() {
                   <FieldLabel htmlFor="research-question" className="sr-only">
                     Research question
                   </FieldLabel>
-                  <InputGroup>
-                    <InputGroupTextarea
-                      className="max-h-32 overflow-y-auto"
-                      id="research-question"
-                      placeholder="Ask about a market, your watchlist or an alert rule…"
-                      maxLength={2000}
-                      value={input}
-                      disabled={!status.data?.configured || research.running || !!tradeRequest}
-                      onChange={(event) => setInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                          event.preventDefault();
-                          submit(input);
-                        }
-                      }}
-                    />
-                    <InputGroupAddon align="block-end" className="flex-wrap">
-                      {research.turns.length > 0 && !research.running && !tradeRequest ? (
-                        <ResearchSuggestions
-                          compact
-                          symbol={symbol}
-                          onSymbolChange={setSymbol}
-                          watchlistId={watchlistId}
-                          onWatchlistChange={setWatchlistId}
-                          lists={lists.data}
-                          listsLoading={lists.loading}
-                          listsError={lists.error}
-                          disabled={disabled}
-                          running={research.running}
-                          onSubmit={submit}
-                          onTradeSetup={requestSetup}
+                  <Popover
+                    open={commandsOpen}
+                    onOpenChange={(open) => {
+                      if (!open) setCommandsDismissed(true);
+                    }}
+                  >
+                    <PopoverAnchor asChild>
+                      <InputGroup>
+                        <InputGroupTextarea
+                          className="min-h-20 max-h-32 overflow-y-auto"
+                          id="research-question"
+                          placeholder="Ask a market question… or type /"
+                          maxLength={2000}
+                          value={input}
+                          disabled={disabled || !!tradeRequest}
+                          onChange={(event) => {
+                            setInput(event.target.value);
+                            setCommandsDismissed(false);
+                            setSelectedCommand("setup");
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing) return;
+                            if (commandsOpen) {
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                setCommandsDismissed(true);
+                                return;
+                              }
+                              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                                event.preventDefault();
+                                if (commands.length) {
+                                  const index = commands.findIndex((command) => command.id === activeCommand?.id);
+                                  const offset = event.key === "ArrowDown" ? 1 : -1;
+                                  setSelectedCommand(commands[(index + offset + commands.length) % commands.length].id);
+                                }
+                                return;
+                              }
+                              if (event.key === "Enter" && !event.shiftKey) {
+                                event.preventDefault();
+                                if (activeCommand) runCommand(activeCommand.id);
+                                return;
+                              }
+                            }
+                            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                              event.preventDefault();
+                              submit(input);
+                            }
+                          }}
                         />
-                      ) : null}
-                      <span className="mr-auto text-xs">{input.length}/2000 · Shift+Enter for a new line</span>
-                      {research.running ? (
-                        <Button type="button" size="sm" variant="outline" onClick={research.cancel}>
-                          <Square data-icon="inline-start" />
-                          Cancel
-                        </Button>
-                      ) : (
-                        <Button type="submit" size="sm" disabled={disabled || !!tradeRequest || !input.trim()}>
-                          <ArrowUp data-icon="inline-start" />
-                          Research
-                        </Button>
-                      )}
-                    </InputGroupAddon>
-                  </InputGroup>
+                        <InputGroupAddon align="block-end" className="flex-wrap gap-2 text-foreground">
+                          <Field className="w-40 min-w-0">
+                            <FieldLabel htmlFor="composer-market" className="sr-only">
+                              Market for the next request
+                            </FieldLabel>
+                            <MarketSymbolField
+                              id="composer-market"
+                              compact
+                              size="sm"
+                              value={symbol}
+                              onChange={setSymbol}
+                              disabled={disabled}
+                            />
+                          </Field>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={disabled}
+                                onClick={requestSetup}
+                              >
+                                <Target data-icon="inline-start" />
+                                Trade setup
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Entry, stop loss & targets · review before analysis</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={disabled}
+                                aria-label="Show commands"
+                                onClick={() => {
+                                  setInput("/");
+                                  setSelectedCommand("setup");
+                                  setCommandsDismissed(false);
+                                  document.getElementById("research-question")?.focus();
+                                }}
+                              >
+                                <Slash />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Commands · type /</TooltipContent>
+                          </Tooltip>
+                          {research.turns.length > 0 && !research.running && !tradeRequest ? (
+                            <ResearchSuggestions
+                              compact
+                              watchlistOnly
+                              symbol={symbol}
+                              onSymbolChange={setSymbol}
+                              watchlistId={watchlistId}
+                              onWatchlistChange={setWatchlistId}
+                              lists={lists.data}
+                              listsLoading={lists.loading}
+                              listsError={lists.error}
+                              disabled={disabled}
+                              running={research.running}
+                              onSubmit={submit}
+                              onTradeSetup={requestSetup}
+                            />
+                          ) : null}
+                          <span className="ml-auto text-xs" aria-live="polite">
+                            {input.length >= 1800 ? `${input.length}/2000` : null}
+                          </span>
+                          {research.running ? (
+                            <Button type="button" size="sm" variant="outline" onClick={research.cancel}>
+                              <Square data-icon="inline-start" />
+                              Cancel
+                            </Button>
+                          ) : (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="submit"
+                                  size="icon-sm"
+                                  aria-label="Send research question"
+                                  disabled={disabled || !!tradeRequest}
+                                  aria-disabled={disabled || !!tradeRequest || !input.trim()}
+                                  className="aria-disabled:opacity-50"
+                                  onClick={(event) => {
+                                    if (!input.trim()) event.preventDefault();
+                                  }}
+                                >
+                                  <ArrowUp />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Send · Enter. New line · Shift+Enter</TooltipContent>
+                            </Tooltip>
+                          )}
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </PopoverAnchor>
+                    <PopoverContent
+                      side="top"
+                      align="start"
+                      className="w-96 max-w-[calc(100vw-2rem)] p-0"
+                      onOpenAutoFocus={(event) => event.preventDefault()}
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                      onInteractOutside={(event) => {
+                        if (event.target instanceof Element && event.target.closest("[data-slot=input-group]"))
+                          event.preventDefault();
+                      }}
+                    >
+                      <ResearchCommandMenu
+                        commands={commands}
+                        selected={activeCommand?.id ?? ""}
+                        onSelectedChange={setSelectedCommand}
+                        onSelect={runCommand}
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </Field>
               </FieldGroup>
             </form>

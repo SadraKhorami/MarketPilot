@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useApiResource } from "@/hooks/use-api-resource";
 import { apiRequest } from "@/lib/api/client";
 
@@ -27,7 +28,8 @@ export function TradeContextQuestion({
   onCancel: () => void;
 }) {
   const [selectedSymbol, setSelectedSymbol] = useState(symbol);
-  const memory = useApiResource<TradePreferences>("/journal/preferences");
+  const memory = useApiResource<{ saved: boolean; preferences: TradePreferences }>("/journal/preferences/state");
+  const [initialized, setInitialized] = useState(false);
   const [value, setValue] = useState(defaultTradePreferences);
   const [confirming, setConfirming] = useState(false);
   const heading = useRef<HTMLDivElement>(null);
@@ -38,11 +40,15 @@ export function TradeContextQuestion({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (memory.data) setValue(memory.data);
+    if (memory.data) {
+      setValue(memory.data.preferences);
+      setConfirming(memory.data.saved);
+      setInitialized(true);
+    }
   }, [memory.data]);
   const valid = TradePreferencesSchema.safeParse(value).success;
   async function confirm() {
-    if (!valid || pending) return;
+    if (!valid || pending || !initialized || memory.loading || memory.error) return;
     setPending(true);
     setError(null);
     try {
@@ -58,21 +64,39 @@ export function TradeContextQuestion({
     <Card size="sm" className="w-full max-w-2xl">
       <CardHeader>
         <CardTitle ref={heading} tabIndex={-1} className="outline-none">
-          {confirming ? "Confirm your trading context" : `Before we analyse ${selectedSymbol}`}
+          {!initialized
+            ? "Trading context"
+            : confirming
+              ? "Confirm your trading context"
+              : `Before we analyse ${selectedSymbol}`}
         </CardTitle>
         <CardDescription>
-          {confirming
-            ? "Review these details. Analysis starts only after your confirmation."
-            : "Confirm the market, timeframe and risk limit. Saved preferences are filled in for you."}
+          {!initialized
+            ? "Loading your trading memory…"
+            : confirming
+              ? "Review these details. Analysis starts only after your confirmation."
+              : "Confirm the market, timeframe and risk limit. Saved preferences are filled in for you."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {confirming ? (
+        {!initialized ? (
+          memory.loading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : null
+        ) : confirming ? (
           <dl className="grid grid-cols-2 gap-3 text-sm">
             {[
               ["Market", selectedSymbol],
               ["Timeframe", value.interval],
-              ["Holding period", value.holding],
+              [
+                "Holding style",
+                {
+                  scalp: "Scalp · minutes",
+                  day: "Intraday · hours",
+                  swing: "Swing · several days",
+                  hybrid: "Hybrid · flexible duration",
+                }[value.holding],
+              ],
               ["Risk limit", `${value.riskPercent}%`],
               [
                 "Capital",
@@ -100,15 +124,17 @@ export function TradeContextQuestion({
             <TradePreferenceFields value={value} onChange={setValue} disabled={pending || memory.loading} />
           </>
         )}
-        <Field orientation="horizontal">
-          <Checkbox
-            id="remember-trade-context"
-            checked={remember}
-            onCheckedChange={(checked) => setRemember(checked === true)}
-            disabled={pending}
-          />
-          <FieldLabel htmlFor="remember-trade-context">Remember these preferences in Journal</FieldLabel>
-        </Field>
+        {initialized && !confirming ? (
+          <Field orientation="horizontal">
+            <Checkbox
+              id="remember-trade-context"
+              checked={remember}
+              onCheckedChange={(checked) => setRemember(checked === true)}
+              disabled={pending}
+            />
+            <FieldLabel htmlFor="remember-trade-context">Remember these preferences in Journal</FieldLabel>
+          </Field>
+        ) : null}
         {memory.error || error ? (
           <p role="alert" className="text-destructive text-sm">
             {error ?? memory.error}
@@ -118,12 +144,17 @@ export function TradeContextQuestion({
       <CardFooter className="flex flex-wrap gap-2">
         <Button
           size="sm"
-          disabled={!valid || pending || memory.loading}
+          disabled={!valid || pending || !initialized || memory.loading || !!memory.error}
           onClick={() => (confirming ? void confirm() : setConfirming(true))}
         >
           {pending ? "Saving…" : confirming ? "Confirm & analyse" : "Review details"}
         </Button>
-        {confirming ? (
+        {memory.error ? (
+          <Button size="sm" variant="outline" onClick={memory.reload}>
+            Retry
+          </Button>
+        ) : null}
+        {initialized && confirming ? (
           <Button size="sm" variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
             Edit
           </Button>

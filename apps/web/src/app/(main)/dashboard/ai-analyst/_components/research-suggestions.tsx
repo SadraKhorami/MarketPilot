@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { List } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -24,6 +25,7 @@ interface Props {
   running: boolean;
   onSubmit: (prompt: string) => void;
   onTradeSetup: () => void;
+  watchlistOnly?: boolean;
 }
 function QuestionChoices({
   symbol,
@@ -38,41 +40,44 @@ function QuestionChoices({
   onSubmit,
   onTradeSetup,
   compact = false,
+  watchlistOnly = false,
 }: Props & { compact?: boolean }) {
   const prefix = compact ? "followup" : "starter";
   return (
     <div className="flex flex-col gap-4">
       <div className={compact ? "flex flex-col gap-5" : "grid gap-6 md:grid-cols-2 md:gap-8"}>
-        <section className="flex min-w-0 flex-col gap-3" aria-label="Market questions">
-          <Field>
-            <FieldLabel htmlFor={`${prefix}-market`}>Research a market</FieldLabel>
-            <MarketSymbolField id={`${prefix}-market`} value={symbol} onChange={onSymbolChange} disabled={running} />
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-auto min-h-10 whitespace-normal py-2 text-left"
-              disabled={disabled}
-              onClick={() =>
-                onSubmit(
-                  `Analyze ${symbol} using current price, technical indicators, trend and available stored news.`,
-                )
-              }
-            >
-              Analyze {symbol.split("-")[0]}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-auto min-h-10 whitespace-normal py-2 text-left"
-              disabled={disabled}
-              onClick={onTradeSetup}
-            >
-              Entry, stop loss & targets
-            </Button>
-          </div>
-        </section>
+        {!watchlistOnly ? (
+          <section className="flex min-w-0 flex-col gap-3" aria-label="Market questions">
+            <Field>
+              <FieldLabel htmlFor={`${prefix}-market`}>Research a market</FieldLabel>
+              <MarketSymbolField id={`${prefix}-market`} value={symbol} onChange={onSymbolChange} disabled={running} />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-10 whitespace-normal py-2 text-left"
+                disabled={disabled}
+                onClick={() =>
+                  onSubmit(
+                    `Analyze ${symbol} using current price, technical indicators, trend and available stored news.`,
+                  )
+                }
+              >
+                Analyze {symbol.split("-")[0]}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-10 whitespace-normal py-2 text-left"
+                disabled={disabled}
+                onClick={onTradeSetup}
+              >
+                Entry, stop loss & targets
+              </Button>
+            </div>
+          </section>
+        ) : null}
         <section className="flex min-w-0 flex-col gap-3" aria-label="Watchlist questions">
           <Field>
             <FieldLabel htmlFor={`${prefix}-watchlist`}>Research your watchlist</FieldLabel>
@@ -122,8 +127,14 @@ export function ResearchSuggestions(props: Props & { compact?: boolean }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size="sm">
-          Suggested questions
+        <Button
+          type="button"
+          variant="ghost"
+          size={props.watchlistOnly ? "icon-sm" : "sm"}
+          aria-label={props.watchlistOnly ? "Research your watchlist" : "Suggested questions"}
+          title={props.watchlistOnly ? "Research your watchlist" : undefined}
+        >
+          {props.watchlistOnly ? <List /> : "Suggested questions"}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="max-h-[70dvh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto p-4">

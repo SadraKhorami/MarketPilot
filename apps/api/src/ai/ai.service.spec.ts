@@ -9,7 +9,9 @@ function setup() {
   let saved: Record<string, unknown> | null = null;
   const release = jest.fn().mockResolvedValue(undefined);
   const db = {
+    journalEntry: { findUnique: jest.fn().mockResolvedValue(null) },
     aiRun: {
+      findFirst: jest.fn().mockResolvedValue(null),
       findUnique: jest.fn().mockImplementation(async () => saved),
       create: jest.fn().mockImplementation(async ({ data }) => {
         saved = { ...data, id: runId, proposals: [] };
@@ -38,10 +40,24 @@ function setup() {
       cost: 0.001,
     }),
   };
-  const service = new AiService(db as never, tools as never, budget as never, proposals as never, provider, {
-    consumeIn: jest.fn(),
-    locked: (_id: string, action: (tx: typeof db) => unknown) => action(db),
-  } as never);
+  const service = new AiService(
+    db as never,
+    tools as never,
+    budget as never,
+    proposals as never,
+    provider,
+    {
+      consumeIn: jest.fn(),
+      locked: (_id: string, action: (tx: typeof db) => unknown) => action(db),
+    } as never,
+    {
+      resolve: async (_userId: string, fallback: AIProvider | null) => ({
+        provider: fallback,
+        personal: false,
+        preferences: { language: "auto", memory: "" },
+      }),
+    } as never,
+  );
   return { service, db, budget, release, tools, proposals, provider };
 }
 describe("AI research lifecycle", () => {
@@ -116,7 +132,15 @@ describe("AI research lifecycle", () => {
   });
   it("fails closed when provider is missing or admission exceeds limits", async () => {
     const { db, tools, budget, proposals } = setup();
-    const missing = new AiService(db as never, tools as never, budget as never, proposals as never, null, {} as never);
+    const missing = new AiService(
+      db as never,
+      tools as never,
+      budget as never,
+      proposals as never,
+      null,
+      {} as never,
+      { resolve: async () => ({ provider: null, personal: false }) } as never,
+    );
     await expect(missing.research("owner", input, new AbortController().signal, () => undefined)).rejects.toMatchObject(
       { code: "AI_NOT_CONFIGURED" },
     );

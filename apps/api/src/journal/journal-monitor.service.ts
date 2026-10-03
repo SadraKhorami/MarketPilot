@@ -27,6 +27,7 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
     if (this.monitoring) return;
     this.monitoring = true;
     try {
+      await this.journal.expirePlans();
       // Each pass is bounded; older checks come first. Row locks and event keys also protect multiple API instances.
       const entries = await this.db.journalEntry.findMany({
         where: {

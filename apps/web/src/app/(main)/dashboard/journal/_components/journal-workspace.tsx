@@ -70,7 +70,7 @@ export function JournalWorkspace() {
             aria-label="Trading preferences"
           >
             <Settings2 data-icon="inline-start" />
-            Preferences
+            Trading memory
           </Button>
           <Button asChild>
             <Link href="/dashboard/ai-analyst">
@@ -115,9 +115,6 @@ export function JournalWorkspace() {
                   </div>
                 ))}
               </dl>
-              <Button variant="ghost" size="sm" onClick={() => setSettings(true)}>
-                Edit memory
-              </Button>
             </>
           ) : null}
         </CardContent>

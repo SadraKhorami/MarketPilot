@@ -62,6 +62,7 @@ export function MarketSymbolField({
   excluded = [],
   allowUnavailable = false,
   compact = false,
+  size = "default",
   favorites,
 }: {
   id: string;
@@ -74,6 +75,7 @@ export function MarketSymbolField({
   excluded?: string[];
   allowUnavailable?: boolean;
   compact?: boolean;
+  size?: "default" | "sm";
   favorites?: { symbols: string[]; toggle: (symbol: string) => void; ready: boolean };
 }) {
   const [open, setOpen] = useState(false);
@@ -122,12 +124,13 @@ export function MarketSymbolField({
           id={id}
           type="button"
           variant="outline"
+          size={size}
           role="combobox"
           aria-expanded={open}
           aria-controls={`${id}-list`}
           disabled={disabled}
           title={selected ? `${selected.name} · ${selected.symbol}` : value || undefined}
-          className={cn("h-10 w-full justify-between", className)}
+          className={cn("w-full justify-between", size === "default" && "h-10", className)}
         >
           <span className="flex min-w-0 items-center gap-2 truncate">
             {value && !compact ? <AssetMark symbol={value} small /> : null}

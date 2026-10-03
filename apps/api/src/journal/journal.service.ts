@@ -5,6 +5,7 @@ import {
   ResearchResultSchema,
   TradeContextSchema,
   TradePreferencesSchema,
+  TradeSetupSchema,
   type AIProvider,
 } from "@marketpilot/ai";
 import { Prisma } from "@marketpilot/db";
@@ -18,6 +19,7 @@ import {
 } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import { AiBudgetService } from "../ai/ai-budget.service";
+import { AiSettingsService } from "../ai/ai-settings.service";
 import { AI_PROVIDER } from "../ai/ai.service";
 import { EntitlementsService } from "../billing/entitlements.service";
 import { pageResult } from "../common/request-query.dto";
@@ -33,10 +35,14 @@ export class JournalService {
     private readonly budget: AiBudgetService,
     private readonly entitlements: EntitlementsService,
     @Inject(AI_PROVIDER) private readonly provider: AIProvider | null,
+    private readonly settings: AiSettingsService,
   ) {}
   async preferences(userId: string) {
+    return (await this.preferenceState(userId)).preferences;
+  }
+  async preferenceState(userId: string) {
     const saved = await this.db.tradePreferences.findUnique({ where: { userId } });
-    return saved
+    const preferences = saved
       ? TradePreferencesSchema.parse({
           capital: saved.capital,
           currency: saved.currency,
@@ -46,6 +52,7 @@ export class JournalService {
           autoReview: saved.autoReview,
         })
       : defaultTradePreferences;
+    return { saved: !!saved, preferences };
   }
   async setPreferences(userId: string, input: unknown) {
     const parsed = TradePreferencesSchema.safeParse(input);
@@ -57,7 +64,36 @@ export class JournalService {
     });
     return parsed.data;
   }
+  async expirePlans(userId?: string) {
+    const now = new Date();
+    await this.db.$transaction(async (tx) => {
+      // Time-based validity does not depend on provider freshness or completed candles.
+      // UPDATE locks each affected row; the status predicate protects confirmed open trades.
+      const expired = await tx.$queryRaw<Array<{ id: string; expiresAt: Date }>>(Prisma.sql`
+        UPDATE "JournalEntry"
+        SET status = 'expired', "updatedAt" = ${now},
+            "monitoringStatus" = 'Plan validity ended. Request a fresh analysis.'
+        WHERE status = 'planned'
+          ${userId ? Prisma.sql`AND "userId" = ${userId}::uuid` : Prisma.empty}
+          AND (plan->>'expiresAt')::timestamptz <= ${now}
+        RETURNING id, (plan->>'expiresAt')::timestamptz AS "expiresAt"
+      `);
+      if (expired.length)
+        await tx.journalEvent.createMany({
+          data: expired.map((entry) => ({
+            entryId: entry.id,
+            key: "expired",
+            kind: "expired",
+            occurredAt: entry.expiresAt,
+            evidence: { message: "Plan validity ended. Reanalyse before using this entry." },
+            reviewStatus: "pending",
+          })),
+          skipDuplicates: true,
+        });
+    });
+  }
   async list(userId: string, query: JournalQueryDto, symbol?: string) {
+    await this.expirePlans(userId);
     const where = {
       userId,
       ...(query.status ? { status: query.status } : {}),
@@ -79,6 +115,7 @@ export class JournalService {
     return pageResult(items, total, query);
   }
   async detail(userId: string, id: string) {
+    await this.expirePlans(userId);
     const entry = await this.db.journalEntry.findFirst({
       where: { userId, id },
       include: { events: { orderBy: { occurredAt: "desc" } } },
@@ -133,10 +170,16 @@ export class JournalService {
     return this.detail(userId, entry.id);
   }
   async update(userId: string, id: string, input: JournalUpdateDto) {
+    await this.expirePlans(userId);
     return this.db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "JournalEntry" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
       const entry = await tx.journalEntry.findFirst({ where: { id, userId } });
       if (!entry) throw new NotFoundException("Journal entry not found.");
+      if (input.status === "open") {
+        const plan = TradeSetupSchema.safeParse(entry.plan);
+        if (!plan.success || Date.parse(plan.data.expiresAt) <= Date.now())
+          throw new ConflictException("The plan expired. Request a fresh analysis before opening it.");
+      }
       if (input.status === "open" && (entry.status !== "planned" || !input.entryPrice || !input.quantity))
         throw new BadRequestException("Opening a planned trade requires actual entry price and quantity.");
       if (input.status === "closed" && (entry.status !== "open" || !input.exitPrice))
@@ -189,7 +232,9 @@ export class JournalService {
     const event = entry.events.find((e) => e.id === eventId);
     if (!event) throw new NotFoundException("Journal event not found.");
     if (event.review) return event;
-    if (!this.provider) throw new ConflictException("AI review is not configured.");
+    const resolved = await this.settings.resolve(userId, this.provider);
+    const provider = resolved.provider;
+    if (!provider) throw new ConflictException("AI review is not configured.");
     const claimed = await this.db.journalEvent.updateMany({
       where: {
         id: eventId,
@@ -205,8 +250,8 @@ export class JournalService {
     let release: ((unused?: boolean) => Promise<void>) | undefined;
     let runId: string | undefined;
     try {
-      const config = await this.provider.check(signal);
-      release = await this.budget.acquire(userId, config.reservationUsd);
+      const config = await provider.check(signal);
+      release = await this.budget.acquire(userId, resolved.personal ? 0 : config.reservationUsd);
       const evidence = JSON.stringify({
         plan: entry.plan,
         actualExecution: { entry: entry.entryPrice, exit: entry.exitPrice, quantity: entry.quantity, fees: entry.fees },
@@ -214,7 +259,7 @@ export class JournalService {
         kind: event.kind,
       });
       const run = await this.entitlements.locked(userId, async (tx) => {
-        await this.entitlements.consumeIn(tx, userId, "ai");
+        if (!resolved.personal) await this.entitlements.consumeIn(tx, userId, "ai");
         return tx.aiRun.create({
           data: {
             userId,
@@ -224,14 +269,15 @@ export class JournalService {
             purpose: "journal_review",
             inputHash: createHash("sha256").update(evidence).digest("hex"),
             status: "running",
-            model: this.provider!.model,
+            model: provider.model,
+            billingSource: resolved.personal ? "personal" : "platform",
             reservedUsd: config.reservationUsd,
             expiresAt: new Date(Date.now() + 7 * 86400_000),
           },
         });
       });
       runId = run.id;
-      const completion = await this.provider.complete(
+      const completion = await provider.complete(
         [
           {
             role: "system",

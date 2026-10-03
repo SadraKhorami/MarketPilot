@@ -16,8 +16,9 @@ import { ApiOperation, ApiProduces, ApiResponse, ApiTags } from "@nestjs/swagger
 import type { Request, Response } from "express";
 import { ApiSessionAuth, ApiStandardResponses } from "../common/api-documentation";
 import { type AuthenticatedUser, CurrentUser, Roles } from "../common/auth";
-import { PageQueryDto } from "../common/request-query.dto";
-import { EntryAlertDto, ProposalDecisionDto, ResearchDto } from "./ai.dto";
+import { AiConversationsService } from "./ai-conversations.service";
+
+import { ConversationQueryDto, EntryAlertDto, ProposalDecisionDto, ResearchDto } from "./ai.dto";
 import { EntryAlertsService } from "./entry-alerts.service";
 import { AiService } from "./ai.service";
 import { AiProposalsService } from "./ai-proposals.service";
@@ -47,16 +48,17 @@ export class AiController {
     private readonly service: AiService,
     private readonly proposals: AiProposalsService,
     private readonly entryAlerts: EntryAlertsService,
+    private readonly conversationsService: AiConversationsService,
   ) {}
   @Get("status")
   @ApiOperation({ summary: "Browser session: AI configuration status; no provider secrets" })
-  status() {
-    return { data: this.service.status() };
+  async status(@CurrentUser() user: AuthenticatedUser) {
+    return { data: await this.service.userStatus(user.id) };
   }
   @Get("conversations")
   @ApiOperation({ summary: "Browser session: paginated owned research conversations retained for seven days" })
-  async conversations(@CurrentUser() user: AuthenticatedUser, @Query() query: PageQueryDto) {
-    return { data: await this.service.conversations(user.id, query) };
+  async conversations(@CurrentUser() user: AuthenticatedUser, @Query() query: ConversationQueryDto) {
+    return { data: await this.conversationsService.list(user.id, query, query.state === "archived") };
   }
   @Get("history")
   @ApiOperation({ summary: "Browser session: last 20 owned conversation turns, retained for seven days" })
@@ -84,7 +86,7 @@ export class AiController {
     @Req() request: Request,
     @Res() response: Response,
   ) {
-    if (!this.service.status().configured)
+    if (!(await this.service.userStatus(user.id)).configured)
       throw aiHttpError(new AIError("AI_NOT_CONFIGURED", this.service.status().message));
     await this.service.cleanup();
     const abort = new AbortController();

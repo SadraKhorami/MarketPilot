@@ -12,8 +12,9 @@ import { type AiRun, Prisma } from "@marketpilot/db";
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { EntitlementsService } from "../billing/entitlements.service";
-import { type PageQueryDto, pageResult } from "../common/request-query.dto";
+
 import { DatabaseService } from "../database.module";
+import { AiSettingsService } from "./ai-settings.service";
 import { AiBudgetService } from "./ai-budget.service";
 import { AiProposalsService, serializeProposal } from "./ai-proposals.service";
 import { AiToolsService } from "./ai-tools.service";
@@ -35,6 +36,7 @@ export class AiService {
     private readonly proposals: AiProposalsService,
     @Inject(AI_PROVIDER) private readonly provider: AIProvider | null,
     private readonly entitlements: EntitlementsService,
+    private readonly settings: AiSettingsService,
   ) {}
   status() {
     const config = aiConfiguration();
@@ -51,28 +53,20 @@ export class AiService {
       alertEvaluation: false,
     };
   }
-  async conversations(userId: string, query: PageQueryDto) {
-    const search = `%${query.search?.trim() ?? ""}%`;
-    const eligible = Prisma.sql`
-      SELECT "conversationId", (array_agg(input ORDER BY "createdAt", id))[1] AS title,
-        MAX("createdAt") AS "updatedAt", COUNT(*)::int AS "turnCount"
-      FROM "AiRun" WHERE "userId" = ${userId}::uuid AND purpose = 'research' AND "expiresAt" > ${new Date()}
-      GROUP BY "conversationId" HAVING bool_or(input ILIKE ${search})`;
-    const [items, count] = await Promise.all([
-      this.db.$queryRaw<Array<{ conversationId: string; title: string; updatedAt: Date; turnCount: number }>>`
-        SELECT * FROM (${eligible}) conversations ORDER BY "updatedAt" DESC, "conversationId"
-        LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`,
-      this.db.$queryRaw<Array<{ total: number }>>`SELECT COUNT(*)::int AS total FROM (${eligible}) conversations`,
-    ]);
-    return pageResult(
-      items.map((item) => ({ ...item, title: item.title.slice(0, 160) })),
-      count[0]?.total ?? 0,
-      query,
-    );
+  async userStatus(userId: string) {
+    const saved = await this.settings.view(userId);
+    if (saved.source !== "personal") return this.status();
+    const configured = saved.hasKey && !!saved.modelId && saved.credentialStorageReady;
+    return {
+      ...this.status(),
+      configured,
+      status: configured ? "configured" : "unavailable",
+      message: configured ? "Using your personal OpenRouter key." : "Reconnect your personal key in AI settings.",
+    };
   }
   async history(userId: string, conversationId: string) {
     const runs = await this.db.aiRun.findMany({
-      where: { userId, conversationId, purpose: "research", expiresAt: { gt: new Date() } },
+      where: { userId, conversationId, purpose: "research", deletedAt: null, expiresAt: { gt: new Date() } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 20,
       include: { proposals: true },
@@ -83,6 +77,7 @@ export class AiService {
     });
     const journalByRun = new Map(journalEntries.map((entry) => [entry.runId, entry.id]));
     return runs.reverse().map((run) => ({
+      archived: !!run.archivedAt,
       requestId: run.requestId,
       input: run.input,
       status: run.status === "running" && run.createdAt.getTime() < Date.now() - 120_000 ? "interrupted" : run.status,
@@ -130,6 +125,7 @@ export class AiService {
       include: { proposals: true },
     });
     if (existing) {
+      if (existing.deletedAt) throw new AIError("AI_REQUEST_FINISHED", "This conversation was deleted.");
       if (existing.inputHash !== inputHash)
         throw new AIError("AI_REQUEST_CONFLICT", "This request ID was already used for another question.");
       if (existing.expiresAt <= new Date())
@@ -150,10 +146,11 @@ export class AiService {
           : "This research request ended. Retry with a new request.",
       );
     }
-    if (!this.provider) throw new AIError("AI_NOT_CONFIGURED", this.status().message);
-    const provider = this.provider;
+    const resolved = await this.settings.resolve(userId, this.provider);
+    const provider = resolved.provider;
+    if (!provider) throw new AIError("AI_NOT_CONFIGURED", this.status().message);
     const config = await provider.check(signal);
-    const release = await this.budget.acquire(userId, config.reservationUsd);
+    const release = await this.budget.acquire(userId, resolved.personal ? 0 : config.reservationUsd);
     let run: AiRun | undefined;
     let inputTokens = 0;
     let outputTokens = 0;
@@ -163,7 +160,16 @@ export class AiService {
     try {
       signal.throwIfAborted();
       run = await this.entitlements.locked(userId, async (tx) => {
-        await this.entitlements.consumeIn(tx, userId, "ai");
+        const conversation = await tx.aiRun.findFirst({
+          where: { userId, conversationId: dto.conversationId, purpose: "research" },
+          select: { archivedAt: true, deletedAt: true },
+        });
+        if (conversation?.archivedAt || conversation?.deletedAt)
+          throw new AIError(
+            "AI_REQUEST_FINISHED",
+            "This conversation is archived or deleted. Restore it or start a new chat.",
+          );
+        if (!resolved.personal) await this.entitlements.consumeIn(tx, userId, "ai");
         return tx.aiRun.create({
           data: {
             userId,
@@ -174,13 +180,20 @@ export class AiService {
             ...(tradeContext?.success ? { tradeContext: tradeContext.data as Prisma.InputJsonValue } : {}),
             status: "running",
             model: provider.model,
+            billingSource: resolved.personal ? "personal" : "platform",
             reservedUsd: config.reservationUsd,
             expiresAt: new Date(Date.now() + 7 * 86400_000),
           },
         });
       });
       const prior = await this.db.aiRun.findMany({
-        where: { userId, conversationId: dto.conversationId, status: "completed", expiresAt: { gt: new Date() } },
+        where: {
+          userId,
+          conversationId: dto.conversationId,
+          deletedAt: null,
+          status: "completed",
+          expiresAt: { gt: new Date() },
+        },
         orderBy: { createdAt: "desc" },
         take: 2,
         select: { input: true, result: true },
@@ -206,7 +219,8 @@ export class AiService {
       emit({ type: "progress", message: "Researching authorized MarketPilot sources…" });
       const runId = run.id;
       const research = await conductResearch({
-        provider: this.provider,
+        provider,
+        preferences: { language: resolved.preferences.language, memory: resolved.preferences.memory },
         input,
         tradeContext: tradeContext?.success ? tradeContext.data : undefined,
         history,

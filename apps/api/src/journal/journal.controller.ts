@@ -16,6 +16,9 @@ export class JournalController {
   @Get("preferences") async preferences(@CurrentUser() user: AuthenticatedUser) {
     return { data: await this.journal.preferences(user.id) };
   }
+  @Get("preferences/state") async preferenceState(@CurrentUser() user: AuthenticatedUser) {
+    return { data: await this.journal.preferenceState(user.id) };
+  }
   @Patch("preferences") async setPreferences(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return { data: await this.journal.setPreferences(user.id, body) };
   }

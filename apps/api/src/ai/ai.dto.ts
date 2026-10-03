@@ -1,3 +1,4 @@
+import { PageQueryDto } from "../common/request-query.dto";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import {
@@ -39,4 +40,8 @@ export class EntryAlertDto {
   @Equals(true)
   @Transform(({ obj }: { obj: { confirm?: unknown } }) => obj.confirm)
   confirm!: boolean;
+}
+
+export class ConversationQueryDto extends PageQueryDto {
+  @IsOptional() @IsIn(["active", "archived"]) state: "active" | "archived" = "active";
 }

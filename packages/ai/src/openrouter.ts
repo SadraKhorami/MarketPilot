@@ -56,6 +56,7 @@ export class OpenRouterProvider implements AIProvider {
     private readonly key: string,
     private readonly baseUrl = "https://openrouter.ai/api/v1",
     private readonly fetcher: typeof fetch = fetch,
+    private readonly maxReservationUsd = 0.25,
   ) {
     if (baseUrl !== "https://openrouter.ai/api/v1")
       throw new AIError("AI_CONFIG_INVALID", "The configured OpenRouter URL is unsupported.");
@@ -104,8 +105,11 @@ export class OpenRouterProvider implements AIProvider {
       throw new AIError("AI_PRICING_UNAVAILABLE", "Provider pricing could not be validated.");
     // Four tool rounds and up to two final responses, each bounded to 24 KB (at most 24K input tokens), 1,200 output tokens.
     const reservationUsd = 6 * (24_000 * prices[0] + 1200 * prices[1] + prices[2]);
-    if (reservationUsd > 0.25)
-      throw new AIError("AI_MODEL_BUDGET", "The configured model exceeds the research request budget.");
+    if (reservationUsd > this.maxReservationUsd)
+      throw new AIError(
+        "AI_MODEL_BUDGET",
+        "This model exceeds the selected request budget. Choose a less expensive model or adjust your personal-key budget.",
+      );
     this.checked = { until: Date.now() + 300_000, reservationUsd };
     return this.checked;
   }

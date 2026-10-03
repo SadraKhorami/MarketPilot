@@ -96,12 +96,13 @@ export function TradePreferenceFields({
         </Select>
       </Field>
       <Field className="sm:col-span-2">
-        <FieldLabel htmlFor={`${id}-holding`}>Expected holding period</FieldLabel>
+        <FieldLabel htmlFor={`${id}-holding`}>Holding style</FieldLabel>
         <Select
           value={value.holding}
           disabled={disabled}
           onValueChange={(holding) => {
-            if (holding === "scalp" || holding === "day" || holding === "swing") onChange({ ...value, holding });
+            if (holding === "scalp" || holding === "day" || holding === "swing" || holding === "hybrid")
+              onChange({ ...value, holding });
           }}
         >
           <SelectTrigger id={`${id}-holding`} className="w-full">
@@ -109,12 +110,14 @@ export function TradePreferenceFields({
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="scalp">Short session · minutes</SelectItem>
+              <SelectItem value="scalp">Scalp · minutes</SelectItem>
               <SelectItem value="day">Intraday · hours</SelectItem>
               <SelectItem value="swing">Swing · several days</SelectItem>
+              <SelectItem value="hybrid">Hybrid · flexible duration</SelectItem>
             </SelectGroup>
           </SelectContent>
         </Select>
+        <FieldDescription>Hybrid lets AI consider a flexible duration based on market conditions.</FieldDescription>
       </Field>
       <Field orientation="horizontal" className="sm:col-span-2">
         <Checkbox

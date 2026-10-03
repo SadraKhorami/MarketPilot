@@ -8,6 +8,7 @@ import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 import { streamResearch, toolLabels } from "./research-stream";
 
 export interface ResearchTurn {
+  archived?: boolean;
   requestId: string;
   input: string;
   tradeContext?: TradeContext;
@@ -202,6 +203,7 @@ export function useResearch() {
     conversationId,
     openConversation,
     turns,
+    archived: turns.some((turn) => turn.archived),
     running,
     progress,
     activity,

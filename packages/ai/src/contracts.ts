@@ -310,3 +310,5 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export * from "./journal";
+
+export * from "./settings";
