@@ -33,6 +33,25 @@ export function permitsAlert(input: string) {
     input,
   );
 }
+export function validateTradeAnalysis(
+  interpretation: ReturnType<typeof AnswerSchema.parse>["interpretation"],
+  sources: ToolResult["sources"],
+  symbol: string,
+) {
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  for (const item of interpretation) {
+    const tickers = item.text.match(/\b[A-Z]{2,10}-(?:USD|USDT|EUR|GBP)\b/gi) ?? [];
+    if (
+      tickers.some((ticker) => ticker.toUpperCase() !== symbol.toUpperCase()) ||
+      !item.sourceIds.some((id) => byId.get(id)?.symbol === symbol) ||
+      item.sourceIds.some((id) => {
+        const source = byId.get(id);
+        return !source || (source.symbol !== null && source.symbol !== symbol);
+      })
+    )
+      throw new AIError("AI_UNGROUNDED_ANSWER", "The interpretation does not match the confirmed market. Try again.");
+  }
+}
 export function validateAnswer(content: string | null, results: ToolResult[]) {
   let answer: ReturnType<typeof AnswerSchema.parse>;
   try {
@@ -190,7 +209,14 @@ export async function conductResearch(options: {
     if (reply.calls.length)
       throw new AIError("AI_TOOL_LIMIT", "The provider did not finish the research within its limits.");
     try {
-      return { answer: validateAnswer(reply.content, results), results, tools };
+      const answer = validateAnswer(reply.content, results);
+      if (options.tradeContext)
+        validateTradeAnalysis(
+          answer.interpretation,
+          results.flatMap((result) => result.sources),
+          options.tradeContext.symbol,
+        );
+      return { answer, results, tools };
     } catch (error) {
       if (attempt !== 0 || !(error instanceof AIError) || error.code !== "AI_UNGROUNDED_ANSWER") throw error;
       options.emit({ type: "progress", message: "Refining the interpretation against the retrieved sources…" });
@@ -199,7 +225,7 @@ export async function conductResearch(options: {
       messages.push({
         role: "system",
         content:
-          "The previous interpretation failed output validation. Return a fresh concise qualitative JSON answer using the existing evidence and exact source IDs. No digits in any script, numbered lists, numbered indicator names, time intervals, numerical claims, dates or URLs may appear in interpretation text. Do not spell out numbers to bypass this restriction. Observed values belong exclusively in the source cards. Do not call tools.",
+          "The previous interpretation failed output validation. Return a fresh concise qualitative JSON answer using the existing evidence and exact source IDs. Every interpretation must concern only the confirmed market and cite its sources; never reuse an earlier market analysis. No digits in any script, numbered lists, numbered indicator names, time intervals, numerical claims, dates or URLs may appear in interpretation text. Do not spell out numbers to bypass this restriction. Observed values belong exclusively in the source cards. Do not call tools.",
       });
     }
   }

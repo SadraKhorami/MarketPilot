@@ -78,7 +78,7 @@ export function InteractiveMarketChart({
   const selected = alerts.find((rule) => rule.id === activeId);
   const inspected = inspection?.kind === "alert" ? alerts.find((rule) => rule.id === inspection.id) : null;
   const quote = data.symbol.split("-").at(-1) ?? "USD";
-  const hasVolume = data.candles.every((candle) => candle.volume !== null);
+  const hasVolume = data.candles.some((candle) => candle.volume !== null);
   const { container, geometry, hovered, zoom, reset, focusAlert, focusJournal, contextPoint } =
     useInteractiveMarketChart({
       data,

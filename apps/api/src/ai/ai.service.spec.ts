@@ -9,7 +9,10 @@ function setup() {
   let saved: Record<string, unknown> | null = null;
   const release = jest.fn().mockResolvedValue(undefined);
   const db = {
-    journalEntry: { findUnique: jest.fn().mockResolvedValue(null) },
+    journalEntry: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     aiRun: {
       findFirst: jest.fn().mockResolvedValue(null),
       findUnique: jest.fn().mockImplementation(async () => saved),

@@ -6,6 +6,7 @@ import {
   TradeContextSchema,
   TradePreferencesSchema,
   TradeSetupSchema,
+  validateTradeAnalysis,
   type AIProvider,
 } from "@marketpilot/ai";
 import { Prisma } from "@marketpilot/db";
@@ -134,6 +135,11 @@ export class JournalService {
     if (!context.success) throw new BadRequestException("Confirm your trading context in AI chat first.");
     if (context.data.symbol !== plan.symbol || context.data.interval !== plan.interval)
       throw new ConflictException("Plan and confirmed context do not match.");
+    try {
+      validateTradeAnalysis(result.data.answer.interpretation, result.data.sources, plan.symbol);
+    } catch {
+      throw new ConflictException("The analysis does not match this plan's market. Request a fresh analysis.");
+    }
     const snapshot = await this.market.getMarketData(plan.symbol, plan.interval);
     if (snapshot.freshness !== "fresh")
       throw new ConflictException("Fresh market data is required before saving this plan.");

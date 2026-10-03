@@ -326,6 +326,21 @@ export function useInteractiveMarketChart({
     const range = chart.timeScale().getVisibleRange();
     const logical = chart.timeScale().getVisibleLogicalRange();
     const followLatest = !old.length || !logical || logical.to >= old.length - 1;
+    const incremental =
+      old.length > 0 &&
+      (data.candles.length === old.length || data.candles.length === old.length + 1) &&
+      data.candles.slice(0, old.length - 1).every((candle, i) => candle === old[i]);
+    if (incremental) {
+      for (const candle of data.candles.slice(old.length - 1)) {
+        const time = chartTime(candle.time);
+        line.update({ time, value: candle.close });
+        candles.update({ ...candle, time });
+      }
+      if (logical) chart.timeScale().setVisibleLogicalRange(logical);
+      previousCandles.current = data.candles;
+      current.schedule();
+      return;
+    }
     const values = data.candles.map((candle) => ({ ...candle, time: chartTime(candle.time) }));
     // Rolling provider windows can correct older candles, so replace the snapshot while preserving the user's time window.
     line.setData(values.map((candle) => ({ time: candle.time, value: candle.close })));
@@ -342,10 +357,12 @@ export function useInteractiveMarketChart({
             ],
       ),
     );
-    volume.setData(values.map((candle) => ({ time: candle.time, value: candle.volume ?? 0 })));
+    volume.setData(
+      values.flatMap((candle) => (candle.volume === null ? [] : [{ time: candle.time, value: candle.volume }])),
+    );
     if (!old.length) chart.timeScale().fitContent();
     else if (!followLatest && range) chart.timeScale().setVisibleRange(range);
-    else chart.timeScale().scrollToRealTime();
+    else if (logical) chart.timeScale().setVisibleLogicalRange(logical);
     previousCandles.current = data.candles;
     current.schedule();
   }, [data]);

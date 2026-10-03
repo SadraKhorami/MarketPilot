@@ -96,7 +96,7 @@ export class AiToolsService {
     const result: ToolResult = { tool, status: "ok", sources: [], proposal: null, error: null };
     if (tool === "getMarketNews") {
       const args = toolSchemas.getMarketNews.parse(input);
-      const symbol = resolveResearchSymbol(args.symbol);
+      const symbol = resolveResearchSymbol(context.tradeSymbol ?? args.symbol);
       const response = await this.news.list({ asset: symbol.split("-")[0], pageSize: args.limit });
       result.sources = response.data.articles.map((article) =>
         SourceSchema.parse({
@@ -195,6 +195,8 @@ export class AiToolsService {
     } else if (tool === "createAlert") {
       const args = AlertInputSchema.parse(input);
       const symbol = resolveResearchSymbol(args.symbol);
+      if (context.tradeSymbol && symbol !== context.tradeSymbol)
+        throw new AIError("AI_UNGROUNDED_ANSWER", "The alert market does not match the confirmed trading context.");
       await this.snapshot(symbol, "1h", context);
       result.proposal = await context.propose({ ...args, symbol });
       result.sources = [
@@ -215,7 +217,7 @@ export class AiToolsService {
         tool === "getMarketPrice"
           ? { ...toolSchemas.getMarketPrice.parse(input), interval: "1h" as const, window: 300 }
           : toolSchemas[tool].parse(input);
-      const symbol = resolveResearchSymbol(args.symbol);
+      const symbol = resolveResearchSymbol(context.tradeSymbol ?? args.symbol);
       try {
         result.sources = [this.marketSource(await this.snapshot(symbol, args.interval, context), args.window, tool)];
       } catch (error) {

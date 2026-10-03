@@ -5,15 +5,21 @@ import Link from "next/link";
 
 import type { JournalRecord } from "@marketpilot/ai/contracts";
 import type { MarketObservation } from "@marketpilot/market-data";
-import { BookOpen, Sparkles } from "lucide-react";
+import { ChartCandlestick, Ellipsis, Sparkles, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
+import { JournalNotes } from "./journal-notes";
 import { useApiResource } from "@/hooks/use-api-resource";
 import { apiRequest } from "@/lib/api/client";
 
@@ -94,7 +100,6 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                 ...(action === "open"
                   ? { entryPrice: Number(price), quantity: Number(quantity), fees: Number(fees) }
                   : {}),
-                ...(action === "closed" ? { exitPrice: Number(price), fees: Number(fees) } : {}),
               },
         ),
       });
@@ -200,6 +205,13 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                   className="shrink-0"
                   journal={[entry]}
                   journalPreview
+                  status={
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/dashboard/markets/${encodeURIComponent(entry.symbol)}`}>
+                        <ChartCandlestick /> Market chart
+                      </Link>
+                    </Button>
+                  }
                 />
               ) : (
                 <ResourceState
@@ -212,6 +224,7 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
               <details>
                 <summary className="cursor-pointer font-medium text-sm">Original analysis & context</summary>
                 <div className="mt-3 flex flex-col gap-2 text-muted-foreground text-sm">
+                  {!entry.analysis.length ? <p>Original AI analysis is unavailable for this market.</p> : null}
                   {entry.analysis.map((item, i) => (
                     <p key={i}>{item.text}</p>
                   ))}
@@ -224,7 +237,52 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
               </details>
               <Separator />
               <section className="flex flex-col gap-3" aria-label="Actual execution">
-                <h2 className="font-medium text-sm">Your execution</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-medium text-sm">Execution</h2>
+                    <Badge variant="outline">
+                      {entry.status === "planned"
+                        ? "Awaiting entry"
+                        : entry.status === "open"
+                          ? "Position open"
+                          : entry.status === "closed"
+                            ? "Position closed"
+                            : entry.status === "expired"
+                              ? "Plan expired"
+                              : "Plan cancelled"}
+                    </Badge>
+                  </div>
+                  {!action && (entry.status === "planned" || entry.status === "open") ? (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => {
+                          setAction(entry.status === "planned" ? "open" : "closed");
+                          setPrice("");
+                          if (entry.status === "open") setFees("0");
+                        }}
+                      >
+                        {entry.status === "planned" ? "Record entry" : "Record exit"}
+                      </Button>
+                      {entry.status === "planned" ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" disabled={pending} aria-label="Plan actions">
+                              <Ellipsis />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem variant="destructive" onSelect={() => setAction("cancelled")}>
+                              <X /> Cancel plan
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 {entry.openedAt ? (
                   <p className="text-sm">
                     Entry {chartPrice(entry.entryPrice!)} · Quantity {entry.quantity} ·{" "}
@@ -232,57 +290,26 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                   </p>
                 ) : (
                   <p className="text-muted-foreground text-sm">
-                    No confirmed trade. A saved plan or market touch does not open a position.
+                    {entry.status === "planned"
+                      ? entry.trackingMode === "automatic"
+                        ? "Entry conditions are tracked automatically. Record your broker fill if you enter."
+                        : "Waiting for your entry. Record the fill price and quantity after you trade."
+                      : "This plan ended without a recorded entry."}
                   </p>
                 )}
                 {profit !== null ? (
                   <p className="font-semibold tabular-nums">
-                    Recorded result {profit >= 0 ? "+" : ""}
+                    {entry.resultBasis === "estimated" ? "Estimated result" : "Recorded result"}{" "}
+                    {profit >= 0 ? "+" : ""}
                     {chartPrice(profit)} {entry.plan.quote}
                     <span className="ml-2 font-normal text-muted-foreground text-xs">
-                      After recorded fees · not broker-verified
+                      {entry.resultBasis === "estimated"
+                        ? "Candle-based estimate · after fees"
+                        : "After recorded fees · not broker-verified"}
                     </span>
                   </p>
                 ) : null}
-                {!action ? (
-                  <div className="flex flex-wrap gap-2">
-                    {entry.status === "planned" ? (
-                      <>
-                        <Button
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => {
-                            setAction("open");
-                            setPrice("");
-                          }}
-                        >
-                          Record actual entry
-                        </Button>
-                        <Button variant="ghost" size="sm" disabled={pending} onClick={() => setAction("cancelled")}>
-                          Cancel plan
-                        </Button>
-                      </>
-                    ) : entry.status === "open" ? (
-                      <Button
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => {
-                          setAction("closed");
-                          setPrice("");
-                          setFees("0");
-                        }}
-                      >
-                        Record actual exit
-                      </Button>
-                    ) : null}
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/dashboard/markets/${encodeURIComponent(entry.symbol)}`}>
-                        <BookOpen data-icon="inline-start" />
-                        Market chart
-                      </Link>
-                    </Button>
-                  </div>
-                ) : (
+                {action ? (
                   <FieldGroup className="grid gap-3 sm:grid-cols-2">
                     {action !== "cancelled" ? (
                       <>
@@ -343,29 +370,16 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                       </Button>
                     </div>
                   </FieldGroup>
-                )}
+                ) : null}
               </section>
-              <Field>
-                <FieldLabel htmlFor="journal-notes">Your notes</FieldLabel>
-                <Textarea
-                  id="journal-notes"
-                  value={notes}
-                  maxLength={4000}
-                  rows={3}
-                  onChange={(e) => setNotes(e.target.value)}
-                  disabled={pending}
-                  placeholder="What was your reasoning? What would you change?"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="self-start"
-                  disabled={pending || notes === entry.notes || !!action}
-                  onClick={() => void save()}
-                >
-                  Save notes
-                </Button>
-              </Field>
+              <JournalNotes
+                key={entry.id}
+                entry={entry}
+                notes={notes}
+                setNotes={setNotes}
+                pending={pending || !!action}
+                onSave={() => void save()}
+              />
               {error ? (
                 <p role="alert" className="text-destructive text-sm">
                   {error}

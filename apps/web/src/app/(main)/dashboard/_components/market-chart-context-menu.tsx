@@ -30,7 +30,6 @@ import type { AlertRecord } from "../alerts/_components/alert-types";
 import { CreateAlert } from "../alerts/_components/create-alert";
 import { AddTrade } from "../journal/_components/add-trade";
 import { JournalDeleteTrade } from "../journal/_components/journal-delete-trade";
-import { JournalDetails } from "../journal/_components/journal-details";
 import type { JournalPosition } from "./market-chart-journal-layer";
 import { chartDate, chartPrice } from "./market-chart-utils";
 import type { AlertPosition } from "./use-interactive-market-chart";
@@ -42,7 +41,7 @@ type Target =
   | { kind: "trade"; trade: JournalRecord };
 type Action =
   | { kind: "add-trade" | "add-alert"; point: Point }
-  | { kind: "edit-trade" | "delete-trade" | "trade-details"; trade: JournalRecord }
+  | { kind: "edit-trade" | "delete-trade"; trade: JournalRecord }
   | { kind: "edit-alert" | "delete-alert" | "alert-details"; rule: AlertRecord };
 export function MarketChartContextMenu({
   children,
@@ -221,16 +220,12 @@ export function MarketChartContextMenu({
               </>
             ) : (
               <>
-                <ContextMenuItem
-                  onSelect={() =>
-                    inspectTrade
-                      ? inspectTrade(target.trade.id)
-                      : setAction({ kind: "trade-details", trade: target.trade })
-                  }
-                >
-                  <BookOpen />
-                  View trade details
-                </ContextMenuItem>
+                {inspectTrade ? (
+                  <ContextMenuItem onSelect={() => inspectTrade(target.trade.id)}>
+                    <BookOpen />
+                    View trade details
+                  </ContextMenuItem>
+                ) : null}
                 <ContextMenuItem onSelect={focusTrade}>
                   <Focus />
                   Focus on trade
@@ -268,9 +263,6 @@ export function MarketChartContextMenu({
       {action?.kind === "edit-trade" ? <AddTrade trade={action.trade} close={close} saved={changed} /> : null}
       {action?.kind === "delete-trade" ? (
         <JournalDeleteTrade entry={action.trade} close={close} changed={changed} />
-      ) : null}
-      {action?.kind === "trade-details" ? (
-        <JournalDetails id={action.trade.id} close={close} changed={changed} />
       ) : null}
       {action?.kind === "add-alert" ? (
         <CreateAlert

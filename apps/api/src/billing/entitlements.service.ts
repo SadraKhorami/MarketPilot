@@ -6,6 +6,14 @@ import { DatabaseService } from "../database.module";
 export class EntitlementsService {
   constructor(private readonly db: DatabaseService) {}
 
+  async hasAdminRole(userId: string, store: Prisma.TransactionClient = this.db) {
+    return (
+      (await store.userRole.count({
+        where: { userId, role: { name: "ADMIN" }, user: { status: "ACTIVE" } },
+      })) > 0
+    );
+  }
+
   async locked<T>(userId: string, action: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.db.$transaction(
       async (tx) => {
@@ -51,12 +59,13 @@ export class EntitlementsService {
 
   async consumeIn(tx: Prisma.TransactionClient, userId: string, resource: "ai" | "api") {
     await this.lock(tx, userId);
+    const unlimitedResearch = resource === "ai" && (await this.hasAdminRole(userId, tx));
     const limits = await this.plan(userId, tx);
     const limit = resource === "ai" ? limits.aiDaily : limits.apiDaily;
     const day = new Date().toISOString().slice(0, 10);
     const where = { userId_day_resource: { userId, day, resource } };
     const usage = await tx.quotaUsage.findUnique({ where });
-    if ((usage?.count ?? 0) >= limit) this.exceeded(`${resource} requests today`, limit, true);
+    if (!unlimitedResearch && (usage?.count ?? 0) >= limit) this.exceeded(`${resource} requests today`, limit, true);
     await tx.quotaUsage.upsert({
       where,
       create: { userId, day, resource, count: 1 },

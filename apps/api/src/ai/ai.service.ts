@@ -196,9 +196,13 @@ export class AiService {
         },
         orderBy: { createdAt: "desc" },
         take: 2,
-        select: { input: true, result: true },
+        select: { input: true, result: true, tradeContext: true },
       });
       const history: AIMessage[] = prior.reverse().flatMap((item) => {
+        if (tradeContext?.success) {
+          const previousContext = TradeContextSchema.safeParse(item.tradeContext);
+          if (!previousContext.success || previousContext.data.symbol !== tradeContext.data.symbol) return [];
+        }
         const parsed = ResearchResultSchema.safeParse(item.result);
         return parsed.success
           ? [

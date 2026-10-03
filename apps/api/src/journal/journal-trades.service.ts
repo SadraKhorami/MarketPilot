@@ -475,7 +475,10 @@ export class JournalTradesService {
       profitFactor: grossLoss ? grossWin / grossLoss : null,
       series: [...days]
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([day, value]) => ({ day, net: value, cumulative: (cumulative += value) })),
+        .map(([day, value]) => {
+          cumulative += value;
+          return { day, net: value, cumulative };
+        }),
     };
   }
 }

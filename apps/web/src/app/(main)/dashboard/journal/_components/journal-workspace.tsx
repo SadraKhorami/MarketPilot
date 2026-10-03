@@ -30,7 +30,7 @@ export function JournalWorkspace() {
   const [assistant, setAssistant] = useState(false);
   const [source, setSource] = useState("all");
   const [archived, setArchived] = useState("false");
-  const [selection, setSelection] = useState<string[]>([]);
+  const [selectedRows, setSelectedRows] = useState<{ filters: string; ids: string[] }>({ filters: "", ids: [] });
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -54,9 +54,13 @@ export function JournalWorkspace() {
     ...(status !== "all" ? { status } : {}),
     ...(source !== "all" ? { source } : {}),
   }).toString();
-  useEffect(() => {
-    setSelection([]);
-  }, [filters]);
+  const selection = selectedRows.filters === filters ? selectedRows.ids : [];
+  function setSelection(update: (ids: string[]) => string[]) {
+    setSelectedRows((previous) => ({
+      filters,
+      ids: update(previous.filters === filters ? previous.ids : []),
+    }));
+  }
   const entries = useApiResource<PagedResult<JournalRecord>>(`/journal?page=${page}&pageSize=${pageSize}&${filters}`, {
     keepDataOnReload: true,
   });

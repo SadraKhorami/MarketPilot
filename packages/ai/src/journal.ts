@@ -59,6 +59,21 @@ export interface JournalRecord {
   events: JournalEventRecord[];
 }
 
+export function journalNoteOutcome(entry: {
+  status: string;
+  exits: Array<{ reason: string; occurredAt: string | Date }>;
+  events: Array<{ kind: string; occurredAt: string | Date }>;
+}): "sl" | "tp" | "expired" | null {
+  if (entry.status === "expired") return "expired";
+  if (entry.status === "cancelled") return null;
+  const outcomes = [
+    ...entry.exits.map((exit) => ({ kind: exit.reason, time: new Date(exit.occurredAt).getTime() })),
+    ...entry.events.map((event) => ({ kind: event.kind, time: new Date(event.occurredAt).getTime() })),
+  ].filter((event) => ["sl", "stop", "tp", "target"].includes(event.kind));
+  const latest = outcomes.sort((a, b) => b.time - a.time)[0];
+  return latest ? (["sl", "stop"].includes(latest.kind) ? "sl" : "tp") : null;
+}
+
 export function permitsTradeSetup(input: string) {
   if (/^\s*(?:explain|define|cancel)\b|^\s*(?:توضیح|تعریف|لغو)/iu.test(input)) return false;
   if (

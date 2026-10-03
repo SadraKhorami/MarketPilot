@@ -71,11 +71,21 @@ describe("AI endpoint boundaries", () => {
         ensureConnected: jest.fn().mockResolvedValue(undefined),
         client: { eval: jest.fn().mockResolvedValue(code) },
       };
-      await expect(new AiBudgetService(redis as never).acquire("owner", 0.1)).rejects.toMatchObject({ code: expected });
+      await expect(
+        new AiBudgetService(redis as never, { hasAdminRole: jest.fn().mockResolvedValue(false) } as never).acquire(
+          "owner",
+          0.1,
+        ),
+      ).rejects.toMatchObject({ code: expected });
       expect(redis.client.eval.mock.calls[0]).toContain("marketpilot:ai:active:owner");
     }
     const redis = { ensureConnected: jest.fn().mockRejectedValue(new Error("offline")) };
-    await expect(new AiBudgetService(redis as never).acquire("owner", 0.1)).rejects.toMatchObject({
+    await expect(
+      new AiBudgetService(redis as never, { hasAdminRole: jest.fn().mockResolvedValue(false) } as never).acquire(
+        "owner",
+        0.1,
+      ),
+    ).rejects.toMatchObject({
       code: "AI_LIMITS_UNAVAILABLE",
     });
   });

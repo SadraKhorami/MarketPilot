@@ -152,11 +152,7 @@ export function JournalAnalyticsWorkspace() {
   return (
     <MarketPilotPage title="Journal analytics" description="Understand your results, consistency and trading costs.">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p
-          className="min-w-0 flex-1 text-muted-foreground text-sm"
-          aria-label="Applied performance filters"
-          aria-live="polite"
-        >
+        <p className="min-w-0 flex-1 text-muted-foreground text-sm" aria-live="polite">
           {filters.map((filter) => filter.label).join(" · ")}
         </p>
         <Popover>

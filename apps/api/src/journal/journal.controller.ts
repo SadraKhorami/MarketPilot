@@ -79,6 +79,12 @@ export class JournalController {
   @Post("import/confirm") async importTrades(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return { data: await this.imports.commit(user.id, body) };
   }
+  @Post(":id/note-draft") async draftNote(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return { data: await this.assistant.draftNote(user.id, id) };
+  }
   @Post(":id/archive") async archive(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,

@@ -18,6 +18,7 @@ import { MarketAlertHistory } from "../markets/_components/market-alert-history"
 import { pricePrecision } from "./market-chart-utils";
 import { MarketPilotPage } from "./marketpilot-page";
 import { MomentumPanel } from "./momentum-panel";
+import { useLiveMarket } from "./use-live-market";
 
 interface MarketSnapshot {
   source: string;
@@ -91,7 +92,8 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
     };
   }, [load, autoRefresh]);
 
-  const data = snapshot?.data;
+  const liveMarket = useLiveMarket(snapshot?.data, autoRefresh, () => void load());
+  const data = liveMarket.data;
   const firstCandleOpen = data?.candles[0]?.open;
   const relativeChange = data && firstCandleOpen ? ((data.price - firstCandleOpen) / firstCandleOpen) * 100 : null;
   const fetchedAt = snapshot ? new Date(snapshot.fetchedAt) : null;
@@ -208,7 +210,34 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
               stale={isStale}
               status={
                 <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
-                  <span>{isStale ? "Cached data" : autoRefresh ? "Auto · every minute" : "Updates paused"}</span>
+                  <span
+                    className="flex items-center gap-1.5"
+                    role="status"
+                    title={
+                      liveMarket.lastUpdate
+                        ? `Last price received ${new Date(liveMarket.lastUpdate).toLocaleTimeString()}`
+                        : undefined
+                    }
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`size-1.5 rounded-full ${liveMarket.connection === "live" ? "bg-emerald-500" : "bg-muted-foreground"}`}
+                    />
+                    {liveMarket.connection === "live"
+                      ? "Live · price"
+                      : liveMarket.connection === "connecting"
+                        ? "Connecting…"
+                        : liveMarket.connection === "reconnecting"
+                          ? "Reconnecting · periodic updates"
+                          : liveMarket.connection === "paused"
+                            ? "Updates paused"
+                            : isStale
+                              ? "Cached data"
+                              : "Periodic · every minute"}
+                  </span>
+                  {liveMarket.lastUpdate ? (
+                    <span className="tabular-nums">{new Date(liveMarket.lastUpdate).toLocaleTimeString()}</span>
+                  ) : null}
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -230,13 +259,13 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
               }
             />
             <div className="flex min-w-0 flex-col gap-4">
-              <MomentumPanel data={data} />
+              <MomentumPanel data={snapshot!.data} />
 
               <Card className="shadow-none">
                 <CardHeader>
                   <CardTitle className="text-base">Signals and key levels</CardTitle>
                   <CardDescription>
-                    Calculated from all {data.candles.length} available {data.interval} candles.
+                    Indicators & volume refresh every minute · {snapshot!.data.candles.length} {data.interval} candles.
                     {data.candles.length < 200 ? " The long-term average and trend require 200 candles." : ""}
                   </CardDescription>
                 </CardHeader>
@@ -287,7 +316,7 @@ export function MarketDataWorkspace({ title, description, initialSymbol = "BTC-U
 
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-muted-foreground text-xs">
             <span>
-              Source: {marketSourceLabel(snapshot.source)} · Provider observation{" "}
+              Source: {marketSourceLabel(data.source ?? snapshot?.source ?? "unavailable")} · Provider observation{" "}
               {new Date(data.timestamp).toLocaleString()}
             </span>
             <span>

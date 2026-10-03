@@ -106,7 +106,9 @@ export function AIAnalystWorkspace() {
     if (!question || disabled) return;
     setTradeRequest(null);
     setInput("");
-    void research.send(question, watchlistId === "default" ? undefined : watchlistId, undefined, context);
+    const confirmedQuestion = question.replace(/\b[A-Z]{2,10}-(?:USD|USDT|EUR|GBP)\b/gi, context.symbol);
+    setSymbol(context.symbol);
+    void research.send(confirmedQuestion, watchlistId === "default" ? undefined : watchlistId, undefined, context);
   }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
