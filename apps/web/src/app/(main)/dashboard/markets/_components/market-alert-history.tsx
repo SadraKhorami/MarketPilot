@@ -89,11 +89,13 @@ export function MarketAlertHistory({
     };
     const timer = window.setInterval(refresh, 30_000);
     window.addEventListener("focus", refresh);
+    window.addEventListener("marketpilot:alerts-changed", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       controller.abort();
       window.clearInterval(timer);
       window.removeEventListener("focus", refresh);
+      window.removeEventListener("marketpilot:alerts-changed", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [data.symbol, revision]);

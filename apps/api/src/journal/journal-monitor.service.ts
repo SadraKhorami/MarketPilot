@@ -2,6 +2,7 @@ import { TradeSetupSchema } from "@marketpilot/ai";
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { DatabaseService } from "../database.module";
 import { MarketDataService } from "../market-data/market-data.service";
+import { trackAutomatic } from "./journal-auto-tracking";
 import { JournalService } from "./journal.service";
 const durations = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3600_000, "6h": 21600_000, "1d": 86400_000 };
 @Injectable()
@@ -48,9 +49,13 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
             await tx.$queryRaw`SELECT id FROM "JournalEntry" WHERE id = ${entry.id}::uuid FOR UPDATE`;
             const current = await tx.journalEntry.findUniqueOrThrow({
               where: { id: entry.id },
-              include: { events: true },
+              include: { events: true, exits: true },
             });
             if (!["planned", "open"].includes(current.status)) return;
+            if (current.trackingMode === "automatic") {
+              await trackAutomatic(tx, current, snapshot);
+              return;
+            }
             const start = Math.max(
               current.checkedAt?.getTime() ?? current.createdAt.getTime(),
               current.openedAt?.getTime() ?? 0,

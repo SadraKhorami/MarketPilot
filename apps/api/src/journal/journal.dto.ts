@@ -1,6 +1,24 @@
-import { Equals, IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
+import {
+  Equals,
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsDateString,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from "class-validator";
 import { PageQueryDto } from "../common/request-query.dto";
 export class JournalQueryDto extends PageQueryDto {
+  @IsOptional() @IsIn(["ai", "manual", "import"]) source?: string;
+  @IsOptional() @IsIn(["recorded", "estimated"]) basis?: string;
+  @IsOptional() @IsIn(["true", "false"]) archived?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
+  @IsOptional() @IsString() @MaxLength(16) quote?: string;
   @IsOptional() @IsIn(["planned", "open", "closed", "cancelled", "expired"]) status?: string;
   @IsOptional() @IsString() @MaxLength(32) symbol?: string;
 }

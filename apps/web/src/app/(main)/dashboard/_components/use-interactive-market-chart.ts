@@ -406,11 +406,13 @@ export function useInteractiveMarketChart({
     }
   }, [journal, alerts]);
 
-  const focusJournal = (target = journal) => {
+  const focusJournal = (target = journal, includeInactive = false) => {
     const current = runtime.current;
     if (!current || !target) return;
     const active =
-      target.status === "open" || (target.status === "planned" && Date.parse(target.plan.expiresAt) > Date.now());
+      includeInactive ||
+      target.status === "open" ||
+      (target.status === "planned" && Date.parse(target.plan.expiresAt) > Date.now());
     const prices = [
       target.entryPrice ?? target.plan.entry,
       data.price,
@@ -460,5 +462,31 @@ export function useInteractiveMarketChart({
     }
     current.schedule();
   };
-  return { container, geometry, hovered, zoom, reset, focusAlert, focusJournal };
+  const contextPoint = (x: number, y: number) => {
+    const current = runtime.current;
+    if (!current || view === "volume" || x < 0 || y < 0 || x > geometry.width || y > geometry.height) return null;
+    const series = view === "candles" ? current.candles : current.line;
+    const price = series.coordinateToPrice(y);
+    const logical = current.chart.timeScale().coordinateToLogical(x);
+    if (price === null || !Number.isFinite(price) || price <= 0 || logical === null || !data.candles.length)
+      return null;
+    const index = Math.floor(Number(logical));
+    const fraction = Number(logical) - index;
+    const first = data.candles[0];
+    const last = data.candles.at(-1);
+    if (!last) return null;
+    const duration =
+      data.candles.length > 1 ? Date.parse(last.time) - Date.parse(data.candles[data.candles.length - 2].time) : 60_000;
+    const timestamp =
+      index < 0
+        ? Date.parse(first.time) + Number(logical) * duration
+        : index >= data.candles.length - 1
+          ? Date.parse(last.time) + (Number(logical) - data.candles.length + 1) * duration
+          : Date.parse(data.candles[index].time) +
+            fraction * (Date.parse(data.candles[index + 1].time) - Date.parse(data.candles[index].time));
+    if (!Number.isFinite(timestamp) || timestamp <= 0 || timestamp > 8640000000000000) return null;
+    const roundedPrice = Number(price.toFixed(pricePrecision(data.price)));
+    return { price: roundedPrice > 0 ? roundedPrice : price, time: new Date(timestamp).toISOString() };
+  };
+  return { container, geometry, hovered, zoom, reset, focusAlert, focusJournal, contextPoint };
 }

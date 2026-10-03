@@ -1,11 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 
-import Link from "next/link";
+import type { JournalRecord } from "@marketpilot/ai/contracts";
+import { BookOpen, Search, Plus, FileUp, Sparkles } from "lucide-react";
 
-import type { JournalRecord, TradePreferences } from "@marketpilot/ai/contracts";
-import { BookOpen, Search, Settings2, Sparkles } from "lucide-react";
-
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,10 +20,17 @@ import { MarketDetailsLink } from "../../_components/market-details-link";
 import { MarketPilotPage } from "../../_components/marketpilot-page";
 import { ResourceState } from "../../_components/resource-state";
 import { JournalDetails, journalProfit } from "./journal-details";
-import { JournalPreferences } from "./journal-preferences";
+import { AddTrade } from "./add-trade";
+import { JournalActions } from "./journal-actions";
+import { JournalImport } from "./journal-import";
+import { JournalAssistant } from "./journal-assistant";
 export function JournalWorkspace() {
-  const preferences = useApiResource<TradePreferences>("/journal/preferences");
-  const [settings, setSettings] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [assistant, setAssistant] = useState(false);
+  const [source, setSource] = useState("all");
+  const [archived, setArchived] = useState("false");
+  const [selection, setSelection] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -42,10 +48,18 @@ export function JournalWorkspace() {
     }, 250);
     return () => clearTimeout(timer);
   }, [search]);
-  const entries = useApiResource<PagedResult<JournalRecord>>(
-    `/journal?page=${page}&pageSize=${pageSize}&search=${encodeURIComponent(debounced)}${status === "all" ? "" : `&status=${status}`}`,
-    { keepDataOnReload: true },
-  );
+  const filters = new URLSearchParams({
+    search: debounced,
+    archived,
+    ...(status !== "all" ? { status } : {}),
+    ...(source !== "all" ? { source } : {}),
+  }).toString();
+  useEffect(() => {
+    setSelection([]);
+  }, [filters]);
+  const entries = useApiResource<PagedResult<JournalRecord>>(`/journal?page=${page}&pageSize=${pageSize}&${filters}`, {
+    keepDataOnReload: true,
+  });
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") entries.reload();
@@ -60,70 +74,34 @@ export function JournalWorkspace() {
   return (
     <MarketPilotPage
       title="Journal"
-      description="Turn a market idea into a plan. Record your execution and learn from the outcome."
+      description="Track manual trades, imported executions and AI plans in one journal."
       actions={
         <>
+          <Button variant="outline" onClick={() => setImporting(true)}>
+            <FileUp data-icon="inline-start" />
+            Import
+          </Button>
           <Button
             variant="outline"
-            disabled={!preferences.data}
-            onClick={() => setSettings(true)}
-            aria-label="Trading preferences"
+            size="icon"
+            aria-label="Journal assistant"
+            title="Journal assistant"
+            onClick={() => setAssistant(true)}
           >
-            <Settings2 data-icon="inline-start" />
-            Trading memory
+            <Sparkles />
           </Button>
-          <Button asChild>
-            <Link href="/dashboard/ai-analyst">
-              <Sparkles data-icon="inline-start" />
-              New AI plan
-            </Link>
+          <Button onClick={() => setAdding(true)}>
+            <Plus data-icon="inline-start" />
+            Add trade
           </Button>
         </>
       }
     >
-      <Card className="shadow-none">
-        <CardHeader>
-          <CardTitle>Trading memory</CardTitle>
-          <CardDescription>
-            Used as a starting point in AI chat. Every new plan still asks for confirmation.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center justify-between gap-4">
-          <ResourceState
-            loading={preferences.loading}
-            error={preferences.error}
-            title="Preferences unavailable"
-            retry={preferences.reload}
-          />
-          {preferences.data ? (
-            <>
-              <dl className="flex flex-wrap gap-x-8 gap-y-3">
-                {[
-                  [
-                    "Capital",
-                    preferences.data.capital
-                      ? `${chartPrice(preferences.data.capital)} ${preferences.data.currency}`
-                      : "Not supplied",
-                  ],
-                  ["Risk limit", `${preferences.data.riskPercent}% per trade`],
-                  ["Timeframe", `${preferences.data.interval} · ${preferences.data.holding}`],
-                  ["AI event comments", preferences.data.autoReview ? "On · uses allowance" : "Off"],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <dt className="text-muted-foreground text-xs">{label}</dt>
-                    <dd className="mt-1 font-medium text-sm">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
       <Card className="overflow-hidden shadow-none">
         <CardHeader>
           <CardTitle>Your plans & trades</CardTitle>
           <CardDescription>
-            Price touches are observations. Only your confirmation records an actual entry or exit.
+            Automatic tracking records candle-based estimates. Broker executions and estimated results stay distinct.
           </CardDescription>
           <div className="flex flex-wrap gap-2 pt-2">
             <InputGroup className="w-full sm:w-80">
@@ -157,6 +135,54 @@ export function JournalWorkspace() {
                 </SelectGroup>
               </SelectContent>
             </Select>
+            <Select
+              value={source}
+              onValueChange={(v) => {
+                setSource(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-36" aria-label="Trade source">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {[
+                    ["all", "All sources"],
+                    ["manual", "Manual"],
+                    ["ai", "AI"],
+                    ["import", "Imported"],
+                  ].map(([v, text]) => (
+                    <SelectItem key={v} value={v}>
+                      {text}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
+              value={archived}
+              onValueChange={(v) => {
+                setArchived(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-36" aria-label="Journal archive">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="false">Active journal</SelectItem>
+                  <SelectItem value="true">Archived</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            {selection.length ? (
+              <Button variant="outline" size="sm" onClick={() => setAssistant(true)}>
+                <Sparkles data-icon="inline-start" />
+                Ask about {selection.length} selected
+              </Button>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent className="px-0">
@@ -170,7 +196,22 @@ export function JournalWorkspace() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-6">Market / side</TableHead>
+                  <TableHead className="pl-6">
+                    <Checkbox
+                      aria-label="Select page for journal assistant"
+                      checked={
+                        !!entries.data?.items.length && entries.data.items.every((e) => selection.includes(e.id))
+                      }
+                      onCheckedChange={(checked) =>
+                        setSelection((ids) =>
+                          checked === true
+                            ? [...new Set([...ids, ...(entries.data?.items.map((e) => e.id) ?? [])])].slice(0, 50)
+                            : ids.filter((id) => !entries.data?.items.some((e) => e.id === id)),
+                        )
+                      }
+                    />
+                  </TableHead>
+                  <TableHead>Market / side</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Entry / SL</TableHead>
                   <TableHead>Targets</TableHead>
@@ -184,14 +225,32 @@ export function JournalWorkspace() {
                   return (
                     <TableRow key={entry.id}>
                       <TableCell className="pl-6">
+                        <Checkbox
+                          aria-label={`Select ${entry.symbol} trade`}
+                          checked={selection.includes(entry.id)}
+                          disabled={!selection.includes(entry.id) && selection.length >= 50}
+                          onCheckedChange={(checked) =>
+                            setSelection((ids) =>
+                              checked === true ? [...ids, entry.id] : ids.filter((id) => id !== entry.id),
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
                         <span className="font-medium">{entry.symbol}</span>
                         <p className="mt-1 text-muted-foreground text-xs">
                           {entry.plan.direction === "BUY" ? "Long" : "Short"} · {entry.plan.interval} ·{" "}
-                          {new Date(entry.createdAt).toLocaleDateString()}
+                          {new Date(entry.openedAt ?? entry.createdAt).toLocaleDateString()}
                         </p>
+                        <span className="text-muted-foreground text-xs">
+                          {entry.source === "ai" ? "AI plan" : entry.source === "import" ? "Imported" : "Manual"}
+                        </span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={entry.status === "open" ? "default" : "outline"}>{entry.status}</Badge>
+                        {entry.monitoringStatus?.startsWith("Needs review") ? (
+                          <p className="mt-1 text-muted-foreground text-xs">Needs review</p>
+                        ) : null}
                       </TableCell>
                       <TableCell className="tabular-nums">
                         {chartPrice(entry.plan.entry)}
@@ -203,22 +262,23 @@ export function JournalWorkspace() {
                         <span>
                           {entry.plan.targets.length} target{entry.plan.targets.length > 1 ? "s" : ""}
                         </span>
-                        <p className="mt-1 text-muted-foreground text-xs">{entry.context.riskPercent}% risk limit</p>
+                        <p className="mt-1 text-muted-foreground text-xs">
+                          {entry.quantity ? `${entry.quantity} units` : `${entry.context.riskPercent}% risk limit`}
+                        </p>
                       </TableCell>
                       <TableCell className="tabular-nums">
                         {profit === null ? "—" : `${profit >= 0 ? "+" : ""}${chartPrice(profit)} ${entry.plan.quote}`}
+                        {profit !== null ? (
+                          <p className="mt-1 text-muted-foreground text-xs">
+                            {entry.resultBasis === "estimated" ? "Estimated" : "Recorded"}
+                            {entry.status === "open" ? " · partial exits" : ""}
+                          </p>
+                        ) : null}
                       </TableCell>
                       <TableCell className="pr-6 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <MarketDetailsLink symbol={entry.symbol} />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Open ${entry.symbol} journal details`}
-                            onClick={() => setSelected(entry.id)}
-                          >
-                            View
-                          </Button>
+                          <JournalActions entry={entry} view={() => setSelected(entry.id)} changed={entries.reload} />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -233,17 +293,17 @@ export function JournalWorkspace() {
                   <BookOpen />
                 </EmptyMedia>
                 <EmptyTitle>
-                  {debounced || status !== "all" ? "No matching entries" : "Your first plan starts in AI chat"}
+                  {debounced || status !== "all" ? "No matching entries" : "Start your trading journal"}
                 </EmptyTitle>
                 <EmptyDescription>
                   {debounced || status !== "all"
                     ? "Try another market or status."
-                    : "Choose Entry, stop loss & targets, confirm your context, then save the plan here."}
+                    : "Add a trade manually, import your existing journal or save an AI plan."}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="outline" asChild>
-                  <Link href="/dashboard/ai-analyst">Create an AI plan</Link>
+                <Button variant="outline" onClick={() => setAdding(true)}>
+                  Add trade
                 </Button>
               </EmptyContent>
             </Empty>
@@ -262,8 +322,15 @@ export function JournalWorkspace() {
           />
         ) : null}
       </Card>
-      {settings && preferences.data ? (
-        <JournalPreferences initial={preferences.data} close={() => setSettings(false)} saved={preferences.reload} />
+      {adding ? <AddTrade close={() => setAdding(false)} saved={entries.reload} /> : null}
+      {importing ? <JournalImport close={() => setImporting(false)} changed={entries.reload} /> : null}
+      {assistant ? (
+        <JournalAssistant
+          close={() => setAssistant(false)}
+          query={filters}
+          selected={selection}
+          changed={entries.reload}
+        />
       ) : null}
       {selected ? (
         <JournalDetails key={selected} id={selected} close={() => setSelected(null)} changed={entries.reload} />

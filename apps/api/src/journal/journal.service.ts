@@ -25,6 +25,7 @@ import { EntitlementsService } from "../billing/entitlements.service";
 import { pageResult } from "../common/request-query.dto";
 import { DatabaseService } from "../database.module";
 import { MarketDataService } from "../market-data/market-data.service";
+import { journalWhere } from "./journal-trades.service";
 import type { JournalQueryDto, JournalUpdateDto } from "./journal.dto";
 
 @Injectable()
@@ -73,7 +74,7 @@ export class JournalService {
         UPDATE "JournalEntry"
         SET status = 'expired', "updatedAt" = ${now},
             "monitoringStatus" = 'Plan validity ended. Request a fresh analysis.'
-        WHERE status = 'planned'
+        WHERE status = 'planned' AND "trackingMode" = 'observed'
           ${userId ? Prisma.sql`AND "userId" = ${userId}::uuid` : Prisma.empty}
           AND (plan->>'expiresAt')::timestamptz <= ${now}
         RETURNING id, (plan->>'expiresAt')::timestamptz AS "expiresAt"
@@ -94,18 +95,11 @@ export class JournalService {
   }
   async list(userId: string, query: JournalQueryDto, symbol?: string) {
     await this.expirePlans(userId);
-    const where = {
-      userId,
-      ...(query.status ? { status: query.status } : {}),
-      AND: [
-        ...(symbol ? [{ symbol }] : []),
-        ...(query.search ? [{ symbol: { contains: query.search, mode: "insensitive" as const } }] : []),
-      ],
-    };
+    const where = { ...journalWhere(userId, query), ...(symbol ? { symbol } : {}) };
     const [items, total] = await this.db.$transaction([
       this.db.journalEntry.findMany({
         where,
-        include: { events: { orderBy: { occurredAt: "desc" }, take: 30 } },
+        include: { exits: { orderBy: { occurredAt: "asc" } }, events: { orderBy: { occurredAt: "desc" }, take: 30 } },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -118,7 +112,7 @@ export class JournalService {
     await this.expirePlans(userId);
     const entry = await this.db.journalEntry.findFirst({
       where: { userId, id },
-      include: { events: { orderBy: { occurredAt: "desc" } } },
+      include: { exits: { orderBy: { occurredAt: "asc" } }, events: { orderBy: { occurredAt: "desc" } } },
     });
     if (!entry) throw new NotFoundException("Journal entry not found.");
     return entry;
@@ -223,7 +217,7 @@ export class JournalService {
         });
       return tx.journalEntry.findUniqueOrThrow({
         where: { id },
-        include: { events: { orderBy: { occurredAt: "desc" } } },
+        include: { exits: { orderBy: { occurredAt: "asc" } }, events: { orderBy: { occurredAt: "desc" } } },
       });
     });
   }

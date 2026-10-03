@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -59,17 +60,29 @@ const schema = z
       ctx.addIssue({ code: "custom", path: ["threshold"], message: "RSI must be between 0 and 100." });
   });
 type Draft = z.infer<typeof schema>;
-export function CreateAlert({ saved }: { saved: () => void }) {
-  const [open, setOpen] = useState(false);
+export function CreateAlert({
+  saved,
+  close,
+  initial,
+  edit,
+}: {
+  saved: () => void;
+  close?: () => void;
+  initial?: { asset: string; threshold: string; interval: string; condition: Draft["condition"] };
+  edit?: AlertRecord;
+}) {
+  const [open, setOpen] = useState(!!close);
+  const intervals = ["1m", "5m", "15m", "1h", "6h", "1d"] as const;
+  const interval = intervals.find((value) => value === (edit?.interval ?? initial?.interval)) ?? "15m";
   const form = useForm<Draft>({
     resolver: zodResolver(schema),
     defaultValues: {
-      name: "",
-      asset: "BTC-USD",
-      condition: "PRICE_ABOVE",
-      threshold: "",
-      interval: "15m",
-      cooldown: "60",
+      name: edit?.name ?? (initial ? `${initial.asset} price alert` : ""),
+      asset: edit?.assetId ?? initial?.asset ?? "BTC-USD",
+      condition: edit?.condition ?? initial?.condition ?? "PRICE_ABOVE",
+      threshold: edit?.threshold ?? initial?.threshold ?? "",
+      interval,
+      cooldown: String(edit?.cooldownMinutes ?? 60),
     },
   });
   const condition = form.watch("condition");
@@ -77,8 +90,8 @@ export function CreateAlert({ saved }: { saved: () => void }) {
   const unit = condition.startsWith("PERCENT_") ? "% per completed candle" : thresholdUnit;
   async function create(draft: Draft) {
     try {
-      await apiRequest<ApiEnvelope<AlertRecord>>("/alerts", {
-        method: "POST",
+      await apiRequest<ApiEnvelope<AlertRecord>>(edit ? `/alerts/${edit.id}` : "/alerts", {
+        method: edit ? "PATCH" : "POST",
         body: JSON.stringify({
           name: draft.name,
           assetId: normalizeMarketSymbol(draft.asset),
@@ -91,11 +104,148 @@ export function CreateAlert({ saved }: { saved: () => void }) {
       form.reset();
       setOpen(false);
       saved();
-      toast.success("Alert saved. Waiting for its first observation.");
+      close?.();
+      window.dispatchEvent(new Event("marketpilot:alerts-changed"));
+      toast.success(
+        edit ? "Alert updated. Waiting for a fresh baseline." : "Alert saved. Waiting for its first observation.",
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save the alert.");
     }
   }
+  const content = (
+    <form onSubmit={form.handleSubmit(create)} className="flex flex-col gap-4">
+      <FieldGroup>
+        <Controller
+          control={form.control}
+          name="name"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="alert-name">Name</FieldLabel>
+              <Input {...field} id="alert-name" aria-invalid={fieldState.invalid} placeholder="BTC breakout" />
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
+        />
+        <Controller
+          control={form.control}
+          name="asset"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="alert-asset">Market</FieldLabel>
+              <MarketSymbolField id="alert-asset" value={field.value} onChange={field.onChange} />
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
+        />
+        <Controller
+          control={form.control}
+          name="condition"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="alert-condition">Condition</FieldLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger id="alert-condition" className="w-full" aria-invalid={fieldState.invalid}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {Object.entries(conditions).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
+        />
+        <Controller
+          control={form.control}
+          name="threshold"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="alert-threshold">Threshold ({unit})</FieldLabel>
+              <Input {...field} id="alert-threshold" inputMode="decimal" aria-invalid={fieldState.invalid} />
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
+        />
+        <Controller
+          control={form.control}
+          name="interval"
+          render={({ field }) => (
+            <Field>
+              <FieldLabel htmlFor="alert-interval">Candle timeframe</FieldLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger id="alert-interval" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {["1m", "5m", "15m", "1h", "6h", "1d"].map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+        />
+        <Controller
+          control={form.control}
+          name="cooldown"
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="alert-cooldown">Minimum minutes between triggers</FieldLabel>
+              <Input {...field} id="alert-cooldown" inputMode="numeric" aria-invalid={fieldState.invalid} />
+              <FieldError errors={[fieldState.error]} />
+            </Field>
+          )}
+        />
+      </FieldGroup>
+      <p className="text-muted-foreground text-xs">
+        Delivery follows inbox preferences and any verified bots you have opted into. RSI and percentage change use
+        completed candles. A new crossing during cooldown is skipped.
+      </p>
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={form.formState.isSubmitting}
+          onClick={() => (close ? close() : setOpen(false))}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? "Saving…" : edit ? "Save changes" : "Save alert"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+  if (close)
+    return (
+      <Sheet
+        open
+        onOpenChange={(value) => {
+          if (!value && !form.formState.isSubmitting) close();
+        }}
+      >
+        <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>{edit ? "Edit alert" : "Create alert"}</SheetTitle>
+            <SheetDescription>
+              Notify on a crossing after the first observation establishes a baseline.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{content}</div>
+        </SheetContent>
+      </Sheet>
+    );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -111,113 +261,7 @@ export function CreateAlert({ saved }: { saved: () => void }) {
             Notify on a crossing after the first observation establishes a baseline.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(create)} className="flex flex-col gap-4">
-          <FieldGroup>
-            <Controller
-              control={form.control}
-              name="name"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="alert-name">Name</FieldLabel>
-                  <Input {...field} id="alert-name" aria-invalid={fieldState.invalid} placeholder="BTC breakout" />
-                  <FieldError errors={[fieldState.error]} />
-                </Field>
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="asset"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="alert-asset">Market</FieldLabel>
-                  <MarketSymbolField id="alert-asset" value={field.value} onChange={field.onChange} />
-                  <FieldError errors={[fieldState.error]} />
-                </Field>
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="condition"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="alert-condition">Condition</FieldLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger id="alert-condition" className="w-full" aria-invalid={fieldState.invalid}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {Object.entries(conditions).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <FieldError errors={[fieldState.error]} />
-                </Field>
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="threshold"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="alert-threshold">Threshold ({unit})</FieldLabel>
-                  <Input {...field} id="alert-threshold" inputMode="decimal" aria-invalid={fieldState.invalid} />
-                  <FieldError errors={[fieldState.error]} />
-                </Field>
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="interval"
-              render={({ field }) => (
-                <Field>
-                  <FieldLabel htmlFor="alert-interval">Candle timeframe</FieldLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger id="alert-interval" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {["1m", "5m", "15m", "1h", "6h", "1d"].map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {value}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="cooldown"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="alert-cooldown">Minimum minutes between triggers</FieldLabel>
-                  <Input {...field} id="alert-cooldown" inputMode="numeric" aria-invalid={fieldState.invalid} />
-                  <FieldError errors={[fieldState.error]} />
-                </Field>
-              )}
-            />
-          </FieldGroup>
-          <p className="text-muted-foreground text-xs">
-            Delivery follows inbox preferences and any verified bots you have opted into. RSI and percentage change use
-            completed candles. A new crossing during cooldown is skipped.
-          </p>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting ? "Saving…" : "Save alert"}
-            </Button>
-          </DialogFooter>
-        </form>
+        {content}
       </DialogContent>
     </Dialog>
   );

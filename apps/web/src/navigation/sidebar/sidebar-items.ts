@@ -81,7 +81,20 @@ export const sidebarItems: NavGroup[] = [
           { id: "watchlist", title: "Watchlist", url: "/dashboard/watchlist", icon: Bookmark },
         ],
       },
-      { id: "journal", title: "Journal", url: "/dashboard/journal", icon: BookOpen },
+      {
+        id: "journal",
+        title: "Journal",
+        icon: BookOpen,
+        subItems: [
+          { id: "journal-trades", title: "Trades", url: "/dashboard/journal", icon: BookOpen },
+          {
+            id: "journal-analytics",
+            title: "Analytics",
+            url: "/dashboard/journal/analytics",
+            icon: ChartNoAxesCombined,
+          },
+        ],
+      },
       { id: "ai-analyst", title: "AI Analyst", url: "/dashboard/ai-analyst", icon: Sparkles },
       { id: "news", title: "News & Sentiment", url: "/dashboard/news-and-sentiment", icon: Newspaper },
       { id: "alerts", title: "Alerts", url: "/dashboard/alerts", icon: BellRing },

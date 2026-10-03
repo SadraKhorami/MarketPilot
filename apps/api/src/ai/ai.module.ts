@@ -4,6 +4,9 @@ import { AlertsService } from "../alerts/alerts.service";
 import { ActivityService } from "../common/activity.service";
 import { JournalMonitorService } from "../journal/journal-monitor.service";
 import { JournalController } from "../journal/journal.controller";
+import { JournalAssistantService } from "../journal/journal-assistant.service";
+import { JournalTradesService } from "../journal/journal-trades.service";
+import { JournalImportService } from "../journal/journal-import.service";
 import { JournalService } from "../journal/journal.service";
 import { MarketDataModule } from "../market-data/market-data.module";
 import { NewsService } from "../news/news.service";
@@ -29,6 +32,9 @@ import { EntryAlertsService } from "./entry-alerts.service";
     AiModelsService,
     AiConversationsService,
     JournalService,
+    JournalTradesService,
+    JournalAssistantService,
+    JournalImportService,
     JournalMonitorService,
     AiToolsService,
     EntryAlertsService,

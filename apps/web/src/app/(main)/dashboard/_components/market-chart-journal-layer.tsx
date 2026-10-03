@@ -2,6 +2,7 @@
 import type { JournalRecord } from "@marketpilot/ai/contracts";
 import { BookOpen } from "lucide-react";
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,11 +26,18 @@ export interface JournalPosition {
 }
 export function journalChartWindow(entry: JournalRecord, latestTime: string) {
   const start = Date.parse(entry.openedAt ?? entry.createdAt);
-  const end = entry.status === "planned" ? Date.parse(entry.plan.expiresAt) : Date.parse(entry.closedAt ?? latestTime);
+  const inactiveTime = entry.events?.find((event) => event.kind === entry.status)?.occurredAt;
+  const end =
+    entry.status === "planned"
+      ? Date.parse(entry.plan.expiresAt)
+      : Date.parse(
+          entry.closedAt ??
+            (["expired", "cancelled"].includes(entry.status) ? (inactiveTime ?? entry.plan.expiresAt) : latestTime),
+        );
   return { start, end: Math.max(start, end) };
 }
 export function journalChartStatus(entry: JournalRecord): JournalRecord["status"] {
-  return entry.status === "planned" && Date.parse(entry.plan.expiresAt) <= Date.now() ? "expired" : entry.status;
+  return entry.status;
 }
 export function MarketChartJournalLayer({
   entry,
@@ -38,6 +46,7 @@ export function MarketChartJournalLayer({
   height,
   onSelect,
   marker,
+  preview = false,
 }: {
   entry: JournalRecord;
   position: JournalPosition;
@@ -45,9 +54,12 @@ export function MarketChartJournalLayer({
   height: number;
   onSelect?: (id: string) => void;
   marker?: PlacedChartMarker;
+  preview?: boolean;
 }) {
   const status = journalChartStatus(entry);
-  const active = status === "planned" || status === "open";
+  const needsReview = entry.monitoringStatus?.startsWith("Needs review") ?? false;
+  const active = (status === "planned" || status === "open") && !needsReview;
+  const showLevels = active || preview;
   const end = Math.max(position.x, Math.min(position.endX, width));
   const target = position.targets.at(-1) ?? position.entry;
   const top = Math.max(0, Math.min(position.entry, target));
@@ -68,7 +80,7 @@ export function MarketChartJournalLayer({
   });
   return (
     <>
-      {active ? (
+      {showLevels ? (
         <>
           <svg
             aria-hidden="true"
@@ -148,26 +160,43 @@ export function MarketChartJournalLayer({
             <circle cx={position.x} cy={position.entry} r={3} className="fill-background stroke-muted-foreground" />
           </svg>
           <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant={active ? "secondary" : "outline"}
-                size="icon-xs"
-                className="absolute rounded-full shadow-sm"
-                style={{ left: marker.left, top: marker.top, width: marker.width }}
-                aria-label={`${entry.symbol} ${entry.plan.direction === "BUY" ? "Long" : "Short"} journal plan: ${status}`}
-                title={`${entry.plan.direction === "BUY" ? "Long" : "Short"} · ${status} — Journal details`}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={active ? "secondary" : "outline"}
+                    size="icon-xs"
+                    className="absolute rounded-full shadow-sm"
+                    style={{ left: marker.left, top: marker.top, width: marker.width }}
+                    aria-label={`${entry.symbol} ${entry.plan.direction === "BUY" ? "Long" : "Short"} journal plan: ${status}`}
+                    data-chart-trade={entry.id}
+                  >
+                    <BookOpen data-icon="inline-start" />
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent
+                sideOffset={8}
+                className="border bg-background/80 text-foreground shadow-sm backdrop-blur-md [&_.rotate-45]:hidden!"
               >
-                <BookOpen data-icon="inline-start" />
-              </Button>
-            </PopoverTrigger>
+                {entry.plan.direction === "BUY" ? "Long" : "Short"} · {status}
+                {needsReview ? " · Needs review" : ""}
+              </TooltipContent>
+            </Tooltip>
             <PopoverContent collisionPadding={16} className="w-80 max-w-[calc(100vw-2rem)]">
               <PopoverHeader>
                 <PopoverTitle>
                   {entry.symbol} · {entry.plan.direction === "BUY" ? "Long" : "Short"}
                 </PopoverTitle>
                 <PopoverDescription>
-                  {entry.entryPrice !== null ? "Recorded entry with planned levels" : "Saved journal plan"} ·{" "}
-                  {entry.plan.interval}
+                  {entry.resultBasis === "estimated"
+                    ? "Estimated journal trade"
+                    : entry.entryPrice !== null
+                      ? "Recorded trade with planned levels"
+                      : entry.source === "ai"
+                        ? "Saved AI plan"
+                        : "Waiting journal plan"}{" "}
+                  · {entry.plan.interval}
                 </PopoverDescription>
               </PopoverHeader>
               <Badge variant="outline">{status}</Badge>
@@ -185,11 +214,15 @@ export function MarketChartJournalLayer({
                 {entry.openedAt
                   ? `Entry recorded ${chartDate(entry.openedAt)}.`
                   : `Plan saved ${chartDate(entry.createdAt)}.`}{" "}
-                {active
-                  ? entry.status === "planned"
-                    ? `Shading runs from when the plan was saved until its expiry (${chartDate(entry.plan.expiresAt)}). It does not predict an exit time.`
-                    : "Shading runs from the recorded entry to the latest available candle. It does not confirm an exit."
-                  : "This plan is inactive. Only its saved entry marker remains on the chart."}
+                {needsReview
+                  ? "Automatic tracking is paused. Review the timeline before assuming a result."
+                  : preview && !active
+                    ? "Saved plan levels are shown for review. This does not reactivate the trade or confirm execution."
+                    : active
+                      ? entry.status === "planned"
+                        ? `Shading runs from when the plan was saved until its expiry (${chartDate(entry.plan.expiresAt)}). It does not predict an exit time.`
+                        : "Shading runs from the recorded entry to the latest available candle. It does not confirm an exit."
+                      : "This plan is inactive. Only its saved entry marker remains on the chart."}
               </p>
               {onSelect ? (
                 <Button size="sm" variant="outline" onClick={() => onSelect(entry.id)}>

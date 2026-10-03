@@ -25,6 +25,7 @@ export function MarketHistoryPanel({
   compact = false,
   journal = [],
   onJournalSelect,
+  journalPreview = false,
 }: {
   data: MarketObservation;
   stale?: boolean;
@@ -38,6 +39,7 @@ export function MarketHistoryPanel({
   compact?: boolean;
   journal?: JournalRecord[];
   onJournalSelect?: (id: string) => void;
+  journalPreview?: boolean;
 }) {
   const formatTime = (time: number) =>
     new Date(time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -70,6 +72,7 @@ export function MarketHistoryPanel({
           compact={compact}
           alerts={alerts}
           journal={journal}
+          journalPreview={journalPreview}
           onJournalSelect={onJournalSelect}
           onAlertSelect={onAlertSelect}
         />

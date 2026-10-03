@@ -119,13 +119,14 @@ export class OpenRouterProvider implements AIProvider {
     final: boolean,
     signal: AbortSignal,
     allowTrade = false,
+    responseSchema?: { name: string; schema: Record<string, unknown> },
   ): Promise<AICompletion> {
     const body = {
       model: this.model,
       messages,
       tools: toolDefinitions(allowAlert, allowTrade),
       tool_choice: final ? "none" : "auto",
-      max_tokens: 1200,
+      max_tokens: responseSchema ? 3000 : 1200,
       stream: false,
       provider: {
         require_parameters: true,
@@ -137,9 +138,9 @@ export class OpenRouterProvider implements AIProvider {
             response_format: {
               type: "json_schema",
               json_schema: {
-                name: "market_research",
+                name: responseSchema?.name ?? "market_research",
                 strict: true,
-                schema: z.toJSONSchema(AnswerSchema),
+                schema: responseSchema?.schema ?? z.toJSONSchema(AnswerSchema),
               },
             },
           }

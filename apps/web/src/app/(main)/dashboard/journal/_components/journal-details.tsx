@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Link from "next/link";
 
@@ -21,8 +21,19 @@ import { chartPrice } from "../../_components/market-chart-utils";
 import { MarketHistoryPanel } from "../../_components/market-history-panel";
 import { ResourceState } from "../../_components/resource-state";
 export function journalProfit(entry: JournalRecord) {
-  return entry.status === "closed" && entry.entryPrice !== null && entry.exitPrice !== null && entry.quantity !== null
-    ? (entry.exitPrice - entry.entryPrice) * entry.quantity * (entry.plan.direction === "BUY" ? 1 : -1) - entry.fees
+  if (entry.entryPrice === null || entry.quantity === null || entry.quantity <= 0) return null;
+  const entryPrice = entry.entryPrice;
+  const exits = entry.exits ?? [];
+  const sign = entry.plan.direction === "BUY" ? 1 : -1;
+  if (exits.length) {
+    const exited = exits.reduce((sum, exit) => sum + exit.quantity, 0);
+    return exits.reduce(
+      (sum, exit) => sum + (exit.price - entryPrice) * exit.quantity * sign - exit.fees,
+      (-entry.fees * exited) / entry.quantity,
+    );
+  }
+  return entry.status === "closed" && entry.exitPrice !== null
+    ? (entry.exitPrice - entry.entryPrice) * entry.quantity * sign - entry.fees
     : null;
 }
 export function JournalDetails({ id, close, changed }: { id: string; close: () => void; changed?: () => void }) {
@@ -38,6 +49,7 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
   const [quantity, setQuantity] = useState("");
   const [fees, setFees] = useState("0");
   const [pending, setPending] = useState(false);
+  const exitRequest = useRef(crypto.randomUUID());
   const [error, setError] = useState<string | null>(null);
   const savedNotes = entry?.notes;
   const savedFees = entry?.fees;
@@ -64,16 +76,30 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
     setPending(true);
     setError(null);
     try {
-      await apiRequest(`/journal/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          notes,
-          ...(action ? { status: action } : {}),
-          ...(action === "open" ? { entryPrice: Number(price), quantity: Number(quantity), fees: Number(fees) } : {}),
-          ...(action === "closed" ? { exitPrice: Number(price), fees: Number(fees) } : {}),
-        }),
+      await apiRequest(action === "closed" ? `/journal/${id}/exits` : `/journal/${id}`, {
+        method: action === "closed" ? "POST" : "PATCH",
+        body: JSON.stringify(
+          action === "closed"
+            ? {
+                requestId: exitRequest.current,
+                price: Number(price),
+                quantity: (entry.quantity ?? 0) - (entry.exits ?? []).reduce((sum, exit) => sum + exit.quantity, 0),
+                fees: Number(fees),
+                occurredAt: new Date().toISOString(),
+                reason: "manual",
+              }
+            : {
+                notes,
+                ...(action ? { status: action } : {}),
+                ...(action === "open"
+                  ? { entryPrice: Number(price), quantity: Number(quantity), fees: Number(fees) }
+                  : {}),
+                ...(action === "closed" ? { exitPrice: Number(price), fees: Number(fees) } : {}),
+              },
+        ),
       });
       setAction(null);
+      exitRequest.current = crypto.randomUUID();
       updated();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Journal could not be updated.");
@@ -116,9 +142,7 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
             {entry ? `${entry.symbol} · ${entry.plan.direction === "BUY" ? "Long" : "Short"}` : "Journal details"}
           </SheetTitle>
           <SheetDescription>
-            {entry
-              ? `${entry.plan.interval} · ${entry.context.holding} · ${entry.status}`
-              : "Your saved plan and actual execution history."}
+            {entry ? `${entry.plan.interval} · ${entry.status}` : "Your trade and execution history."}
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 pb-6">
@@ -144,22 +168,24 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                   </div>
                 ))}
               </dl>
-              <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-                <span>
-                  Risk limit <strong>{entry.context.riskPercent}%</strong>
-                  {risk !== null ? ` · ${chartPrice(risk)} ${entry.context.currency}` : " · capital not supplied"}
-                </span>
-                {size !== null ? (
+              {entry.source === "ai" ? (
+                <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
                   <span>
-                    Indicative size <strong>{size.toLocaleString(undefined, { maximumFractionDigits: 6 })}</strong>{" "}
-                    {entry.symbol.split("-")[0]}
+                    Risk limit <strong>{entry.context.riskPercent}%</strong>
+                    {risk !== null ? ` · ${chartPrice(risk)} ${entry.context.currency}` : " · capital not supplied"}
                   </span>
-                ) : risk !== null ? (
-                  <span className="text-muted-foreground">
-                    Sizing unavailable: account and quote currencies differ.
-                  </span>
-                ) : null}
-              </div>
+                  {size !== null ? (
+                    <span>
+                      Indicative size <strong>{size.toLocaleString(undefined, { maximumFractionDigits: 6 })}</strong>{" "}
+                      {entry.symbol.split("-")[0]}
+                    </span>
+                  ) : risk !== null ? (
+                    <span className="text-muted-foreground">
+                      Sizing unavailable: account and quote currencies differ.
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {size !== null ? (
                 <p className="text-muted-foreground text-xs">
                   Unleveraged base units from entry-to-stop distance; excludes fees, spread and slippage. Confirm your
@@ -173,6 +199,7 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                   compact
                   className="shrink-0"
                   journal={[entry]}
+                  journalPreview
                 />
               ) : (
                 <ResourceState
@@ -242,6 +269,7 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                         onClick={() => {
                           setAction("closed");
                           setPrice("");
+                          setFees("0");
                         }}
                       >
                         Record actual exit
@@ -289,7 +317,9 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                           </Field>
                         ) : null}
                         <Field>
-                          <FieldLabel htmlFor="execution-fees">Total fees · {entry.plan.quote}</FieldLabel>
+                          <FieldLabel htmlFor="execution-fees">
+                            {action === "closed" ? "Exit fees" : "Entry fees"} · {entry.plan.quote}
+                          </FieldLabel>
                           <Input
                             id="execution-fees"
                             type="number"
@@ -343,6 +373,12 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
               ) : null}
               <Separator />
               <section className="flex flex-col gap-4">
+                <p className="text-muted-foreground text-xs">
+                  {entry.resultBasis === "estimated"
+                    ? "Candle-based estimates · verify against broker fills."
+                    : "Recorded executions"}{" "}
+                  · {entry.source} · {entry.trackingMode} tracking
+                </p>
                 <h2 className="font-medium text-sm">Timeline & AI review</h2>
                 <p className="text-muted-foreground text-xs">
                   {entry.monitoringStatus ?? "Monitoring begins on the next scheduled check."}

@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import type { JournalRecord } from "@marketpilot/ai/contracts";
 import type { MarketObservation } from "@marketpilot/market-data";
@@ -23,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 import type { AlertRecord } from "../alerts/_components/alert-types";
 import { conditionLabel } from "../alerts/_components/alert-types";
+import { MarketChartContextMenu } from "./market-chart-context-menu";
 import { MarketChartAlertLayer } from "./market-chart-alert-layer";
 import { type ChartInspection, MarketChartInspection } from "./market-chart-inspection";
 import { journalChartStatus, MarketChartJournalLayer } from "./market-chart-journal-layer";
@@ -52,6 +53,7 @@ export function InteractiveMarketChart({
   compact = false,
   journal = [],
   onJournalSelect,
+  journalPreview = false,
 }: {
   data: MarketObservation;
   alerts: AlertRecord[];
@@ -59,6 +61,7 @@ export function InteractiveMarketChart({
   compact?: boolean;
   journal?: JournalRecord[];
   onJournalSelect?: (id: string) => void;
+  journalPreview?: boolean;
 }) {
   const layerControlId = useId();
   const layers = useAccountPreference("chart-layers", defaultLayers, validLayers);
@@ -76,19 +79,20 @@ export function InteractiveMarketChart({
   const inspected = inspection?.kind === "alert" ? alerts.find((rule) => rule.id === inspection.id) : null;
   const quote = data.symbol.split("-").at(-1) ?? "USD";
   const hasVolume = data.candles.every((candle) => candle.volume !== null);
-  const { container, geometry, hovered, zoom, reset, focusAlert, focusJournal } = useInteractiveMarketChart({
-    data,
-    view,
-    alerts: layers.value.alerts ? alerts : [],
-    journal: layers.value.journal ? activeJournal : undefined,
-    showAverage: layers.value.average,
-    selectedId: activeId,
-    onAlert: (id, point) => {
-      setSelectedId(id);
-      setInspection({ kind: "alert", id, ...point });
-    },
-    onInspect: (details) => setInspection({ kind: "candle", ...details }),
-  });
+  const { container, geometry, hovered, zoom, reset, focusAlert, focusJournal, contextPoint } =
+    useInteractiveMarketChart({
+      data,
+      view,
+      alerts: layers.value.alerts ? alerts : [],
+      journal: journalPreview || layers.value.journal ? activeJournal : undefined,
+      showAverage: layers.value.average,
+      selectedId: activeId,
+      onAlert: (id, point) => {
+        setSelectedId(id);
+        setInspection({ kind: "alert", id, ...point });
+      },
+      onInspect: (details) => setInspection({ kind: "candle", ...details }),
+    });
   const candle = hovered ?? data.candles.at(-1);
   const showAlert = (rule: AlertRecord) => {
     if (!layers.value.alerts) layers.update({ ...layers.value, alerts: true });
@@ -109,9 +113,19 @@ export function InteractiveMarketChart({
     layers.update({ ...layers.value, journal: true });
     if (view === "volume") {
       setView("candles");
-      requestAnimationFrame(() => focusJournal(activeJournal));
-    } else focusJournal(activeJournal);
+      requestAnimationFrame(() => focusJournal(activeJournal, journalPreview));
+    } else focusJournal(activeJournal, journalPreview);
   };
+  const previewFocused = useRef<string | null>(null);
+  const focusPreview = useEffectEvent(() => {
+    if (activeJournal) focusJournal(activeJournal, true);
+  });
+  const previewId = activeJournal?.id;
+  useEffect(() => {
+    if (!journalPreview || !previewId || geometry.width <= 0 || previewFocused.current === previewId) return;
+    previewFocused.current = previewId;
+    focusPreview();
+  }, [journalPreview, previewId, geometry.width]);
   const selectedPosition = geometry.positions.find((position) => position.id === activeId);
   const anchorX = inspection?.x ?? selectedPosition?.x ?? geometry.width / 2;
   const anchorY = inspection?.y ?? selectedPosition?.y ?? geometry.height / 2;
@@ -249,7 +263,7 @@ export function InteractiveMarketChart({
                 </PopoverDescription>
               </PopoverHeader>
               <p className="text-muted-foreground text-xs">
-                Double-click a candle for its values. Click an alert line or bell for details. Fit restores the full
+                Double-click a candle for its values. Right-click for trade and alert actions. Fit restores the full
                 window.
               </p>
               <p className="text-muted-foreground text-xs">
@@ -288,7 +302,19 @@ export function InteractiveMarketChart({
           <span className="text-muted-foreground">{quote}</span>
         )}
       </section>
-      <div className="relative isolate">
+      <MarketChartContextMenu
+        data={data}
+        geometry={geometry}
+        alerts={layers.value.alerts && view !== "volume" ? alerts : []}
+        journal={(journalPreview || layers.value.journal) && view !== "volume" ? activeJournal : undefined}
+        pointAt={contextPoint}
+        focusAlert={showAlert}
+        focusTrade={showJournal}
+        reset={reset}
+        inspectAlert={onAlertSelect}
+        inspectTrade={onJournalSelect}
+        onOpen={() => setInspection(null)}
+      >
         <div
           ref={container}
           className={cn("isolate w-full outline-none", compact ? "h-64 sm:h-72" : "h-80 sm:h-96")}
@@ -307,9 +333,10 @@ export function InteractiveMarketChart({
             onSelect={showAlert}
           />
         ) : null}
-        {view !== "volume" && layers.value.journal && activeJournal && geometry.journalPosition ? (
+        {view !== "volume" && (journalPreview || layers.value.journal) && activeJournal && geometry.journalPosition ? (
           <MarketChartJournalLayer
             entry={activeJournal}
+            preview={journalPreview}
             position={geometry.journalPosition}
             width={geometry.width}
             height={geometry.height}
@@ -328,7 +355,7 @@ export function InteractiveMarketChart({
           onReturnFocus={() => container.current?.focus({ preventScroll: true })}
           onAlertSelect={onAlertSelect}
         />
-      </div>
+      </MarketChartContextMenu>
       {alerts.length ? (
         <section className="flex flex-wrap items-center gap-2" aria-label="Alerts for this market">
           <span className="flex items-center gap-1.5 text-muted-foreground text-xs">

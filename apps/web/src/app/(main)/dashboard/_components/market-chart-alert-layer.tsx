@@ -134,7 +134,6 @@ export function MarketChartAlertLayer({
         const rule = alerts.find((item) => item.id === position.id);
         const marker = markers.find((item) => item.id === position.id);
         if (!rule || !marker) return null;
-        const edge = position.x === null || position.x < 0 || position.x > geometry.width;
         return (
           <Tooltip key={position.id}>
             <TooltipTrigger asChild>
@@ -143,6 +142,7 @@ export function MarketChartAlertLayer({
                 size="icon-xs"
                 className="absolute rounded-full shadow-sm"
                 style={{ left: marker.left, top: marker.top }}
+                data-chart-alert={rule.id}
                 aria-label={`Inspect ${rule.name}: ${conditionLabel(rule)}, created ${chartDate(rule.createdAt)}`}
                 onClick={() => onSelect(rule)}
                 onMouseEnter={() => onHighlight(rule.id)}
@@ -151,9 +151,15 @@ export function MarketChartAlertLayer({
                 <Bell />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              {conditionLabel(rule)} · Created {chartDate(rule.createdAt)}
-              {edge ? " · Creation time outside the visible candles; shown at the edge" : ""}
+            <TooltipContent
+              sideOffset={8}
+              className="border bg-background/80 text-foreground shadow-sm backdrop-blur-md [&_.rotate-45]:hidden!"
+            >
+              <span>
+                {rule.condition === "PRICE_ABOVE" ? "Above" : "Below"}{" "}
+                {Number(rule.threshold).toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
+                {rule.assetId.split("-").at(-1)} · {rule.enabled ? "Active" : "Paused"}
+              </span>
             </TooltipContent>
           </Tooltip>
         );

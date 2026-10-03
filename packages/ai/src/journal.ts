@@ -31,8 +31,16 @@ export interface JournalEventRecord {
   reviewStartedAt: string | null;
 }
 export interface JournalRecord {
+  updatedAt: string;
   id: string;
-  runId: string;
+  runId: string | null;
+  source: "ai" | "manual" | "import";
+  trackingMode: "automatic" | "observed";
+  entryTrigger: "touch" | "close_above" | "close_below";
+  resultBasis: "recorded" | "estimated";
+  targetAllocations: number[];
+  archivedAt: string | null;
+  exits: import("./journal-trades").JournalExitRecord[];
   symbol: string;
   status: "planned" | "open" | "closed" | "cancelled" | "expired";
   plan: import("./contracts").TradeSetup;

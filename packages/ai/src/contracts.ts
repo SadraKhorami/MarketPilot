@@ -277,6 +277,7 @@ export interface AIProvider {
     final: boolean,
     signal: AbortSignal,
     allowTrade?: boolean,
+    responseSchema?: { name: string; schema: Record<string, unknown> },
   ): Promise<AICompletion>;
 }
 export class AIError extends Error {
@@ -312,3 +313,5 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
 export * from "./journal";
 
 export * from "./settings";
+
+export * from "./journal-trades";

@@ -555,12 +555,19 @@ model TradePreferences {
 model JournalEntry {
   id               String         @id @default(uuid()) @db.Uuid
   userId           String         @db.Uuid
-  runId            String         @db.Uuid
+  runId            String?        @db.Uuid
   symbol           String         @db.VarChar(32)
   status           String         @default("planned") @db.VarChar(12)
   plan             Json
   context          Json
   analysis         Json
+  source           String         @default("ai") @db.VarChar(12)
+  trackingMode     String         @default("observed") @db.VarChar(12)
+  entryTrigger     String         @default("touch") @db.VarChar(16)
+  resultBasis      String         @default("recorded") @db.VarChar(12)
+  targetAllocations Json           @default("[]")
+  importKey        String?        @db.VarChar(64)
+  archivedAt       DateTime?      @db.Timestamptz(3)
   notes            String         @default("") @db.VarChar(4000)
   entryPrice       Float?
   exitPrice        Float?
@@ -574,8 +581,10 @@ model JournalEntry {
   updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   events           JournalEvent[]
+  exits            JournalExit[]
 
   @@unique([userId, runId])
+  @@unique([userId, importKey])
   @@index([userId, symbol, createdAt])
   @@index([status, checkedAt])
 }
@@ -622,4 +631,20 @@ model AiModel {
   syncedAt            DateTime @db.Timestamptz(3)
 
   @@index([active, compatible, name])
+}
+
+model JournalExit {
+  id         String       @id @default(uuid()) @db.Uuid
+  entryId    String       @db.Uuid
+  key        String       @db.VarChar(80)
+  price      Float
+  quantity   Float
+  fees       Float        @default(0)
+  reason     String       @db.VarChar(16)
+  basis      String       @db.VarChar(12)
+  occurredAt DateTime     @db.Timestamptz(3)
+  entry      JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, key])
+  @@index([entryId, occurredAt])
 }
