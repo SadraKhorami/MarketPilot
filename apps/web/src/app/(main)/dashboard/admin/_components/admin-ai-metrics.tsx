@@ -1,5 +1,8 @@
 "use client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { SystemSection } from "./system-section";
+import { useSystemRefresh } from "./use-system-refresh";
 import { useApiResource } from "@/hooks/use-api-resource";
 
 import { ResourceState } from "../../_components/resource-state";
@@ -17,17 +20,24 @@ interface AiMetrics {
   _avg: { latencyMs: number | null };
 }
 export function AdminAiMetrics() {
-  const resource = useApiResource<AiMetrics>("/ai/metrics");
+  const resource = useApiResource<AiMetrics>("/ai/metrics", { keepDataOnReload: true });
   const data = resource.data;
+  useSystemRefresh(resource.reload);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>AI research operations</CardTitle>
-        <CardDescription>
-          Last seven days · browser research runs · separate from developer API-key Usage
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <SystemSection
+      title="AI research"
+      description="Last 7 days · browser research runs"
+      icon={Sparkles}
+      defaultOpen={false}
+      summary={
+        data && !resource.error ? (
+          <Badge variant="outline">
+            {data.statuses.reduce((total, item) => total + item.count, 0).toLocaleString()} runs
+          </Badge>
+        ) : undefined
+      }
+    >
+      <div className="p-4">
         {resource.loading || resource.error || !data ? (
           <ResourceState {...resource} retry={resource.reload} />
         ) : (
@@ -61,7 +71,7 @@ export function AdminAiMetrics() {
             </p>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SystemSection>
   );
 }

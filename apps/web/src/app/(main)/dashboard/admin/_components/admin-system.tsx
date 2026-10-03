@@ -1,160 +1,61 @@
 "use client";
-import { useEffect } from "react";
 
-import { Bot, Database, Layers, ListChecks, Newspaper, RefreshCw, Server, Sparkles } from "lucide-react";
-
+import { Layers } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useApiResource } from "@/hooks/use-api-resource";
-
 import { ResourceState } from "../../_components/resource-state";
 import { AdminAiMetrics } from "./admin-ai-metrics";
 import { AdminBots } from "./admin-bots";
 import { AdminJobs } from "./admin-jobs";
 import type { SystemState } from "./admin-types";
+import { SystemSection } from "./system-section";
+import { useSystemRefresh } from "./use-system-refresh";
 
 export function AdminSystem() {
   const resource = useApiResource<SystemState>("/admin/system", { keepDataOnReload: true });
   const data = resource.data;
-  useEffect(() => {
-    const timer = window.setInterval(resource.reload, 30000);
-    return () => window.clearInterval(timer);
-  }, [resource.reload]);
+  useSystemRefresh(resource.reload);
   return (
-    <Tabs defaultValue="overview" className="min-w-0 gap-5">
-      <div className="min-w-0 overflow-x-auto pb-1">
-        <TabsList variant="line" aria-label="System sections">
-          <TabsTrigger value="overview">
-            <Server aria-hidden="true" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="jobs">
-            <ListChecks aria-hidden="true" />
-            Jobs
-          </TabsTrigger>
-          <TabsTrigger value="bots">
-            <Bot aria-hidden="true" />
-            Bots
-          </TabsTrigger>
-          <TabsTrigger value="ai">
-            <Sparkles aria-hidden="true" />
-            AI research
-          </TabsTrigger>
-          <TabsTrigger value="integrations">
-            <Layers aria-hidden="true" />
-            Integrations
-          </TabsTrigger>
-        </TabsList>
-      </div>
-      <TabsContent value="overview" className="min-w-0">
-        <section aria-labelledby="infrastructure-title" className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h2 id="infrastructure-title" className="font-semibold text-lg">
-                Infrastructure
-              </h2>
-              <p className="text-muted-foreground text-sm">
-                {data
-                  ? `Checked ${new Date(data.checkedAt).toLocaleTimeString()} · refreshes every 30 seconds`
-                  : "Database, cache and stored news"}
-              </p>
-            </div>
-            <Button variant="outline" size="sm" disabled={resource.loading} onClick={resource.reload}>
-              <RefreshCw data-icon="inline-start" /> Refresh
-            </Button>
-          </div>
-          <ResourceState {...resource} retry={resource.reload} />
-          {data && !resource.error ? (
-            <div className="grid min-w-0 gap-4 md:grid-cols-3">
-              {[
-                {
-                  name: "PostgreSQL",
-                  icon: Database,
-                  check: data.database,
-                  detail: "Application data and durable alert events",
-                },
-                { name: "Redis", icon: Server, check: data.redis, detail: "Queues, schedules and cached observations" },
-              ].map(({ name, icon: Icon, check, detail }) => (
-                <Card key={name} className="min-w-0">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Icon className="size-4 shrink-0" />
-                      {name}
-                    </CardTitle>
-                    <CardAction>
-                      <Badge variant={check.status === "healthy" ? "secondary" : "destructive"}>
-                        {check.status === "healthy" ? "Healthy" : "Unavailable"}
-                      </Badge>
-                    </CardAction>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-2">
-                    <p className="font-semibold text-2xl tabular-nums">
-                      {check.latencyMs === null ? "—" : check.latencyMs}
-                      <span className="ml-1 font-normal text-muted-foreground text-sm">
-                        {check.latencyMs === null ? "No response" : "ms latency"}
-                      </span>
-                    </p>
-                    <p className="text-muted-foreground text-xs">{detail}</p>
-                  </CardContent>
-                </Card>
-              ))}
-              <Card className="min-w-0">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Newspaper className="size-4" />
-                    News library
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  <p className="font-semibold text-2xl tabular-nums">{data.articles?.toLocaleString() ?? "—"}</p>
-                  <p className="text-muted-foreground text-xs">
-                    {data.articles === null
-                      ? "Article count unavailable"
-                      : "Sourced articles stored for search and research"}
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          ) : null}
-        </section>
-      </TabsContent>
-      <TabsContent value="jobs" className="min-w-0">
-        <AdminJobs />
-      </TabsContent>
-      <TabsContent value="bots" className="min-w-0">
-        <AdminBots />
-      </TabsContent>
-      <TabsContent value="ai" className="min-w-0">
-        <AdminAiMetrics />
-      </TabsContent>
-      <TabsContent value="integrations" className="min-w-0">
+    <div className="flex min-w-0 flex-col gap-4">
+      <AdminJobs system={resource} />
+      <AdminBots />
+      <AdminAiMetrics />
+      <SystemSection
+        title="Integrations"
+        description="Server configuration · external availability is checked separately"
+        icon={Layers}
+        defaultOpen={false}
+        summary={
+          data && !resource.error ? <Badge variant="outline">{data.integrations.length} integrations</Badge> : undefined
+        }
+      >
         <ResourceState {...resource} retry={resource.reload} />
         {data && !resource.error ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Integrations</CardTitle>
-              <CardDescription>
-                Configured capabilities. These states do not verify external provider availability.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid min-w-0 gap-3 md:grid-cols-2">
+          <Table>
+            <TableHeader className="bg-muted/40">
+              <TableRow>
+                <TableHead className="pl-4">Integration</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="pr-4">Details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {data.integrations.map((integration) => (
-                <div key={integration.name} className="flex min-w-0 flex-col gap-2 rounded-lg border p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <p className="min-w-0 flex-1 font-medium text-sm">{integration.name}</p>
-                    <Badge className="shrink-0" variant="outline">
-                      {integration.status}
-                    </Badge>
-                  </div>
-                  <p className="text-muted-foreground text-sm [overflow-wrap:anywhere]">{integration.detail}</p>
-                </div>
+                <TableRow key={integration.name}>
+                  <TableCell className="pl-4 font-medium">{integration.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{integration.status}</Badge>
+                  </TableCell>
+                  <TableCell className="max-w-lg whitespace-normal pr-4 text-muted-foreground text-xs">
+                    {integration.detail}
+                  </TableCell>
+                </TableRow>
               ))}
-            </CardContent>
-          </Card>
+            </TableBody>
+          </Table>
         ) : null}
-      </TabsContent>
-    </Tabs>
+      </SystemSection>
+    </div>
   );
 }

@@ -15,11 +15,11 @@ export class WorkerHealth {
   private readonly tracked: Array<{
     worker: Worker;
     queue: Pick<Queue, "isPaused">;
-    transportReady: boolean;
     metrics: Omit<QueueRuntime, "ready">;
   }> = [];
   private probing: Promise<WorkerSnapshot> | undefined;
   private stopping = false;
+  private lastPublishedReadiness: string | undefined;
   constructor(
     private readonly db: PrismaClient,
     private readonly redis: Redis,
@@ -34,14 +34,8 @@ export class WorkerHealth {
       lastFailureCode: null,
       lastLatencyMs: null,
     };
-    const tracked = { worker, queue, metrics, transportReady: true };
+    const tracked = { worker, queue, metrics };
     this.tracked.push(tracked);
-    worker.on("error", () => {
-      tracked.transportReady = false;
-    });
-    worker.on("ready", () => {
-      tracked.transportReady = true;
-    });
     worker.on("completed", (job) => {
       metrics.lastCompletedAt = new Date().toISOString();
       metrics.lastLatencyMs = job.processedOn ? Math.max(0, Date.now() - job.processedOn) : null;
@@ -91,13 +85,7 @@ export class WorkerHealth {
           const paused = await boundedOperation(queue.isPaused()).catch(() => true);
           return {
             ...metrics,
-            ready:
-              !this.stopping &&
-              worker.isRunning() &&
-              !worker.isPaused() &&
-              !paused &&
-              connected &&
-              tracked.transportReady,
+            ready: !this.stopping && worker.isRunning() && !worker.isPaused() && !paused && connected,
           };
         }),
       ),
@@ -117,11 +105,25 @@ export class WorkerHealth {
     await this.redis.zadd(workerRegistryKey, Date.now(), this.instanceId);
     await this.redis.zremrangebyscore(workerRegistryKey, 0, Date.now() - 90000);
     if (status.ready) await this.redis.zadd(heartbeatKey, Date.now(), this.instanceId);
-    else {
-      await this.redis.zrem(heartbeatKey, this.instanceId);
-      console.error(
-        JSON.stringify({ event: "worker_not_ready", timestamp: status.checkedAt, workerId: this.instanceId }),
-      );
+    else await this.redis.zrem(heartbeatKey, this.instanceId);
+    const readiness = JSON.stringify({
+      database: status.database,
+      redis: status.redis,
+      queues: status.queues.map((queue) => ({ name: queue.name, ready: queue.ready })),
+      ready: status.ready,
+    });
+    if (readiness !== this.lastPublishedReadiness) {
+      this.lastPublishedReadiness = readiness;
+      const message = JSON.stringify({
+        event: status.ready ? "worker_ready" : "worker_not_ready",
+        timestamp: status.checkedAt,
+        workerId: this.instanceId,
+        database: status.database,
+        redis: status.redis,
+        unavailableQueues: status.queues.filter((queue) => !queue.ready).map((queue) => queue.name),
+      });
+      if (status.ready) console.log(message);
+      else console.error(message);
     }
     await this.redis.zremrangebyscore(heartbeatKey, 0, Date.now() - 90000);
   }

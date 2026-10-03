@@ -5,7 +5,9 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Send } from "lucide-react";
+import { SystemSection } from "./system-section";
+import { useSystemRefresh } from "./use-system-refresh";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { useApiResource } from "@/hooks/use-api-resource";
 import { apiRequest } from "@/lib/api/client";
@@ -26,10 +28,7 @@ export function AdminBotDeliveries() {
     `/admin/bots/deliveries?page=${page}&pageSize=${pageSize}`,
     { keepDataOnReload: true },
   );
-  useEffect(() => {
-    const timer = window.setInterval(resource.reload, 30000);
-    return () => window.clearInterval(timer);
-  }, [resource.reload]);
+  useSystemRefresh(resource.reload);
   useEffect(() => {
     if (resource.data && page > Math.max(1, resource.data.totalPages)) setPage(Math.max(1, resource.data.totalPages));
   }, [resource.data, page]);
@@ -46,15 +45,17 @@ export function AdminBotDeliveries() {
     }
   }
   return (
-    <Card className="min-w-0">
-      <CardHeader>
-        <CardTitle>External delivery recovery</CardTitle>
-        <CardDescription>
+    <SystemSection
+      title="Delivery recovery"
+      description="Review failed external deliveries"
+      icon={Send}
+      defaultOpen={false}
+    >
+      <div className="flex min-w-0 flex-col gap-3 p-4">
+        <p className="text-muted-foreground text-xs">
           Retry definitive failures up to three times after fixing the cause. Unknown acceptance is not automatically
           replayed.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-w-0 flex-col gap-4">
+        </p>
         <ResourceState {...resource} retry={resource.reload} />
         {resource.data && !resource.error ? (
           <>
@@ -113,7 +114,7 @@ export function AdminBotDeliveries() {
             />
           </>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </SystemSection>
   );
 }

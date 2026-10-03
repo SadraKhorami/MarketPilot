@@ -1,11 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Bot } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SystemSection } from "./system-section";
+import { useSystemRefresh } from "./use-system-refresh";
 import { useApiResource } from "@/hooks/use-api-resource";
 import { apiRequest } from "@/lib/api/client";
 
@@ -31,10 +34,7 @@ interface BotOverview {
 export function AdminBots() {
   const resource = useApiResource<BotOverview>("/admin/bots", { keepDataOnReload: true });
   const [busy, setBusy] = useState<string | null>(null);
-  useEffect(() => {
-    const timer = window.setInterval(resource.reload, 30000);
-    return () => window.clearInterval(timer);
-  }, [resource.reload]);
+  useSystemRefresh(resource.reload);
   async function check(provider: string) {
     setBusy(provider);
     try {
@@ -47,73 +47,95 @@ export function AdminBots() {
     }
   }
   return (
-    <section className="flex min-w-0 flex-col gap-4" aria-label="Bot operations">
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>Bot runtime</CardTitle>
-          <CardDescription>
-            Configuration, worker readiness and observed platform responses are separate states.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-4">
-          <ResourceState {...resource} retry={resource.reload} />
-          {resource.data && !resource.error ? (
-            <>
-              <p className="text-muted-foreground text-sm">
-                Command workers: {resource.data.workers?.commands ?? "Unavailable"} · Alert workers:{" "}
-                {resource.data.workers?.alerts ?? "Unavailable"} · Heartbeats within 45 seconds
-              </p>
-              <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+    <SystemSection
+      title="Bots"
+      description="Provider configuration, runtime and deliveries"
+      icon={Bot}
+      defaultOpen={false}
+      summary={
+        resource.data && !resource.error ? (
+          <Badge variant="outline">
+            {resource.data.providers.filter((provider) => provider.configured).length}/{resource.data.providers.length}{" "}
+            configured
+          </Badge>
+        ) : undefined
+      }
+    >
+      <div className="flex min-w-0 flex-col gap-3 p-4">
+        <ResourceState {...resource} retry={resource.reload} />
+        {resource.data && !resource.error ? (
+          <>
+            <p className="text-muted-foreground text-xs">
+              Command workers: {resource.data.workers?.commands ?? "Unavailable"} · Alert workers:{" "}
+              {resource.data.workers?.alerts ?? "Unavailable"} · Heartbeats within 45 seconds
+            </p>
+            <Table>
+              <TableHeader className="bg-muted/40">
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Configuration</TableHead>
+                  <TableHead>Last successful response</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {resource.data.providers.map((provider) => (
-                  <div key={provider.provider} className="flex min-w-0 flex-col gap-3 rounded-lg border p-4">
-                    <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium">{provider.provider}</p>
-                        <Badge className="mt-1" variant="outline">
-                          {provider.configured ? "Configured" : "Setup required"}
-                        </Badge>
-                      </div>
+                  <TableRow key={provider.provider}>
+                    <TableCell className="font-medium">{provider.provider}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{provider.configured ? "Configured" : "Setup required"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {provider.runtime?.successfulAt
+                        ? new Date(provider.runtime.successfulAt).toLocaleString()
+                        : "Not observed"}
+                    </TableCell>
+                    <TableCell className="text-right">
                       <Button
-                        className="shrink-0"
                         size="sm"
                         variant="outline"
                         disabled={!provider.configured || busy !== null}
                         onClick={() => void check(provider.provider)}
                       >
-                        Check connectivity
+                        {busy === provider.provider ? "Checking…" : "Check connectivity"}
                       </Button>
-                    </div>
-                    {!provider.configured ? (
-                      <p className="break-words text-muted-foreground text-sm">
-                        Set server configuration: {[...provider.missing, ...provider.invalid].join(", ")}. Register the
-                        webhook using the documented bot setup command.
-                      </p>
-                    ) : null}
-                    <dl className="flex flex-col gap-2 text-sm">
-                      {[
-                        ["Last authenticated event", provider.runtime?.inboundAt],
-                        ["Last provider check / send", provider.runtime?.checkedAt],
-                        ["Last successful response", provider.runtime?.successfulAt],
-                      ].map(([label, value]) => (
-                        <div key={label} className="flex flex-wrap justify-between gap-2">
-                          <dt className="text-muted-foreground">{label}</dt>
-                          <dd>{value ? new Date(value).toLocaleString() : "Not observed"}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    {provider.runtime?.failureCode ? (
-                      <p className="break-words text-destructive text-sm">
-                        {provider.runtime.failureCode.replaceAll("_", " ")}
-                      </p>
-                    ) : null}
-                  </div>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
-      <AdminBotDeliveries />
-    </section>
+              </TableBody>
+            </Table>
+            {resource.data.providers.map((provider) => (
+              <details key={provider.provider} className="rounded-lg border px-3 py-2">
+                <summary className="cursor-pointer text-sm">{provider.provider} runtime details</summary>
+                <div className="mt-3 flex flex-col gap-2 text-xs">
+                  {!provider.configured ? (
+                    <p className="text-muted-foreground">
+                      Set server configuration: {[...provider.missing, ...provider.invalid].join(", ")}. Register the
+                      webhook using the documented bot setup command.
+                    </p>
+                  ) : null}
+                  <p>
+                    Last authenticated event:{" "}
+                    {provider.runtime?.inboundAt
+                      ? new Date(provider.runtime.inboundAt).toLocaleString()
+                      : "Not observed"}
+                  </p>
+                  <p>
+                    Last provider check / send:{" "}
+                    {provider.runtime?.checkedAt
+                      ? new Date(provider.runtime.checkedAt).toLocaleString()
+                      : "Not observed"}
+                  </p>
+                  {provider.runtime?.failureCode ? (
+                    <p className="break-words text-destructive">{provider.runtime.failureCode.replaceAll("_", " ")}</p>
+                  ) : null}
+                </div>
+              </details>
+            ))}
+          </>
+        ) : null}
+        <AdminBotDeliveries />
+      </div>
+    </SystemSection>
   );
 }
