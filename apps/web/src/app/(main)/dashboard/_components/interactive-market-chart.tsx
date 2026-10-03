@@ -5,7 +5,7 @@ import { type ReactNode, useId, useState } from "react";
 import type { JournalRecord } from "@marketpilot/ai/contracts";
 import type { MarketObservation } from "@marketpilot/market-data";
 import { cn } from "cn";
-import { ArrowDown, ArrowUp, Bell, Info, Layers, Minus, Plus, Scan, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bell, Focus, Info, Layers, Minus, Plus, Scan, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,7 +25,8 @@ import type { AlertRecord } from "../alerts/_components/alert-types";
 import { conditionLabel } from "../alerts/_components/alert-types";
 import { MarketChartAlertLayer } from "./market-chart-alert-layer";
 import { type ChartInspection, MarketChartInspection } from "./market-chart-inspection";
-import { MarketChartJournalLayer } from "./market-chart-journal-layer";
+import { journalChartStatus, MarketChartJournalLayer } from "./market-chart-journal-layer";
+import { layoutChartMarkers } from "./market-chart-markers";
 import { chartDate, chartPrice } from "./market-chart-utils";
 import { useAccountPreference } from "./use-account-preference";
 import { type MarketChartView, useInteractiveMarketChart } from "./use-interactive-market-chart";
@@ -64,13 +65,13 @@ export function InteractiveMarketChart({
   const [journalId, setJournalId] = useState<string | null>(null);
   const activeJournal =
     journal.find((item) => item.id === journalId) ??
-    journal.find((item) => item.status === "open" || item.status === "planned") ??
+    journal.find((item) => journalChartStatus(item) === "open" || journalChartStatus(item) === "planned") ??
     journal[0];
-  const [view, setView] = useState<MarketChartView>("line");
+  const [view, setView] = useState<MarketChartView>("candles");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspection, setInspection] = useState<ChartInspection | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const activeId = selectedId ?? alerts.find((rule) => rule.condition.startsWith("PRICE_") && rule.enabled)?.id ?? null;
+  const activeId = selectedId;
   const selected = alerts.find((rule) => rule.id === activeId);
   const inspected = inspection?.kind === "alert" ? alerts.find((rule) => rule.id === inspection.id) : null;
   const quote = data.symbol.split("-").at(-1) ?? "USD";
@@ -91,24 +92,54 @@ export function InteractiveMarketChart({
   const candle = hovered ?? data.candles.at(-1);
   const showAlert = (rule: AlertRecord) => {
     if (!layers.value.alerts) layers.update({ ...layers.value, alerts: true });
-    if (view === "volume") setView("line");
+    if (view === "volume") setView("candles");
     setSelectedId(rule.id);
     if (rule.condition.startsWith("PRICE_")) {
       if (view === "volume") requestAnimationFrame(() => focusAlert(rule));
       else focusAlert(rule);
     }
-    setInspection({ kind: "alert", id: rule.id });
+    const marker = markers.find((item) => item.id === rule.id);
+    setInspection({
+      kind: "alert",
+      id: rule.id,
+      ...(marker ? { x: marker.left + marker.width / 2, y: marker.top + marker.height / 2 } : {}),
+    });
   };
   const showJournal = () => {
     layers.update({ ...layers.value, journal: true });
     if (view === "volume") {
-      setView("line");
-      requestAnimationFrame(focusJournal);
-    } else focusJournal();
+      setView("candles");
+      requestAnimationFrame(() => focusJournal(activeJournal));
+    } else focusJournal(activeJournal);
   };
   const selectedPosition = geometry.positions.find((position) => position.id === activeId);
   const anchorX = inspection?.x ?? selectedPosition?.x ?? geometry.width / 2;
   const anchorY = inspection?.y ?? selectedPosition?.y ?? geometry.height / 2;
+
+  const markers = layoutChartMarkers(
+    [
+      ...geometry.positions.map((position) => ({
+        id: position.id,
+        x: position.x ?? (position.startsBeforeWindow ? 0 : geometry.width),
+        y: position.y,
+        width: 24,
+        height: 24,
+      })),
+      ...(activeJournal && geometry.journalPosition
+        ? [
+            {
+              id: activeJournal.id,
+              x: geometry.journalPosition.x,
+              y: geometry.journalPosition.entry,
+              width: 24,
+              height: 24,
+            },
+          ]
+        : []),
+    ],
+    geometry.width,
+    geometry.height,
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -142,11 +173,6 @@ export function InteractiveMarketChart({
           ) : null}
         </div>
         <div className="flex items-center gap-1">
-          {activeJournal ? (
-            <Button variant="outline" size="sm" onClick={showJournal} aria-label="Focus saved journal position">
-              <Scan data-icon="inline-start" /> Position
-            </Button>
-          ) : null}
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Chart layers">
@@ -165,13 +191,13 @@ export function InteractiveMarketChart({
                     checked={layers.value[key]}
                     onCheckedChange={(checked) => layers.update({ ...layers.value, [key]: checked === true })}
                   />
-                  {key === "alerts" ? "My alerts" : key === "journal" ? "Journal position" : "Moving average"}
+                  {key === "alerts" ? "My alerts" : key === "journal" ? "Journal plans" : "Moving average"}
                 </label>
               ))}
               {journal.length ? (
                 <>
                   <Select value={activeJournal?.id} onValueChange={setJournalId}>
-                    <SelectTrigger className="w-full" aria-label="Visible journal position">
+                    <SelectTrigger className="w-full" aria-label="Visible journal plan">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -186,7 +212,7 @@ export function InteractiveMarketChart({
                     </SelectContent>
                   </Select>
                   <Button size="sm" variant="outline" onClick={showJournal}>
-                    Fit position levels
+                    Locate journal plan
                   </Button>
                 </>
               ) : (
@@ -194,6 +220,11 @@ export function InteractiveMarketChart({
               )}
             </PopoverContent>
           </Popover>
+          {activeJournal ? (
+            <ChartControl label="Focus on journal position" onClick={showJournal}>
+              <Focus />
+            </ChartControl>
+          ) : null}
           <ChartControl label="Zoom out" onClick={() => zoom(1.4)}>
             <Minus />
           </ChartControl>
@@ -222,8 +253,8 @@ export function InteractiveMarketChart({
                 window.
               </p>
               <p className="text-muted-foreground text-xs">
-                The bell marks the alert’s creation time at its configured price. Dashed levels are not past triggers.
-                Times use your local timezone.
+                Bells mark alert creation at the configured price. New alerts beyond the available candles appear at the
+                right edge. Dashed levels are not past triggers. Times use your local timezone.
               </p>
             </PopoverContent>
           </Popover>
@@ -269,6 +300,7 @@ export function InteractiveMarketChart({
           <MarketChartAlertLayer
             alerts={alerts}
             geometry={geometry}
+            markers={markers}
             activeId={activeId}
             highlightedId={highlightedId}
             onHighlight={setHighlightedId}
@@ -282,6 +314,7 @@ export function InteractiveMarketChart({
             width={geometry.width}
             height={geometry.height}
             onSelect={onJournalSelect}
+            marker={markers.find((marker) => marker.id === activeJournal.id)}
           />
         ) : null}
         <MarketChartInspection
@@ -329,7 +362,7 @@ export function InteractiveMarketChart({
             <ChartControl
               label="Clear selected alert"
               onClick={() => {
-                setSelectedId("");
+                setSelectedId(null);
                 setInspection(null);
               }}
             >

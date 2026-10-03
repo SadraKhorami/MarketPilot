@@ -77,23 +77,32 @@ export class AiService {
       take: 20,
       include: { proposals: true },
     });
+    const journalEntries = await this.db.journalEntry.findMany({
+      where: { userId, runId: { in: runs.map((run) => run.id) } },
+      select: { id: true, runId: true },
+    });
+    const journalByRun = new Map(journalEntries.map((entry) => [entry.runId, entry.id]));
     return runs.reverse().map((run) => ({
       requestId: run.requestId,
       input: run.input,
       status: run.status === "running" && run.createdAt.getTime() < Date.now() - 120_000 ? "interrupted" : run.status,
       errorCode:
         run.status === "running" && run.createdAt.getTime() < Date.now() - 120_000 ? "AI_INTERRUPTED" : run.errorCode,
-      result: this.readResult(run),
+      result: this.readResult(run, journalByRun.get(run.id) ?? null),
       createdAt: run.createdAt,
       tradeContext: run.tradeContext,
     }));
   }
-  private readResult(run: AiRun & { proposals: Parameters<typeof serializeProposal>[0][] }) {
+  private readResult(
+    run: AiRun & { proposals: Parameters<typeof serializeProposal>[0][] },
+    journalEntryId: string | null = null,
+  ) {
     if (run.status !== "completed") return null;
     const parsed = ResearchResultSchema.safeParse(run.result);
     if (!parsed.success) return null;
     return {
       ...parsed.data,
+      journalEntryId,
       proposals: run.proposals.map((proposal) => ({
         ...serializeProposal(proposal),
         interval: parsed.data.proposals.find((saved) => saved.id === proposal.id)?.interval,
@@ -125,7 +134,11 @@ export class AiService {
         throw new AIError("AI_REQUEST_CONFLICT", "This request ID was already used for another question.");
       if (existing.expiresAt <= new Date())
         throw new AIError("AI_REQUEST_EXPIRED", "This research request has expired.");
-      const result = this.readResult(existing);
+      const journalEntry = await this.db.journalEntry.findUnique({
+        where: { userId_runId: { userId, runId: existing.id } },
+        select: { id: true },
+      });
+      const result = this.readResult(existing, journalEntry?.id ?? null);
       if (result) {
         emit({ type: "result", result });
         return;

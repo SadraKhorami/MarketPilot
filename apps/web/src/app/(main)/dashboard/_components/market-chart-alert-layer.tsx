@@ -5,12 +5,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 import type { AlertRecord } from "../alerts/_components/alert-types";
 import { conditionLabel } from "../alerts/_components/alert-types";
+import type { PlacedChartMarker } from "./market-chart-markers";
 import { chartDate } from "./market-chart-utils";
 import type { AlertPosition } from "./use-interactive-market-chart";
 
 export function MarketChartAlertLayer({
   alerts,
   geometry,
+  markers,
   activeId,
   highlightedId,
   onHighlight,
@@ -18,6 +20,7 @@ export function MarketChartAlertLayer({
 }: {
   alerts: AlertRecord[];
   geometry: { positions: AlertPosition[]; width: number; height: number };
+  markers: PlacedChartMarker[];
   activeId: string | null;
   highlightedId: string | null;
   onHighlight: (id: string | null) => void;
@@ -83,6 +86,24 @@ export function MarketChartAlertLayer({
             </g>
           );
         })}
+        {geometry.positions.map((position) => {
+          const marker = markers.find((item) => item.id === position.id);
+          if (!marker) return null;
+          return (
+            <line
+              key={`marker:${position.id}`}
+              x1={Math.max(
+                0,
+                Math.min(position.x ?? (position.startsBeforeWindow ? 0 : geometry.width), geometry.width),
+              )}
+              y1={position.y}
+              x2={marker.left + marker.width / 2}
+              y2={marker.top + marker.height / 2}
+              className="stroke-amber-500"
+              strokeDasharray="2 3"
+            />
+          );
+        })}
         {selected &&
         selectedPosition?.x !== null &&
         selectedPosition?.x !== undefined &&
@@ -109,36 +130,34 @@ export function MarketChartAlertLayer({
           </g>
         ) : null}
       </svg>
-      {geometry.positions
-        .filter(
-          (position) =>
-            position.id === activeId && position.x !== null && position.x >= 0 && position.x <= geometry.width,
-        )
-        .map((position) => {
-          const rule = alerts.find((item) => item.id === position.id);
-          if (!rule) return null;
-          return (
-            <Tooltip key={position.id}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={activeId === rule.id ? "default" : "outline"}
-                  size="icon-xs"
-                  className="absolute rounded-full shadow-sm"
-                  style={{ left: position.x! - 12, top: position.y - 12 }}
-                  aria-label={`Inspect ${rule.name}: ${conditionLabel(rule)}, created ${chartDate(rule.createdAt)}`}
-                  onClick={() => onSelect(rule)}
-                  onMouseEnter={() => onHighlight(rule.id)}
-                  onMouseLeave={() => onHighlight(null)}
-                >
-                  <Bell />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {conditionLabel(rule)} · Created {chartDate(rule.createdAt)}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
+      {geometry.positions.map((position) => {
+        const rule = alerts.find((item) => item.id === position.id);
+        const marker = markers.find((item) => item.id === position.id);
+        if (!rule || !marker) return null;
+        const edge = position.x === null || position.x < 0 || position.x > geometry.width;
+        return (
+          <Tooltip key={position.id}>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeId === rule.id ? "default" : "outline"}
+                size="icon-xs"
+                className="absolute rounded-full shadow-sm"
+                style={{ left: marker.left, top: marker.top }}
+                aria-label={`Inspect ${rule.name}: ${conditionLabel(rule)}, created ${chartDate(rule.createdAt)}`}
+                onClick={() => onSelect(rule)}
+                onMouseEnter={() => onHighlight(rule.id)}
+                onMouseLeave={() => onHighlight(null)}
+              >
+                <Bell />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {conditionLabel(rule)} · Created {chartDate(rule.createdAt)}
+              {edge ? " · Creation time outside the visible candles; shown at the edge" : ""}
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
     </>
   );
 }

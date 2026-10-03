@@ -85,7 +85,12 @@ export function MarketChartInspection({
               </dd>
             </dl>
             <p className="text-muted-foreground text-xs">
-              The dashed line is your alert price; the bell marks when you created it.
+              The dashed line marks your alert price.
+              {Date.parse(inspected.createdAt) > Date.parse(data.candles.at(-1)!.time)
+                ? " Its creation time is after the latest candle, so the bell appears at the right edge until that time is covered."
+                : Date.parse(inspected.createdAt) < Date.parse(data.candles[0].time)
+                  ? " Its creation time is before the available history, so the bell appears at the left edge."
+                  : " The bell marks its creation time; a connector keeps its exact location clear when nearby badges are separated."}
             </p>
             {onAlertSelect ? (
               <Button

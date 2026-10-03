@@ -16,6 +16,7 @@ import { apiRequest } from "@/lib/api/client";
 
 import { CollectionSearch, FilterSelect } from "../../_components/collection-filters";
 import { CollectionPagination, type PagedResult } from "../../_components/collection-pagination";
+import { MarketDetailsLink } from "../../_components/market-details-link";
 import { ResourceState } from "../../_components/resource-state";
 import { AlertDetails } from "./alert-details";
 import { type AlertRecord, conditionLabel, dateLabel, reasonLabel } from "./alert-types";
@@ -148,6 +149,7 @@ export function AlertManager() {
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end gap-1">
+                              <MarketDetailsLink symbol={rule.assetId} />
                               <Button
                                 variant="ghost"
                                 size="icon"

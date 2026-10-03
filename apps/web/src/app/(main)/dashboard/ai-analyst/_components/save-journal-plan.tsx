@@ -8,9 +8,20 @@ import { BookOpen, Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
-export function SaveJournalPlan({ runId, expired, persian }: { runId: string; expired: boolean; persian: boolean }) {
+export function SaveJournalPlan({
+  runId,
+  expired,
+  persian,
+  saved,
+  onSaved,
+}: {
+  runId: string;
+  expired: boolean;
+  persian: boolean;
+  saved: string | null;
+  onSaved: (id: string) => void;
+}) {
   const [pending, setPending] = useState(false);
-  const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   async function save() {
     if (pending || saved || expired) return;
@@ -21,7 +32,7 @@ export function SaveJournalPlan({ runId, expired, persian }: { runId: string; ex
         method: "POST",
         body: JSON.stringify({ runId, confirm: true }),
       });
-      setSaved(response.data.id);
+      onSaved(response.data.id);
       window.dispatchEvent(new Event("marketpilot:journal-changed"));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not save this plan.");

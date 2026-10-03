@@ -17,6 +17,7 @@ import { useApiResource } from "@/hooks/use-api-resource";
 
 import { CollectionPagination, type PagedResult } from "../../_components/collection-pagination";
 import { chartPrice } from "../../_components/market-chart-utils";
+import { MarketDetailsLink } from "../../_components/market-details-link";
 import { MarketPilotPage } from "../../_components/marketpilot-page";
 import { ResourceState } from "../../_components/resource-state";
 import { JournalDetails, journalProfit } from "./journal-details";
@@ -177,7 +178,7 @@ export function JournalWorkspace() {
                   <TableHead>Entry / SL</TableHead>
                   <TableHead>Targets</TableHead>
                   <TableHead>Recorded result</TableHead>
-                  <TableHead className="pr-6 text-right">Details</TableHead>
+                  <TableHead className="pr-6 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -211,14 +212,17 @@ export function JournalWorkspace() {
                         {profit === null ? "—" : `${profit >= 0 ? "+" : ""}${chartPrice(profit)} ${entry.plan.quote}`}
                       </TableCell>
                       <TableCell className="pr-6 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label={`Open ${entry.symbol} journal details`}
-                          onClick={() => setSelected(entry.id)}
-                        >
-                          View
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <MarketDetailsLink symbol={entry.symbol} />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Open ${entry.symbol} journal details`}
+                            onClick={() => setSelected(entry.id)}
+                          >
+                            View
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

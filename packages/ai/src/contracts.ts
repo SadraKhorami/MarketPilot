@@ -220,6 +220,7 @@ export const ResearchResultSchema = z
     sources: z.array(SourceSchema).max(48),
     proposals: z.array(ProposalSchema).max(1),
     tradeSetup: TradeSetupSchema.nullable().optional(),
+    journalEntryId: z.string().uuid().nullable().optional(),
     tools: z
       .array(
         z

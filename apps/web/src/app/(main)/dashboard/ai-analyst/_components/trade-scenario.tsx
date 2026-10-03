@@ -100,7 +100,13 @@ export function TradeScenario({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <SaveJournalPlan runId={result.runId} expired={expired} persian={persian} />
+        <SaveJournalPlan
+          runId={result.runId}
+          expired={expired}
+          persian={persian}
+          saved={result.journalEntryId ?? null}
+          onSaved={(journalEntryId) => change({ ...result, journalEntryId })}
+        />
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             [text("Entry trigger", "شرط ورود"), plan.entry],

@@ -21,8 +21,18 @@ import {
 } from "lightweight-charts";
 
 import type { AlertRecord } from "../alerts/_components/alert-types";
-import type { JournalPosition } from "./market-chart-journal-layer";
+import { journalChartWindow, type JournalPosition } from "./market-chart-journal-layer";
 import { canvasColor, chartDate, chartPrice, chartTime, pricePrecision, timePosition } from "./market-chart-utils";
+
+function journalTimePosition(candles: MarketCandle[], timestamp: number) {
+  const observed = timePosition(candles, timestamp);
+  if (observed !== null) return observed;
+  const lastTime = Date.parse(candles.at(-1)!.time);
+  const duration = candles.length > 1 ? lastTime - Date.parse(candles.at(-2)!.time) : 60_000;
+  return timestamp < Date.parse(candles[0].time)
+    ? (timestamp - Date.parse(candles[0].time)) / duration
+    : candles.length - 1 + (timestamp - lastTime) / duration;
+}
 
 export type MarketChartView = "line" | "candles" | "volume";
 export type AlertPosition = { id: string; x: number | null; y: number; startsBeforeWindow: boolean };
@@ -111,32 +121,30 @@ export function useInteractiveMarketChart({
             });
     let journalPosition: JournalPosition | null = null;
     if (journal && view !== "volume") {
-      const timestamp = Date.parse(journal.openedAt ?? journal.createdAt);
-      const lastTime = Date.parse(data.candles.at(-1)!.time);
-      const barDuration = data.candles.length > 1 ? lastTime - Date.parse(data.candles.at(-2)!.time) : 60_000;
-      const logical =
-        timestamp > lastTime
-          ? data.candles.length - 1 + (timestamp - lastTime) / barDuration
-          : timePosition(data.candles, timestamp);
-      const x =
-        logical === null
-          ? Date.parse(journal.openedAt ?? journal.createdAt) < Date.parse(data.candles[0].time)
-            ? 0
-            : null
-          : (() => {
-              const before = current.chart.timeScale().logicalToCoordinate(Math.floor(logical) as Logical);
-              const after = current.chart.timeScale().logicalToCoordinate(Math.ceil(logical) as Logical);
-              return before === null || after === null
-                ? null
-                : before + (after - before) * (logical - Math.floor(logical));
-            })();
+      const window = journalChartWindow(journal, data.candles.at(-1)!.time);
+      const coordinate = (timestamp: number) => {
+        const logical = journalTimePosition(data.candles, timestamp);
+        const before = current.chart.timeScale().logicalToCoordinate(Math.floor(logical) as Logical);
+        const after = current.chart.timeScale().logicalToCoordinate(Math.ceil(logical) as Logical);
+        return before === null || after === null ? null : before + (after - before) * (logical - Math.floor(logical));
+      };
+      const x = coordinate(window.start);
+      const endX = coordinate(window.end);
       const entry = series.priceToCoordinate(journal.entryPrice ?? journal.plan.entry);
       const stop = series.priceToCoordinate(journal.plan.stopLoss);
       const targets = journal.plan.targets.map((price) => series.priceToCoordinate(price));
-      if (x !== null && x < width && entry !== null && stop !== null && targets.every((y) => y !== null))
+      if (
+        x !== null &&
+        endX !== null &&
+        x < width &&
+        entry !== null &&
+        stop !== null &&
+        targets.every((y) => y !== null)
+      )
         journalPosition = {
           id: journal.id,
           x: Math.max(0, x),
+          endX,
           entry,
           stop,
           targets: targets.filter((y): y is NonNullable<typeof y> => y !== null),
@@ -256,9 +264,13 @@ export function useInteractiveMarketChart({
     let frame = 0;
     const schedule = () => {
       if (frame) return;
+      // Series autoscaling and canvas resize settle during the library's render frame.
+      // Read coordinates afterwards so HTML badges stay at the same price as their chart anchors.
       frame = requestAnimationFrame(() => {
-        frame = 0;
-        updateGeometry();
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          updateGeometry();
+        });
       });
     };
     runtime.current = { chart, line, candles, average, volume, selectedLine: null, schedule };
@@ -394,26 +406,25 @@ export function useInteractiveMarketChart({
     }
   }, [journal, alerts]);
 
-  const focusJournal = () => {
+  const focusJournal = (target = journal) => {
     const current = runtime.current;
-    if (!current || !journal) return;
+    if (!current || !target) return;
+    const active =
+      target.status === "open" || (target.status === "planned" && Date.parse(target.plan.expiresAt) > Date.now());
     const prices = [
-      journal.entryPrice ?? journal.plan.entry,
-      journal.plan.stopLoss,
-      ...journal.plan.targets,
+      target.entryPrice ?? target.plan.entry,
       data.price,
+      ...(active ? [target.plan.stopLoss, ...target.plan.targets] : []),
     ];
     const low = Math.min(...prices);
     const high = Math.max(...prices);
     const padding = Math.max((high - low) * 0.15, high * 0.0001);
     current.chart.priceScale("right").setVisibleRange({ from: low - padding, to: high + padding });
-    const timestamp = Date.parse(journal.openedAt ?? journal.createdAt);
-    const lastTime = Date.parse(data.candles.at(-1)!.time);
-    const barDuration = data.candles.length > 1 ? lastTime - Date.parse(data.candles.at(-2)!.time) : 60_000;
-    const center =
-      timePosition(data.candles, timestamp) ??
-      data.candles.length - 1 + Math.max(0, timestamp - lastTime) / barDuration;
-    current.chart.timeScale().setVisibleLogicalRange({ from: center - 30, to: center + 15 });
+    const window = journalChartWindow(target, data.candles.at(-1)!.time);
+    const start = journalTimePosition(data.candles, window.start);
+    const end = active ? journalTimePosition(data.candles, window.end) : start;
+    const contextBars = Math.max(8, (end - start) * 0.2);
+    current.chart.timeScale().setVisibleLogicalRange({ from: start - contextBars, to: end + contextBars });
     current.schedule();
   };
 
