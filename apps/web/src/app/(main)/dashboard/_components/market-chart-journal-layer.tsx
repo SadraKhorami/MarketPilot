@@ -145,7 +145,6 @@ export function MarketChartJournalLayer({
             positioned.map((level) => (
               <span
                 key={level.label}
-                aria-label={`${level.label} ${chartPrice(level.price)}`}
                 className="pointer-events-none absolute whitespace-nowrap text-xs tabular-nums"
                 style={{ left: labelX, top: level.labelY, transform: labelOnRight ? undefined : "translateX(-100%)" }}
               >
