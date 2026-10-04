@@ -110,10 +110,18 @@ export function useResearch() {
             const detail =
               event.state === "running"
                 ? "in progress…"
-                : { ok: "received", partial: "has limited data", unavailable: "is unavailable" }[
+                : { ok: "received", partial: "has incomplete data", unavailable: "is unavailable" }[
                     event.status ?? "unavailable"
                   ];
-            setProgress(`${toolLabels[event.tool]} ${detail}`);
+            setProgress(
+              event.state === "complete" && event.reason
+                ? event.reason
+                : event.outcome === "no_setup"
+                  ? "No valid entry setup under the current conditions."
+                  : event.outcome === "ready"
+                    ? "Conditional entry plan ready."
+                    : `${toolLabels[event.tool]} ${detail}`,
+            );
           }
           if (event.type === "result")
             update(requestId, { result: event.result, status: "completed", error: undefined });

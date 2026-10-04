@@ -19,6 +19,7 @@ import { AiBudgetService } from "./ai-budget.service";
 import { AiProposalsService, serializeProposal } from "./ai-proposals.service";
 import { AiToolsService } from "./ai-tools.service";
 import type { ResearchDto } from "./ai.dto";
+import { recordedJournalRisk } from "./journal-risk";
 
 export const AI_PROVIDER = Symbol("AI_PROVIDER");
 export function aiConfiguration() {
@@ -195,7 +196,7 @@ export class AiService {
           expiresAt: { gt: new Date() },
         },
         orderBy: { createdAt: "desc" },
-        take: 2,
+        take: tradeContext?.success ? 1 : 2,
         select: { input: true, result: true, tradeContext: true },
       });
       const history: AIMessage[] = prior.reverse().flatMap((item) => {
@@ -236,8 +237,17 @@ export class AiService {
             signal,
             watchlistId: dto.watchlistId,
             snapshots: new Map(),
+            readOpenRisk: async (quote: string) =>
+              recordedJournalRisk(
+                await this.db.journalEntry.findMany({
+                  where: { userId, status: "open" },
+                  include: { exits: true },
+                }),
+                quote,
+              ),
             tradeSymbol: tradeContext?.success ? tradeContext.data.symbol : undefined,
             tradeInterval: tradeContext?.success ? tradeContext.data.interval : undefined,
+            tradeContext: tradeContext?.success ? tradeContext.data : undefined,
             propose: (args: unknown) => this.proposals.propose(userId, runId, args),
           };
           return (tool, args) => this.tools.execute(tool, args, context);

@@ -12,18 +12,29 @@ export function ResearchResponse({
   result,
   change,
   persian,
+  edit,
 }: {
   result: ResearchResult;
   change: (result: ResearchResult) => void;
   persian: boolean;
+  edit?: () => void;
 }) {
   const text = (en: string, fa: string) => (persian ? fa : en);
   const summary = result.answer.interpretation[0];
+  const setup = result.tools.findLast((tool) => tool.tool === "getTradeSetup");
+  const noSetupReason =
+    setup?.reason ?? result.sources.find((source) => source.kind === "market" && source.error)?.error;
   return (
     <>
       <MessageHeader>MarketPilot · {text("Research", "تحلیل")}</MessageHeader>
+      {!result.tradeSetup && setup ? (
+        <div className="flex flex-col gap-1" dir={persian ? "rtl" : undefined}>
+          <p className="text-sm font-medium">{text("No valid entry setup", "فعلاً سناریوی ورود معتبر موجود نیست")}</p>
+          {noSetupReason ? <p className="text-sm text-muted-foreground">{noSetupReason}</p> : null}
+        </div>
+      ) : null}
       {result.tradeSetup ? (
-        <TradeScenario plan={result.tradeSetup} result={result} change={change} persian={persian} />
+        <TradeScenario plan={result.tradeSetup} result={result} change={change} persian={persian} edit={edit} />
       ) : summary ? (
         <Bubble variant="ghost">
           <BubbleContent className="whitespace-pre-wrap leading-relaxed" dir={persian ? "rtl" : undefined}>
@@ -89,7 +100,14 @@ export function ResearchResponse({
             <ul className="mt-2 flex flex-col gap-1 text-muted-foreground text-xs">
               {result.tools.map((tool) => (
                 <li key={tool.id}>
-                  {toolLabels[tool.tool]} · {tool.status} · {tool.latencyMs} ms
+                  {toolLabels[tool.tool]} ·{" "}
+                  {tool.outcome === "no_setup"
+                    ? text("No valid setup", "پلن معتبر موجود نیست")
+                    : tool.outcome === "ready"
+                      ? text("Plan ready", "پلن آماده")
+                      : tool.status}{" "}
+                  · {tool.latencyMs} ms
+                  {tool.reason ? ` · ${tool.reason}` : ""}
                 </li>
               ))}
             </ul>

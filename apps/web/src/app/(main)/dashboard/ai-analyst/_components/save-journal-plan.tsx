@@ -62,7 +62,9 @@ export function SaveJournalPlan({
       </div>
       {!saved ? (
         <p className="text-muted-foreground text-xs">
-          {persian ? "ذخیرهٔ پلن، معامله‌ای اجرا نمی‌کند." : "Saving a plan does not place a trade."}
+          {persian
+            ? "پس از تحقق شرط ورود، شبیه‌سازی خودکار شروع می‌شود."
+            : "The simulation starts automatically when the entry condition is met."}
         </p>
       ) : null}
       {error ? (

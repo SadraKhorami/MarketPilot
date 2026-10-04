@@ -46,7 +46,8 @@ test("uses explicit configured model, capability discovery, strict structured re
     data_collection: "deny",
   });
   assert.equal(requests[1].body?.max_tokens, 1200);
-  assert.equal(requests[1].body?.tool_choice, "none");
+  assert.equal(Object.hasOwn(requests[1].body ?? {}, "tool_choice"), false);
+  assert.equal(Object.hasOwn(requests[1].body ?? {}, "tools"), false);
 });
 test("routes with strict parameters without requiring optional parallel tool-call support", async () => {
   const provider = new OpenRouterProvider("test/research", "test-only-key", undefined, async (_url, options) => {

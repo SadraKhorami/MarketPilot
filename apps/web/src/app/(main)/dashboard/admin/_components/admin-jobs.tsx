@@ -87,14 +87,11 @@ export function AdminJobs({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="font-semibold text-lg">System overview</h2>
-          <p className="text-muted-foreground text-xs">
-            Auto-refresh · 30 seconds
-            {overview.data ? ` · Workers checked ${new Date(overview.data.checkedAt).toLocaleTimeString()}` : ""}
-            {system.data ? ` · Infrastructure checked ${new Date(system.data.checkedAt).toLocaleTimeString()}` : ""}
-          </p>
-        </div>
+        <p className="min-w-0 flex-1 text-muted-foreground text-xs">
+          Auto-refresh · 30 seconds
+          {overview.data ? ` · Workers checked ${new Date(overview.data.checkedAt).toLocaleTimeString()}` : ""}
+          {system.data ? ` · Infrastructure checked ${new Date(system.data.checkedAt).toLocaleTimeString()}` : ""}
+        </p>
         <Button
           variant="outline"
           size="sm"

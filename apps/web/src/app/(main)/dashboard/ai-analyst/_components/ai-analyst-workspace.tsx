@@ -39,14 +39,22 @@ interface AiStatus {
   status: string;
   message: string;
 }
-function activityLabel(event: { state: string; status?: string }, running: boolean) {
+function activityLabel(
+  event: { state: string; status?: string; outcome?: string; reason?: string; tool: string },
+  running: boolean,
+) {
   if (event.state === "running") return running ? "Working" : "Interrupted";
-  return event.status === "ok" ? "Received" : "Limited";
+  if (event.outcome === "no_setup") return "No valid setup";
+  if (event.outcome === "ready") return "Plan ready";
+  if (event.status === "unavailable") return "Unavailable";
+  if (event.tool === "getMarketNews" && event.status === "partial") return "Includes older news";
+  return event.status === "ok" ? "Received" : "Incomplete data";
 }
 export function AIAnalystWorkspace() {
   const status = useApiResource<AiStatus>("/ai/status");
   const lists = useApiResource<ResearchWatchlist[]>("/watchlists");
   const research = useResearch();
+  const [tradeEdit, setTradeEdit] = useState<{ context?: TradeContext; revisionId?: string }>();
   const [tradeRequest, setTradeRequest] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [commandsDismissed, setCommandsDismissed] = useState(false);
@@ -89,6 +97,7 @@ export function AIAnalystWorkspace() {
       return;
     }
     if (permitsTradeSetup(value)) {
+      setTradeEdit(undefined);
       setTradeRequest(value);
       return;
     }
@@ -96,6 +105,7 @@ export function AIAnalystWorkspace() {
     void research.send(value, watchlistId === "default" ? undefined : watchlistId);
   }
   function requestSetup() {
+    setTradeEdit(undefined);
     if (!disabled)
       setTradeRequest(
         `Give me a conditional trade setup for ${symbol}, with Entry, Stop loss and supported targets. Check higher-timeframe context. If no valid setup exists, state the reason. Do not save a journal plan or create alerts without my confirmation.`,
@@ -220,10 +230,19 @@ export function AIAnalystWorkspace() {
               research={research}
               disabled={disabled}
               watchlistId={watchlistId}
-              onTradeRequest={setTradeRequest}
+              onTradeRequest={(question, edit) => {
+                setTradeEdit(edit);
+                setTradeRequest(question);
+              }}
             >
               {tradeRequest ? (
-                <TradeContextQuestion symbol={symbol} onConfirm={confirmSetup} onCancel={() => setTradeRequest(null)} />
+                <TradeContextQuestion
+                  initialContext={tradeEdit?.context}
+                  revisionId={tradeEdit?.revisionId}
+                  symbol={symbol}
+                  onConfirm={confirmSetup}
+                  onCancel={() => setTradeRequest(null)}
+                />
               ) : null}
             </ResearchConversation>
           ) : null}
@@ -233,7 +252,7 @@ export function AIAnalystWorkspace() {
               {research.activity
                 .filter((event, i, all) => all.findLastIndex((entry) => entry.tool === event.tool) === i)
                 .map((event) => (
-                  <Badge key={event.tool} variant="outline" className="ml-2">
+                  <Badge key={event.tool} variant="outline" className="ml-2" title={event.reason}>
                     {toolLabels[event.tool]} · {activityLabel(event, true)}
                   </Badge>
                 ))}

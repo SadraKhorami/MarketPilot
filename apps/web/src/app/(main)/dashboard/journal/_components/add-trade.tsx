@@ -8,10 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { apiRequest } from "@/lib/api/client";
+import { TradeSizeField, useTradeSize } from "./trade-size-field";
+import { ApiError, type ApiEnvelope, apiRequest } from "@/lib/api/client";
 import { MarketSymbolField } from "../../_components/market-symbol-field";
 
 import { localDate } from "./journal-dates";
+import { JournalDatePicker } from "./journal-date-picker";
 
 function Choice({
   id,
@@ -48,12 +50,14 @@ function Choice({
     </Field>
   );
 }
-export function AddTrade({
+function AddTradeForm({
   close,
   saved,
   trade,
   initial,
+  reload,
 }: {
+  reload?: () => Promise<void>;
   close: () => void;
   saved: () => void;
   trade?: JournalRecord;
@@ -88,7 +92,8 @@ export function AddTrade({
     trade ? String(trade.entryPrice ?? trade.plan.entry) : initial ? String(initial.price) : "",
   );
   const [stopLoss, setStopLoss] = useState(trade ? String(trade.plan.stopLoss) : "");
-  const [quantity, setQuantity] = useState(trade?.quantity ? String(trade.quantity) : "");
+  const size = useTradeSize(entry, trade?.quantity ? String(trade.quantity) : "");
+  const quantity = size.quantity;
   const [fees, setFees] = useState(String(trade?.fees ?? 0));
   const [exitPrice, setExitPrice] = useState(trade?.exitPrice ? String(trade.exitPrice) : "");
   const [exitReason, setExitReason] = useState(trade?.exits?.at(-1)?.reason ?? "manual");
@@ -103,6 +108,7 @@ export function AddTrade({
       : [{ id: crypto.randomUUID(), price: "", percent: "100" }],
   );
   const [pending, setPending] = useState(false);
+  const [conflict, setConflict] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
   async function save() {
@@ -121,7 +127,10 @@ export function AddTrade({
           trade && startedAt === localDate(new Date(trade.openedAt ?? trade.createdAt))
             ? (trade.openedAt ?? trade.createdAt)
             : new Date(startedAt).toISOString(),
-        expiresAt: new Date(expiresAt).toISOString(),
+        expiresAt:
+          trade && expiresAt === localDate(new Date(trade.plan.expiresAt))
+            ? trade.plan.expiresAt
+            : new Date(expiresAt).toISOString(),
         closedAt:
           status === "closed"
             ? trade?.closedAt && closedAt === localDate(new Date(trade.closedAt))
@@ -145,12 +154,17 @@ export function AddTrade({
       await apiRequest(trade ? `/journal/${trade.id}/trade` : "/journal/manual", {
         method: trade ? "PATCH" : "POST",
         headers: { "X-Request-Id": requestId.current },
-        body: JSON.stringify(trade ? { trade: parsed.data, updatedAt: trade.updatedAt } : parsed.data),
+        body: JSON.stringify(
+          trade ? { trade: parsed.data, updatedAt: trade.updatedAt, editVersion: trade.editVersion } : parsed.data,
+        ),
       });
       saved();
       close();
       window.dispatchEvent(new Event("marketpilot:journal-changed"));
     } catch (failure) {
+      setConflict(
+        failure instanceof ApiError && failure.status === 409 && failure.message.startsWith("Trade details changed"),
+      );
       setError(failure instanceof Error ? failure.message : "Check the dates and trade details.");
     } finally {
       setPending(false);
@@ -159,7 +173,6 @@ export function AddTrade({
   const numberFields = [
     ["entry", "Entry price", entry, setEntry],
     ["stop", "Stop loss", stopLoss, setStopLoss],
-    ["quantity", `Quantity · ${symbol.split("-")[0]} units`, quantity, setQuantity],
     [
       "fees",
       `${status === "closed" && !trade ? "Total fees" : "Entry fees"} · ${symbol.split("-").at(-1)}`,
@@ -225,25 +238,26 @@ export function AddTrade({
                 label="Current status"
                 value={status}
                 onChange={setStatus}
-                values={[
-                  ["open", "Entered trade"],
-                  ["planned", "Waiting for entry"],
-                  ["closed", "Already closed"],
-                  ["cancelled", "Cancelled plan"],
-                  ["expired", "Expired plan"],
-                ]}
+                values={
+                  trade?.openedAt
+                    ? [
+                        ["open", "Entered trade"],
+                        ["closed", "Already closed"],
+                      ]
+                    : [
+                        ["open", "Entered trade"],
+                        ["planned", "Waiting for entry"],
+                        ["closed", "Already closed"],
+                        ["cancelled", "Cancelled plan"],
+                        ["expired", "Expired plan"],
+                      ]
+                }
               />
               <Field>
                 <FieldLabel htmlFor="manual-start">
                   {status === "planned" ? "Plan start" : "Entry / plan time"}
                 </FieldLabel>
-                <Input
-                  required
-                  id="manual-start"
-                  type="datetime-local"
-                  value={startedAt}
-                  onChange={(e) => setStartedAt(e.target.value)}
-                />
+                <JournalDatePicker id="manual-start" value={startedAt} onChange={setStartedAt} />
               </Field>
               <Choice
                 id="manual-interval"
@@ -266,6 +280,7 @@ export function AddTrade({
                   />
                 </Field>
               ))}
+              <TradeSizeField id="manual-quantity" symbol={symbol} price={entry} size={size} disabled={pending} />
               <Field className="sm:col-span-2">
                 <FieldLabel>Targets & exit allocation</FieldLabel>
                 <FieldDescription>Allocate 100% across up to three targets.</FieldDescription>
@@ -291,13 +306,14 @@ export function AddTrade({
                       min="0.01"
                       max="100"
                       step="any"
+                      readOnly={!!trade?.exits.length}
                       value={target.percent}
                       onChange={(e) =>
                         setTargets((all) => all.map((t, n) => (n === i ? { ...t, percent: e.target.value } : t)))
                       }
                     />
                     <span>%</span>
-                    {targets.length > 1 ? (
+                    {targets.length > 1 && !trade?.exits.length ? (
                       <Button
                         type="button"
                         size="icon-sm"
@@ -310,7 +326,7 @@ export function AddTrade({
                     ) : null}
                   </div>
                 ))}
-                {targets.length < 3 ? (
+                {targets.length < 3 && !trade?.exits.length ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -338,13 +354,7 @@ export function AddTrade({
                   />
                   <Field>
                     <FieldLabel htmlFor="manual-expiry">Entry valid until</FieldLabel>
-                    <Input
-                      required
-                      id="manual-expiry"
-                      type="datetime-local"
-                      value={expiresAt}
-                      onChange={(e) => setExpiresAt(e.target.value)}
-                    />
+                    <JournalDatePicker id="manual-expiry" value={expiresAt} onChange={setExpiresAt} />
                     <FieldDescription>No entry before this time → expired.</FieldDescription>
                   </Field>
                 </>
@@ -353,6 +363,7 @@ export function AddTrade({
                 <Field className="sm:col-span-2">
                   <Choice
                     id="manual-tracking"
+                    disabled={trade?.exits.some((exit) => exit.basis === "recorded")}
                     label="Tracking"
                     value={trackingMode}
                     onChange={setTrackingMode}
@@ -384,13 +395,11 @@ export function AddTrade({
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="manual-exit-time">Exit time</FieldLabel>
-                    <Input
-                      required
+                    <JournalDatePicker
                       id="manual-exit-time"
                       readOnly={(trade?.exits.length ?? 0) > 1}
-                      type="datetime-local"
                       value={closedAt}
-                      onChange={(e) => setClosedAt(e.target.value)}
+                      onChange={setClosedAt}
                     />
                   </Field>
                   <Choice
@@ -417,6 +426,25 @@ export function AddTrade({
                 />
               </Field>
             </FieldGroup>
+            {conflict && reload ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={async () => {
+                  setPending(true);
+                  try {
+                    await reload();
+                  } catch (failure) {
+                    setError(failure instanceof Error ? failure.message : "Could not load the trade.");
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+              >
+                Load latest trade · discard edits
+              </Button>
+            ) : null}
             {error ? (
               <p role="alert" className="text-destructive text-sm">
                 {error}
@@ -434,5 +462,24 @@ export function AddTrade({
         </form>
       </SheetContent>
     </Sheet>
+  );
+}
+
+export function AddTrade(props: Parameters<typeof AddTradeForm>[0]) {
+  const [trade, setTrade] = useState(props.trade);
+  return (
+    <AddTradeForm
+      {...props}
+      trade={trade}
+      key={trade?.editVersion ?? trade?.updatedAt ?? "new"}
+      reload={
+        trade
+          ? async () => {
+              const response = await apiRequest<ApiEnvelope<JournalRecord>>(`/journal/${trade.id}`);
+              setTrade(response.data);
+            }
+          : undefined
+      }
+    />
   );
 }

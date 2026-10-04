@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   defaultTradePreferences,
+  resolveEntryPolicy,
   type TradeContext,
+  type JournalRecord,
   type TradePreferences,
   TradePreferencesSchema,
 } from "@marketpilot/ai/contracts";
@@ -20,15 +22,20 @@ import { MarketSymbolField } from "../../_components/market-symbol-field";
 import { TradePreferenceFields } from "../../journal/_components/trade-preference-fields";
 export function TradeContextQuestion({
   symbol,
+  initialContext,
+  revisionId,
   onConfirm,
   onCancel,
 }: {
   symbol: string;
+  initialContext?: TradeContext;
+  revisionId?: string;
   onConfirm: (context: TradeContext) => void;
   onCancel: () => void;
 }) {
   const [selectedSymbol, setSelectedSymbol] = useState(symbol);
   const memory = useApiResource<{ saved: boolean; preferences: TradePreferences }>("/journal/preferences/state");
+  const revision = useApiResource<JournalRecord>(revisionId ? `/journal/${revisionId}` : null);
   const [initialized, setInitialized] = useState(false);
   const [value, setValue] = useState(defaultTradePreferences);
   const [confirming, setConfirming] = useState(false);
@@ -40,20 +47,44 @@ export function TradeContextQuestion({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (memory.data) {
-      setValue(memory.data.preferences);
-      setConfirming(memory.data.saved);
+    if (memory.data && !initialized && (!revisionId || revision.data)) {
+      const source = initialContext ?? revision.data?.context ?? memory.data.preferences;
+      setValue({
+        capital: source.capital,
+        currency: source.currency,
+        riskPercent: source.riskPercent,
+        interval: source.interval,
+        holding: source.holding,
+        autoReview: source.autoReview,
+        entryPolicy: source.entryPolicy,
+      });
+      setSelectedSymbol(initialContext?.symbol ?? revision.data?.symbol ?? symbol);
+      setConfirming(!initialContext && memory.data.saved);
       setInitialized(true);
     }
-  }, [memory.data]);
+  }, [memory.data, initialized, revisionId, revision.data, initialContext, symbol]);
   const valid = TradePreferencesSchema.safeParse(value).success;
   async function confirm() {
-    if (!valid || pending || !initialized || memory.loading || memory.error) return;
+    if (
+      !valid ||
+      pending ||
+      !initialized ||
+      memory.loading ||
+      memory.error ||
+      revision.error ||
+      (revisionId &&
+        (revision.loading || !revision.data?.planVersion || !["planned", "expired"].includes(revision.data.status)))
+    )
+      return;
     setPending(true);
     setError(null);
     try {
       if (remember) await apiRequest("/journal/preferences", { method: "PATCH", body: JSON.stringify(value) });
-      onConfirm({ ...value, symbol: selectedSymbol });
+      onConfirm({
+        ...value,
+        symbol: selectedSymbol,
+        ...(revision.data ? { revisesEntryId: revision.data.id, revisesPlanVersion: revision.data.planVersion } : {}),
+      });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Preferences could not be saved.");
     } finally {
@@ -87,7 +118,22 @@ export function TradeContextQuestion({
           <dl className="grid grid-cols-2 gap-3 text-sm">
             {[
               ["Market", selectedSymbol],
-              ["Timeframe", value.interval],
+              [
+                "Entry / trend",
+                resolveEntryPolicy(value).timeframeMode === "auto"
+                  ? "Auto · bounded proposal"
+                  : `${value.interval} / ${resolveEntryPolicy(value).trendInterval}`,
+              ],
+              [
+                "Entry validity",
+                resolveEntryPolicy(value).validityMode === "auto"
+                  ? "Auto · 1–12 candles, max 72h"
+                  : `${resolveEntryPolicy(value).validityCandles} entry candles · max 72h`,
+              ],
+              [
+                "Scenario / condition",
+                `${resolveEntryPolicy(value).scenario} / ${resolveEntryPolicy(value).condition}`,
+              ],
               [
                 "Holding style",
                 {
@@ -99,7 +145,7 @@ export function TradeContextQuestion({
               ],
               ["Risk limit", `${value.riskPercent}%`],
               [
-                "Capital",
+                "Manual capital",
                 value.capital ? `${value.capital.toLocaleString()} ${value.currency}` : "Not supplied · no sizing",
               ],
               ["AI event comments", value.autoReview ? "Enabled · uses research allowance" : "Off"],
@@ -118,7 +164,7 @@ export function TradeContextQuestion({
                 id="trade-context-market"
                 value={selectedSymbol}
                 onChange={setSelectedSymbol}
-                disabled={pending}
+                disabled={pending || !!revisionId}
               />
             </Field>
             <TradePreferenceFields value={value} onChange={setValue} disabled={pending || memory.loading} />
@@ -135,16 +181,38 @@ export function TradeContextQuestion({
             <FieldLabel htmlFor="remember-trade-context">Remember these preferences in Journal</FieldLabel>
           </Field>
         ) : null}
-        {memory.error || error ? (
+        {revisionId && revision.data && !["planned", "expired"].includes(revision.data.status) ? (
+          <p role="alert" className="text-destructive text-xs">
+            This plan has an execution or is cancelled. Manage its recorded trade separately.
+          </p>
+        ) : null}
+        {revisionId ? (
+          <p className="text-muted-foreground text-xs">
+            A replacement is proposed only. The previous plan stays unchanged until you confirm and save the new
+            proposal. Open trades cannot be replaced.
+          </p>
+        ) : null}
+        {memory.error || revision.error || error ? (
           <p role="alert" className="text-destructive text-sm">
-            {error ?? memory.error}
+            {error ?? revision.error ?? memory.error}
           </p>
         ) : null}
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
         <Button
           size="sm"
-          disabled={!valid || pending || !initialized || memory.loading || !!memory.error}
+          disabled={
+            !valid ||
+            pending ||
+            !initialized ||
+            memory.loading ||
+            !!memory.error ||
+            !!revision.error ||
+            (!!revisionId &&
+              (revision.loading ||
+                !revision.data?.planVersion ||
+                !["planned", "expired"].includes(revision.data.status)))
+          }
           onClick={() => (confirming ? void confirm() : setConfirming(true))}
         >
           {pending ? "Saving…" : confirming ? "Confirm & analyse" : "Review details"}

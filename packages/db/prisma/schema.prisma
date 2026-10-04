@@ -548,6 +548,7 @@ model TradePreferences {
   interval    String   @default("15m") @db.VarChar(4)
   holding     String   @default("day") @db.VarChar(12)
   autoReview  Boolean  @default(false)
+  entryPolicy Json?
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

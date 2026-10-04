@@ -1,5 +1,9 @@
 import {
   AIError,
+  automaticEntryIntervals,
+  resolveEntryPolicy,
+  type TradeContext,
+  type ConditionalEntry,
   AlertInputSchema,
   type Source,
   SourceSchema,
@@ -32,6 +36,9 @@ export interface ResearchContext {
   watchlistId?: string;
   tradeSymbol?: string;
   tradeInterval?: MarketDataInterval;
+  tradeContext?: TradeContext;
+  newsResult?: ToolResult;
+  readOpenRisk?: (quote: string) => Promise<NonNullable<ConditionalEntry["openRisk"]>>;
   snapshots: Map<string, Promise<MarketSnapshot>>;
   propose: (input: {
     symbol: string;
@@ -76,7 +83,7 @@ export class AiToolsService {
     } catch (error) {
       if (context.signal.aborted || error instanceof AIError || (error instanceof Error && error.name === "ZodError"))
         throw error;
-      return ToolResultSchema.parse({
+      const unavailable = ToolResultSchema.parse({
         tool,
         status: "unavailable",
         sources: [
@@ -89,6 +96,8 @@ export class AiToolsService {
         proposal: null,
         error: "The requested source is temporarily unavailable.",
       });
+      if (tool === "getMarketNews") context.newsResult = unavailable;
+      return unavailable;
     }
   }
   private async executeValidated(tool: ToolName, input: unknown, context: ResearchContext): Promise<ToolResult> {
@@ -103,7 +112,12 @@ export class AiToolsService {
           ...baseSource("news", article.title, article.source),
           id: `news:${article.id}`,
           symbol,
-          freshness: "stored",
+          freshness:
+            article.publishedAt &&
+            Date.now() >= article.publishedAt.getTime() &&
+            Date.now() - article.publishedAt.getTime() <= 24 * 3_600_000
+              ? "stored"
+              : "stale",
           observedAt: article.publishedAt?.toISOString() ?? null,
           fetchedAt: article.fetchedAt.toISOString(),
           url: article.originalUrl,
@@ -122,6 +136,10 @@ export class AiToolsService {
           },
         ];
       }
+      const older = result.sources.filter((source) => source.freshness === "stale").length;
+      if (older)
+        result.error = `${result.sources.length - older} recent news item(s); ${older} older or undated. News coverage is not an economic calendar.`;
+      context.newsResult = result;
     } else if (tool === "getWatchlist") {
       const args = toolSchemas.getWatchlist.parse(input);
       if (context.watchlistId && args.watchlistId && args.watchlistId !== context.watchlistId)
@@ -158,14 +176,69 @@ export class AiToolsService {
     } else if (tool === "getTradeSetup") {
       const args = toolSchemas.getTradeSetup.parse(input);
       if (context.tradeSymbol) args.symbol = context.tradeSymbol;
-      if (context.tradeInterval) args.interval = context.tradeInterval;
+      const preferences = context.tradeContext;
+      if (!preferences || !context.newsResult)
+        throw new AIError(
+          "AI_NO_EVIDENCE",
+          "Confirm trading preferences and retrieve relevant news before proposing an entry.",
+        );
+      const policy = resolveEntryPolicy(preferences);
+      if (policy.timeframeMode === "manual") args.interval = preferences.interval;
+      else if (!automaticEntryIntervals(preferences.holding).some((interval) => interval === args.interval)) {
+        result.status = "unavailable";
+        result.error = "The proposed entry timeframe is outside the confirmed holding-style bounds.";
+        return ToolResultSchema.parse(result);
+      }
+      if (
+        (policy.scenario === "auto" && !args.scenario) ||
+        (policy.condition === "auto" && !args.condition) ||
+        (policy.timeframeMode === "auto" && !args.trendInterval) ||
+        (policy.validityMode === "auto" && (args.validityCandles === undefined || !args.validityReason)) ||
+        !args.rationale
+      ) {
+        result.status = "unavailable";
+        result.error =
+          "The AI proposal omitted an Auto selection. Request a complete scenario, condition, trend timeframe and bounded validity.";
+        return ToolResultSchema.parse(result);
+      }
       const symbol = resolveResearchSymbol(args.symbol);
       const snapshot = await this.snapshot(symbol, args.interval, context);
       const source = this.marketSource(snapshot, 50, tool);
       const higher = { "1m": "15m", "5m": "1h", "15m": "1h", "1h": "6h", "6h": "1d", "1d": "1d" } as const;
-      const contextSnapshot = await this.snapshot(symbol, higher[args.interval], context);
+      const trendInterval =
+        policy.timeframeMode === "manual" ? policy.trendInterval : (args.trendInterval ?? higher[args.interval]);
+      const contextSnapshot = await this.snapshot(symbol, trendInterval, context);
       const contextSource = this.marketSource(contextSnapshot, 50, "getTrendAnalysis");
-      const scenario = calculateTradeSetup(snapshot, args.direction, source.id, Date.now(), contextSnapshot);
+      const newsSources = context.newsResult.sources.filter((source) => source.status !== "unavailable");
+      const latestPublishedAt =
+        newsSources
+          .map((source) => source.observedAt)
+          .filter((time): time is string => !!time)
+          .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+      const scenario = calculateTradeSetup(snapshot, args.direction, source.id, Date.now(), contextSnapshot, {
+        preferences,
+        scenario: args.scenario,
+        condition: args.condition,
+        validityCandles: args.validityCandles,
+        rationale: args.rationale,
+        validityReason: args.validityReason,
+        news: {
+          status: !newsSources.length
+            ? "unavailable"
+            : latestPublishedAt &&
+                Date.now() >= Date.parse(latestPublishedAt) &&
+                Date.now() - Date.parse(latestPublishedAt) <= 24 * 3_600_000
+              ? "available"
+              : "stale",
+          latestPublishedAt,
+          checkedAt: new Date().toISOString(),
+          sourceIds: newsSources.map((source) => source.id),
+          calendar: "unavailable",
+        },
+      });
+      if (scenario.plan?.conditionalEntry) {
+        scenario.plan.conditionalEntry.openRisk = await context.readOpenRisk?.(scenario.plan.quote);
+      }
       result.tradeSetup = scenario.plan;
       result.error = scenario.reason;
       if (scenario.plan) {
@@ -187,9 +260,6 @@ export class AiToolsService {
             unit: scenario.plan!.quote,
           })),
         );
-      } else {
-        source.status = "partial";
-        source.error = scenario.reason;
       }
       result.sources = [SourceSchema.parse(source), contextSource];
     } else if (tool === "createAlert") {

@@ -18,8 +18,11 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { apiRequest } from "@/lib/api/client";
 import { JournalDeleteTrade } from "./journal-delete-trade";
+import { JournalExecutionEditor } from "./journal-execution-editor";
 import { AddTrade } from "./add-trade";
 import { localDate } from "./journal-dates";
+import { JournalDatePicker } from "./journal-date-picker";
+import { TradeSizeField, useTradeSize } from "./trade-size-field";
 
 export function JournalActions({
   entry,
@@ -32,6 +35,7 @@ export function JournalActions({
 }) {
   const [action, setAction] = useState<"tp" | "sl" | "manual" | "cancelled" | "expired" | null>(null);
   const [editing, setEditing] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   async function archive() {
@@ -59,7 +63,12 @@ export function JournalActions({
         <DropdownMenuContent align="end">
           <DropdownMenuGroup>
             <DropdownMenuItem onSelect={view}>Details & timeline</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setEditing(true)}>Edit trade</DropdownMenuItem>
+            {!entry.plan.conditionalEntry ? (
+              <DropdownMenuItem onSelect={() => setEditing(true)}>Edit trade</DropdownMenuItem>
+            ) : null}
+            {entry.plan.conditionalEntry && entry.openedAt ? (
+              <DropdownMenuItem onSelect={() => setCorrecting(true)}>Correct actual entry</DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem
               variant="destructive"
               onSelect={() => {
@@ -74,17 +83,17 @@ export function JournalActions({
               </DropdownMenuItem>
             ) : null}
             {entry.status === "closed" && entry.resultBasis === "estimated" ? (
-              <DropdownMenuItem onSelect={() => setAction("manual")}>Record broker result</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setAction("manual")}>Adjust simulation result</DropdownMenuItem>
             ) : null}
             {entry.status === "open" ? (
               <>
                 <DropdownMenuItem onSelect={() => setAction("tp")}>Record take profit / partial exit</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setAction("sl")}>Record stop loss execution</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setAction("sl")}>Record stop loss</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setAction("manual")}>Close at another price</DropdownMenuItem>
               </>
             ) : entry.status === "planned" ? (
               <>
-                <DropdownMenuItem onSelect={view}>Record actual entry</DropdownMenuItem>
+                <DropdownMenuItem onSelect={view}>View entry conditions</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setAction("cancelled")}>Cancel waiting plan</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setAction("expired")}>Mark waiting plan expired</DropdownMenuItem>
               </>
@@ -92,6 +101,9 @@ export function JournalActions({
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      {correcting ? (
+        <JournalExecutionEditor entry={entry} close={() => setCorrecting(false)} changed={changed} />
+      ) : null}
       {editing ? <AddTrade trade={entry} close={() => setEditing(false)} saved={changed} /> : null}
       {deleting ? <JournalDeleteTrade entry={entry} close={() => setDeleting(false)} changed={changed} /> : null}
       {action ? (
@@ -120,9 +132,15 @@ function JournalActionSheet({
   const [price, setPrice] = useState(
     action === "sl" ? String(entry.plan.stopLoss) : action === "tp" ? String(entry.plan.targets[0]) : "",
   );
-  const [quantity, setQuantity] = useState(String(remaining));
+  const [actualEntryPrice, setActualEntryPrice] = useState(String(entry.entryPrice ?? entry.plan.entry));
+  const entrySize = useTradeSize(actualEntryPrice, String(entry.quantity ?? remaining));
+  const [entryFees, setEntryFees] = useState(String(entry.fees));
+  const [entryTime, setEntryTime] = useState(localDate(new Date(entry.openedAt ?? entry.createdAt)));
+  const size = useTradeSize(String(entry.entryPrice ?? entry.plan.entry), String(remaining));
+  const quantity = size.quantity;
   const [fees, setFees] = useState("0");
-  const [time, setTime] = useState(() => localDate(new Date()));
+  const instant = useRef(new Date());
+  const [time, setTime] = useState(() => localDate(instant.current));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
@@ -138,10 +156,24 @@ function JournalActionSheet({
             ? {
                 requestId: requestId.current,
                 reconcile,
+                ...(reconcile
+                  ? {
+                      actualEntry: {
+                        price: Number(actualEntryPrice),
+                        quantity: Number(entrySize.quantity),
+                        fees: Number(entryFees),
+                        occurredAt:
+                          entryTime === localDate(new Date(entry.openedAt ?? entry.createdAt))
+                            ? (entry.openedAt ?? entry.createdAt)
+                            : new Date(entryTime).toISOString(),
+                      },
+                    }
+                  : {}),
                 price: Number(price),
                 quantity: Number(quantity),
                 fees: Number(fees),
-                occurredAt: new Date(time).toISOString(),
+                occurredAt:
+                  time === localDate(instant.current) ? instant.current.toISOString() : new Date(time).toISOString(),
                 reason: action,
               }
             : { status: action, confirm: true },
@@ -171,8 +203,8 @@ function JournalActionSheet({
           <SheetDescription>
             {execution
               ? reconcile
-                ? "Replace estimated exits with broker records. Previous observations remain in the timeline."
-                : "Use broker values. A partial exit leaves the remaining quantity open."
+                ? "Adjust the simulated entry and exit. Earlier candle observations remain in the timeline."
+                : "Enter your exit values. A partial exit leaves the remaining quantity open."
               : "Only an unexecuted plan is affected. No profit or loss is recorded."}
           </SheetDescription>
         </SheetHeader>
@@ -204,9 +236,66 @@ function JournalActionSheet({
                   </Select>
                 </Field>
               ) : null}
+              {reconcile ? (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="reconcile-entry-price">Actual entry price · {entry.plan.quote}</FieldLabel>
+                    <Input
+                      id="reconcile-entry-price"
+                      type="number"
+                      min="0.00000001"
+                      step="any"
+                      required
+                      disabled={pending}
+                      value={actualEntryPrice}
+                      onChange={(event) => setActualEntryPrice(event.target.value)}
+                    />
+                  </Field>
+                  <TradeSizeField
+                    id="reconcile-position"
+                    symbol={entry.symbol}
+                    price={actualEntryPrice}
+                    size={entrySize}
+                    disabled={pending}
+                  />
+                  <Field>
+                    <FieldLabel htmlFor="reconcile-entry-fees">Actual entry fees · {entry.plan.quote}</FieldLabel>
+                    <Input
+                      id="reconcile-entry-fees"
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      disabled={pending}
+                      value={entryFees}
+                      onChange={(event) => setEntryFees(event.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="reconcile-entry-time">Actual entry time</FieldLabel>
+                    <JournalDatePicker
+                      id="reconcile-entry-time"
+                      value={entryTime}
+                      onChange={setEntryTime}
+                      disabled={pending}
+                    />
+                  </Field>
+                </>
+              ) : null}
+              <TradeSizeField
+                id="exit-quantity"
+                symbol={entry.symbol}
+                price={String(entry.entryPrice ?? entry.plan.entry)}
+                size={size}
+                disabled={pending}
+                label="Exit size"
+              />
+              <p className="text-muted-foreground text-xs">
+                {remaining.toLocaleString(undefined, { maximumSignificantDigits: 10 })} {entry.symbol.split("-")[0]}{" "}
+                remaining{reconcile ? " before entry correction" : ""}.
+              </p>
               {[
                 ["price", `Actual exit price · ${entry.plan.quote}`, price, setPrice],
-                ["quantity", `Exit quantity · ${remaining} remaining`, quantity, setQuantity],
                 ["fees", `Exit fees · ${entry.plan.quote}`, fees, setFees],
               ].map(([id, label, value, setter]) => (
                 <Field key={String(id)}>
@@ -227,14 +316,7 @@ function JournalActionSheet({
               ))}
               <Field>
                 <FieldLabel htmlFor="exit-date">Execution time</FieldLabel>
-                <Input
-                  required
-                  id="exit-date"
-                  type="datetime-local"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  disabled={pending}
-                />
+                <JournalDatePicker id="exit-date" value={time} onChange={setTime} disabled={pending} />
               </Field>
             </FieldGroup>
           ) : (

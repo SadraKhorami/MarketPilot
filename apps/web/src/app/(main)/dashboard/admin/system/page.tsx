@@ -5,7 +5,7 @@ import { AdminSystem } from "../_components/admin-system";
 export const metadata: Metadata = { title: "System · MarketPilot" };
 export default function Page() {
   return (
-    <MarketPilotPage title="System" description="Inspect dependencies and integration capabilities.">
+    <MarketPilotPage title="System" description="Monitor infrastructure, queues, bots and AI operations.">
       <AdminSystem />
     </MarketPilotPage>
   );

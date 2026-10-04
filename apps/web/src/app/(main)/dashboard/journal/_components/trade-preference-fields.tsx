@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EntryPolicyFields } from "./entry-policy-fields";
 export function TradePreferenceFields({
   value,
   onChange,
@@ -20,7 +21,7 @@ export function TradePreferenceFields({
   return (
     <FieldGroup className="grid gap-4 sm:grid-cols-2">
       <Field>
-        <FieldLabel htmlFor={`${id}-capital`}>Capital · optional</FieldLabel>
+        <FieldLabel htmlFor={`${id}-capital`}>Manual capital · optional</FieldLabel>
         <Input
           id={`${id}-capital`}
           type="number"
@@ -33,6 +34,7 @@ export function TradePreferenceFields({
           disabled={disabled}
           onChange={(e) => onChange({ ...value, capital: e.target.value === "" ? null : Number(e.target.value) })}
         />
+        <FieldDescription>Your supplied sizing capital, not verified broker free balance.</FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor={`${id}-currency`}>Account currency</FieldLabel>
@@ -72,30 +74,6 @@ export function TradePreferenceFields({
         <FieldDescription>Your limit, not an AI recommendation.</FieldDescription>
       </Field>
       <Field>
-        <FieldLabel htmlFor={`${id}-interval`}>Analysis timeframe</FieldLabel>
-        <Select
-          value={value.interval}
-          disabled={disabled}
-          onValueChange={(interval) => {
-            if (["1m", "5m", "15m", "1h", "6h", "1d"].includes(interval))
-              onChange({ ...value, interval: interval as TradePreferences["interval"] });
-          }}
-        >
-          <SelectTrigger id={`${id}-interval`} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {["1m", "5m", "15m", "1h", "6h", "1d"].map((interval) => (
-                <SelectItem key={interval} value={interval}>
-                  {interval}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field className="sm:col-span-2">
         <FieldLabel htmlFor={`${id}-holding`}>Holding style</FieldLabel>
         <Select
           value={value.holding}
@@ -117,8 +95,13 @@ export function TradePreferenceFields({
             </SelectGroup>
           </SelectContent>
         </Select>
-        <FieldDescription>Hybrid lets AI consider a flexible duration based on market conditions.</FieldDescription>
+        <FieldDescription>
+          Holding style bounds Auto entry timeframes. It never sets a deadline to close an open trade.
+        </FieldDescription>
       </Field>
+      <div className="sm:col-span-2">
+        <EntryPolicyFields value={value} onChange={onChange} disabled={disabled} />
+      </div>
       <Field orientation="horizontal" className="sm:col-span-2">
         <Checkbox
           id={`${id}-review`}

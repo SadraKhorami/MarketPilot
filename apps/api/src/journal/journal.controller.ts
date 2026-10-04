@@ -106,6 +106,13 @@ export class JournalController {
     if (!parsed.success) throw new BadRequestException("Confirm the waiting plan update.");
     return { data: await this.trades.transition(user.id, id, parsed.data.status) };
   }
+  @Patch(":id/execution") async correctExecution(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+  ) {
+    return { data: await this.trades.correctExecution(user.id, id, body) };
+  }
   @Post(":id/exits") async exit(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,

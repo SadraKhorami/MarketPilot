@@ -12,12 +12,12 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { localDate } from "./journal-dates";
+import { JournalDatePicker } from "./journal-date-picker";
 import { JournalPerformanceChart } from "./journal-performance-chart";
 import { useState } from "react";
 import type { JournalAnalytics } from "@marketpilot/ai/contracts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { useApiResource } from "@/hooks/use-api-resource";
@@ -29,7 +29,7 @@ export function JournalAnalyticsWorkspace() {
   const currencies = useApiResource<string[]>("/journal/currencies");
   const [chartMode, setChartMode] = useState("cumulative");
   const [range, setRange] = useState("7");
-  const [basis, setBasis] = useState("recorded");
+  const [basis, setBasis] = useState("estimated");
   const [symbol, setSymbol] = useState("");
   const [source, setSource] = useState("all");
   const [quote, setQuote] = useState("USD");
@@ -86,8 +86,8 @@ export function JournalAnalyticsWorkspace() {
       basis,
       setBasis,
       [
-        ["recorded", "Recorded executions"],
-        ["estimated", "Automatic estimates"],
+        ["recorded", "Manual records"],
+        ["estimated", "Simulations"],
       ],
     ],
     [
@@ -122,9 +122,9 @@ export function JournalAnalyticsWorkspace() {
     },
     {
       id: "basis",
-      label: basis === "recorded" ? "Recorded executions" : "Automatic estimates",
-      changed: basis !== "recorded",
-      reset: () => setBasis("recorded"),
+      label: basis === "recorded" ? "Manual records" : "Simulations",
+      changed: basis !== "estimated",
+      reset: () => setBasis("estimated"),
     },
     { id: "quote", label: quote, changed: quote !== "USD", reset: () => setQuote("USD") },
     ...(source !== "all"
@@ -142,7 +142,7 @@ export function JournalAnalyticsWorkspace() {
   const activeCount = filters.filter((filter) => filter.changed).length;
   function resetFilters() {
     setRange("7");
-    setBasis("recorded");
+    setBasis("estimated");
     setQuote("USD");
     setSource("all");
     setSymbol("");
@@ -206,24 +206,22 @@ export function JournalAnalyticsWorkspace() {
                     <FieldGroup className="grid grid-cols-2 gap-3">
                       <Field>
                         <FieldLabel htmlFor="analytics-from">From</FieldLabel>
-                        <Input
+                        <JournalDatePicker
                           id="analytics-from"
-                          type="date"
+                          dateOnly
                           value={from}
                           max={to || undefined}
-                          onChange={(event) => setFrom(event.target.value)}
-                          className="h-10 min-w-0"
+                          onChange={setFrom}
                         />
                       </Field>
                       <Field>
                         <FieldLabel htmlFor="analytics-to">To</FieldLabel>
-                        <Input
+                        <JournalDatePicker
                           id="analytics-to"
-                          type="date"
+                          dateOnly
                           value={to}
                           min={from || undefined}
-                          onChange={(event) => setTo(event.target.value)}
-                          className="h-10 min-w-0"
+                          onChange={setTo}
                         />
                       </Field>
                     </FieldGroup>
@@ -322,9 +320,12 @@ export function JournalAnalyticsWorkspace() {
                 </div>
                 <CardDescription>
                   {data.basis === "estimated"
-                    ? "Candle-based estimates, excluding unknown slippage and exit fees."
-                    : "Recorded executions. Partial exits contribute on their exit dates."}{" "}
-                  Days are grouped in UTC.
+                    ? "Candle-based simulations. Monetary results require a supplied position amount."
+                    : "Manual records. Partial exits contribute on their exit dates."}{" "}
+                  Days are grouped in UTC.{" "}
+                  {data.unsizedTrades
+                    ? `${data.unsizedTrades} unsized simulations are excluded from monetary P&L.`
+                    : ""}
                 </CardDescription>
               </CardHeader>
               <CardContent>

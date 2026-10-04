@@ -66,13 +66,36 @@ export const JournalExitInputSchema = z
   .object({
     requestId: z.string().uuid(),
     reconcile: z.boolean().optional(),
+    actualEntry: z
+      .object({
+        price,
+        quantity: price,
+        fees: z.number().nonnegative().finite().max(1e12),
+        occurredAt: time,
+      })
+      .strict()
+      .optional(),
     price,
     quantity: price,
     fees: z.number().nonnegative().finite().max(1e12),
     occurredAt: time,
     reason: z.enum(["tp", "sl", "manual"]),
   })
-  .strict();
+  .strict()
+  .superRefine((exit, ctx) => {
+    if (exit.reconcile && !exit.actualEntry)
+      ctx.addIssue({
+        code: "custom",
+        path: ["actualEntry"],
+        message: "Confirm actual entry details when replacing an estimated result.",
+      });
+    if (!exit.reconcile && exit.actualEntry)
+      ctx.addIssue({
+        code: "custom",
+        path: ["actualEntry"],
+        message: "Entry correction requires reconciliation of an estimated result.",
+      });
+  });
 export interface JournalExitRecord {
   id: string;
   price: number;
@@ -83,6 +106,7 @@ export interface JournalExitRecord {
   occurredAt: string;
 }
 export interface JournalAnalytics {
+  unsizedTrades?: number;
   quote: string;
   basis: string;
   closedTrades: number;

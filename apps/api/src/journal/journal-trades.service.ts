@@ -12,6 +12,8 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DatabaseService } from "../database.module";
+import { hasEstimatedEntry } from "./journal-execution-basis";
+import { journalEditVersion } from "./journal-edit-version";
 import type { JournalQueryDto } from "./journal.dto";
 
 export function journalWhere(userId: string, query: JournalQueryDto) {
@@ -22,7 +24,7 @@ export function journalWhere(userId: string, query: JournalQueryDto) {
     ...(query.source ? { source: query.source } : {}),
     ...(query.basis ? { resultBasis: query.basis } : {}),
     ...(query.symbol ? { symbol: query.symbol } : {}),
-    ...(query.search ? { symbol: { contains: query.search, mode: "insensitive" as const } } : {}),
+    ...(query.search ? { AND: [{ symbol: { contains: query.search, mode: "insensitive" as const } }] } : {}),
   };
 }
 export function netResult(entry: {
@@ -72,7 +74,10 @@ export class JournalTradesService {
     trade.symbol = normalizeInstrumentSymbol(trade.symbol);
     if (!/^[A-Z0-9]+-[A-Z0-9]+$/.test(trade.symbol))
       throw new BadRequestException("Select a market pair, for example BTC-USD.");
-    if (Date.parse(trade.startedAt) > Date.now() || (trade.closedAt && Date.parse(trade.closedAt) > Date.now()))
+    if (
+      (trade.status !== "planned" && Date.parse(trade.startedAt) > Date.now()) ||
+      (trade.closedAt && Date.parse(trade.closedAt) > Date.now())
+    )
       throw new BadRequestException("Recorded trade times cannot be in the future.");
     return trade;
   }
@@ -164,7 +169,14 @@ export class JournalTradesService {
   }
   async edit(userId: string, id: string, input: unknown) {
     const request = z
-      .object({ trade: z.unknown(), updatedAt: z.string().datetime({ offset: true }) })
+      .object({
+        trade: z.unknown(),
+        updatedAt: z.string().datetime({ offset: true }),
+        editVersion: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+      })
       .strict()
       .safeParse(input);
     if (!request.success) throw new BadRequestException("Trade details and current version are required.");
@@ -173,11 +185,17 @@ export class JournalTradesService {
       await tx.$queryRaw`SELECT id FROM "JournalEntry" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
       const current = await tx.journalEntry.findFirst({
         where: { id, userId },
-        include: { exits: { orderBy: { occurredAt: "asc" } } },
+        include: { exits: { orderBy: { occurredAt: "asc" } }, events: true },
       });
       if (!current) throw new NotFoundException("Trade not found.");
-      if (current.updatedAt.getTime() !== Date.parse(request.data.updatedAt))
-        throw new ConflictException("This trade changed. Reload before editing it.");
+      if (
+        request.data.editVersion
+          ? journalEditVersion(current) !== request.data.editVersion
+          : current.updatedAt.getTime() !== Date.parse(request.data.updatedAt)
+      )
+        throw new ConflictException(
+          "Trade details changed while you were editing. Load the latest trade here before saving.",
+        );
       const oldPlan = TradeSetupSchema.parse(current.plan);
       const exited = current.exits.reduce((sum, exit) => sum + exit.quantity, 0);
       if (
@@ -200,14 +218,51 @@ export class JournalTradesService {
         );
       const executed = ["open", "closed"].includes(trade.status);
       const changedLevels =
-        oldPlan.entry !== trade.entry ||
+        ((!oldPlan.conditionalEntry || !executed) && oldPlan.entry !== trade.entry) ||
         oldPlan.stopLoss !== trade.stopLoss ||
         JSON.stringify(oldPlan.targets) !== JSON.stringify(trade.targets) ||
         oldPlan.direction !== trade.direction ||
         current.symbol !== trade.symbol ||
         oldPlan.interval !== trade.interval;
+      if (
+        oldPlan.conditionalEntry &&
+        (changedLevels ||
+          oldPlan.expiresAt !== trade.expiresAt ||
+          current.entryTrigger !== trade.entryTrigger ||
+          current.trackingMode !== trade.trackingMode)
+      )
+        throw new ConflictException(
+          "This confirmed AI plan is immutable. Request and confirm a new scenario to change entry rules, levels or validity. Record actual executions separately.",
+        );
       if (current.exits.length && (current.symbol !== trade.symbol || oldPlan.direction !== trade.direction))
         throw new ConflictException("Market and side cannot change after an exit has been recorded.");
+      if (current.exits.length && JSON.stringify(current.targetAllocations) !== JSON.stringify(trade.targetAllocations))
+        throw new ConflictException("Recorded exits retain their original target allocations.");
+      if (current.openedAt && !executed)
+        throw new ConflictException(
+          "An executed trade cannot become a waiting, cancelled or expired plan. Record its exit instead.",
+        );
+      if (
+        oldPlan.conditionalEntry &&
+        !current.openedAt &&
+        executed &&
+        (Date.parse(trade.startedAt) < current.createdAt.getTime() ||
+          Date.parse(trade.startedAt) > Date.parse(oldPlan.expiresAt))
+      )
+        throw new BadRequestException("Actual entry must be recorded within the confirmed plan's entry window.");
+      const actualEntryChanged =
+        executed &&
+        (current.entryPrice !== trade.entry ||
+          current.quantity !== trade.quantity ||
+          current.openedAt?.getTime() !== Date.parse(trade.startedAt));
+      const actualExitChanged =
+        trade.status === "closed" &&
+        (current.exitPrice !== trade.exitPrice ||
+          current.closedAt?.getTime() !== Date.parse(trade.closedAt ?? "") ||
+          current.quantity !== trade.quantity);
+      const estimatedResult =
+        (hasEstimatedEntry(current.events) && !actualEntryChanged) ||
+        current.exits.some((exit) => exit.basis === "estimated" && !(current.exits.length === 1 && actualExitChanged));
       if (trade.status === "closed") {
         const price = trade.exitPrice;
         const closedAt = trade.closedAt;
@@ -218,7 +273,10 @@ export class JournalTradesService {
             data: { ...values, entryId: id, key: `edited-${randomUUID()}`, fees: 0, basis: "recorded" },
           });
         } else if (current.exits.length === 1) {
-          await tx.journalExit.update({ where: { id: current.exits[0].id }, data: values });
+          await tx.journalExit.update({
+            where: { id: current.exits[0].id },
+            data: { ...values, basis: actualExitChanged ? "recorded" : current.exits[0].basis },
+          });
         }
       }
       return tx.journalEntry.update({
@@ -231,31 +289,64 @@ export class JournalTradesService {
           fees: trade.fees,
           entryPrice: executed ? trade.entry : null,
           openedAt: executed ? new Date(trade.startedAt) : null,
-          createdAt: new Date(trade.startedAt),
+          createdAt: current.source === "ai" ? current.createdAt : new Date(trade.startedAt),
           closedAt: trade.closedAt ? new Date(trade.closedAt) : null,
           exitPrice: trade.exitPrice,
-          trackingMode: current.exits.length ? "observed" : trade.trackingMode,
+          trackingMode:
+            current.exits.some((exit) => exit.basis === "recorded") || actualExitChanged
+              ? "observed"
+              : trade.trackingMode,
           entryTrigger: trade.entryTrigger,
           targetAllocations: trade.targetAllocations,
-          plan: {
-            ...oldPlan,
-            symbol: trade.symbol,
-            direction: trade.direction,
-            interval: trade.interval,
-            entry: trade.entry,
-            stopLoss: trade.stopLoss,
-            targets: trade.targets,
-            quote: trade.symbol.split("-").at(-1) ?? "USD",
-            expiresAt: trade.expiresAt,
-          },
-          ...(changedLevels ? { checkedAt: new Date() } : {}),
-          ...(!current.exits.length && trade.status === "closed" ? { resultBasis: "recorded" } : {}),
+          plan: oldPlan.conditionalEntry
+            ? (current.plan ?? Prisma.JsonNull)
+            : {
+                ...oldPlan,
+                symbol: trade.symbol,
+                direction: trade.direction,
+                interval: trade.interval,
+                entry: trade.entry,
+                stopLoss: trade.stopLoss,
+                targets: trade.targets,
+                quote: trade.symbol.split("-").at(-1) ?? "USD",
+                expiresAt: trade.expiresAt,
+              },
+          ...(actualEntryChanged
+            ? { checkedAt: new Date(trade.startedAt) }
+            : changedLevels ||
+                current.entryTrigger !== trade.entryTrigger ||
+                current.trackingMode !== trade.trackingMode
+              ? { checkedAt: new Date() }
+              : {}),
+          ...(executed
+            ? {
+                resultBasis: estimatedResult ? "estimated" : "recorded",
+              }
+            : {}),
           events: {
             create: {
               key: `edited-${randomUUID()}`,
               kind: "edited",
               occurredAt: new Date(),
-              evidence: { message: "Trade details corrected by the user. Existing executions were preserved." },
+              evidence: {
+                message: "Trade details explicitly corrected by the user. Existing executions were preserved.",
+                previousPlan: current.plan,
+                confirmedPlan: {
+                  ...oldPlan,
+                  entry: trade.entry,
+                  stopLoss: trade.stopLoss,
+                  targets: trade.targets,
+                  expiresAt: trade.expiresAt,
+                },
+                actualEntryConfirmed: actualEntryChanged,
+                monitoringReset:
+                  changedLevels ||
+                  actualEntryChanged ||
+                  current.entryTrigger !== trade.entryTrigger ||
+                  current.trackingMode !== trade.trackingMode,
+                previousStatus: current.status,
+                confirmedStatus: trade.status,
+              },
               reviewStatus: "not_needed",
             },
           },
@@ -264,17 +355,107 @@ export class JournalTradesService {
       });
     });
   }
+  async correctExecution(userId: string, id: string, input: unknown) {
+    const parsed = z
+      .object({
+        editVersion: z.string().regex(/^[a-f0-9]{64}$/),
+        price: z.number().positive().finite().max(1e12),
+        quantity: z.number().positive().finite().max(1e12),
+        fees: z.number().nonnegative().finite().max(1e12),
+        occurredAt: z.string().datetime({ offset: true }),
+      })
+      .strict()
+      .safeParse(input);
+    if (!parsed.success) throw new BadRequestException("Check actual entry details and current trade version.");
+    const data = parsed.data;
+    return this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "JournalEntry" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
+      const entry = await tx.journalEntry.findFirst({ where: { id, userId }, include: { exits: true } });
+      if (!entry) throw new NotFoundException("Trade not found.");
+      if (journalEditVersion(entry) !== data.editVersion)
+        throw new ConflictException("Trade details changed. Load the latest trade before correcting its entry.");
+      if (!["open", "closed"].includes(entry.status))
+        throw new ConflictException("Record an actual entry before correcting it.");
+      const plan = TradeSetupSchema.parse(entry.plan);
+      const time = Date.parse(data.occurredAt);
+      if (
+        time > Date.now() ||
+        (plan.conditionalEntry && (time < entry.createdAt.getTime() || time > Date.parse(plan.expiresAt))) ||
+        entry.exits.some((exit) => exit.occurredAt.getTime() < time)
+      )
+        throw new BadRequestException("Entry time must precede all exits and respect the confirmed AI entry window.");
+      if (entry.source === "ai" && entry.resultBasis === "estimated" && entry.quantity === null) {
+        for (const exit of entry.exits) {
+          const quantity = exit.quantity * data.quantity;
+          await tx.journalExit.update({ where: { id: exit.id }, data: { quantity } });
+          exit.quantity = quantity;
+        }
+      }
+      const exited = entry.exits.reduce((sum, exit) => sum + exit.quantity, 0);
+      if (entry.status === "closed" ? Math.abs(data.quantity - exited) > data.quantity * 1e-9 : data.quantity <= exited)
+        throw new BadRequestException(
+          "Position size must remain consistent with recorded exits. Reconcile an estimated closed result to replace its fills.",
+        );
+      return tx.journalEntry.update({
+        where: { id },
+        data: {
+          entryPrice: data.price,
+          quantity: data.quantity,
+          fees: data.fees,
+          openedAt: new Date(time),
+          checkedAt: new Date(time),
+          trackingMode: entry.trackingMode,
+          resultBasis:
+            entry.trackingMode === "automatic" || entry.exits.some((exit) => exit.basis === "estimated")
+              ? "estimated"
+              : "recorded",
+          events: {
+            create: {
+              key: `entry-corrected:${randomUUID()}`,
+              kind: "edited",
+              occurredAt: new Date(),
+              evidence: {
+                message:
+                  "User confirmed corrected actual entry details. The original plan and existing exits were preserved.",
+                actualEntryConfirmed: true,
+                monitoringReset: true,
+                previousEntry: {
+                  price: entry.entryPrice,
+                  quantity: entry.quantity,
+                  fees: entry.fees,
+                  occurredAt: entry.openedAt?.toISOString(),
+                },
+                actualEntry: data,
+              },
+              reviewStatus: "not_needed",
+            },
+          },
+        },
+      });
+    });
+  }
   async remove(userId: string, id: string, input: unknown) {
     const parsed = z
-      .object({ confirm: z.literal(true), updatedAt: z.string().datetime({ offset: true }) })
+      .object({
+        confirm: z.literal(true),
+        updatedAt: z.string().datetime({ offset: true }),
+        editVersion: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+      })
       .strict()
       .safeParse(input);
     if (!parsed.success) throw new BadRequestException("Confirm deletion of this trade.");
     return this.db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "JournalEntry" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
-      const current = await tx.journalEntry.findFirst({ where: { id, userId } });
+      const current = await tx.journalEntry.findFirst({ where: { id, userId }, include: { exits: true } });
       if (!current) throw new NotFoundException("Trade not found.");
-      if (current.updatedAt.getTime() !== Date.parse(parsed.data.updatedAt))
+      if (
+        parsed.data.editVersion
+          ? journalEditVersion(current) !== parsed.data.editVersion
+          : current.updatedAt.getTime() !== Date.parse(parsed.data.updatedAt)
+      )
         throw new ConflictException("This trade changed. Reload before deleting it.");
       await tx.journalEntry.delete({ where: { id } });
       return { deleted: true };
@@ -291,19 +472,57 @@ export class JournalTradesService {
     const data = parsed.data;
     return this.db.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "JournalEntry" WHERE id = ${id}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
-      const entry = await tx.journalEntry.findFirst({ where: { id, userId }, include: { exits: true } });
+      const entry = await tx.journalEntry.findFirst({
+        where: { id, userId },
+        include: { exits: true, events: { select: { key: true, evidence: true } } },
+      });
       if (!entry) throw new NotFoundException("Trade not found.");
       if (entry.exits.some((exit) => exit.key === data.requestId)) return entry;
       if (data.reconcile) {
         if (entry.status !== "closed" || entry.resultBasis !== "estimated")
           throw new ConflictException("Only an estimated closed result can be reconciled.");
+        const actual = data.actualEntry;
+        if (!actual) throw new BadRequestException("Confirm actual entry details first.");
+        const actualTime = Date.parse(actual.occurredAt);
+        const recordedExits = entry.exits.filter((exit) => exit.basis === "recorded");
+        const alreadyExited = recordedExits.reduce((sum, exit) => sum + exit.quantity, 0);
+        if (
+          actualTime > Date.now() ||
+          actualTime > Date.parse(data.occurredAt) ||
+          recordedExits.some((exit) => exit.occurredAt.getTime() < actualTime)
+        )
+          throw new BadRequestException("Actual entry must precede all recorded exits and cannot be in the future.");
+        if (
+          actual.quantity <= alreadyExited ||
+          data.quantity > actual.quantity - alreadyExited + actual.quantity * 1e-9
+        )
+          throw new BadRequestException("Actual position size must cover recorded and new exits.");
+        entry.entryPrice = actual.price;
+        entry.quantity = actual.quantity;
+        entry.openedAt = new Date(actual.occurredAt);
+        entry.fees = actual.fees;
         await tx.journalExit.deleteMany({ where: { entryId: id, basis: "estimated" } });
         entry.exits = entry.exits.filter((exit) => exit.basis === "recorded");
         entry.status = "open";
         await tx.journalEntry.update({
           where: { id },
-          data: { status: "open", exitPrice: null, closedAt: null, trackingMode: "observed", resultBasis: "recorded" },
+          data: {
+            status: "open",
+            entryPrice: entry.entryPrice,
+            quantity: entry.quantity,
+            openedAt: entry.openedAt,
+            fees: entry.fees,
+            exitPrice: null,
+            closedAt: null,
+            trackingMode: "observed",
+            resultBasis: "recorded",
+          },
         });
+      }
+      const referenceSimulation = entry.source === "ai" && entry.resultBasis === "estimated" && entry.quantity === null;
+      if (referenceSimulation) {
+        if (data.fees !== 0) throw new BadRequestException("Set a position amount before recording monetary fees.");
+        entry.quantity = 1; // Reference units only; the stored quantity remains null.
       }
       if (entry.status !== "open" || !entry.quantity)
         throw new ConflictException("Only open trades can record an exit.");
@@ -328,6 +547,7 @@ export class JournalTradesService {
         },
       });
       const exits = [...entry.exits, exit];
+      const estimatedEntry = !data.reconcile && hasEstimatedEntry(entry.events);
       const closed = remaining - exit.quantity <= entry.quantity * 1e-9;
       await tx.journalEntry.update({
         where: { id },
@@ -339,8 +559,13 @@ export class JournalTradesService {
                 exitPrice: exits.reduce((sum, e) => sum + e.price * e.quantity, 0) / entry.quantity,
               }
             : {}),
-          resultBasis: exits.some((e) => e.basis === "estimated") ? "estimated" : "recorded",
-          trackingMode: "observed",
+          resultBasis:
+            (!data.reconcile && entry.trackingMode === "automatic") ||
+            estimatedEntry ||
+            exits.some((e) => e.basis === "estimated")
+              ? "estimated"
+              : "recorded",
+          trackingMode: data.reconcile ? "observed" : entry.trackingMode,
         },
       });
       await tx.journalEvent.create({
@@ -350,8 +575,9 @@ export class JournalTradesService {
           kind: data.reason,
           occurredAt: exit.occurredAt,
           evidence: {
-            message: `Recorded ${data.reason} exit: ${exit.quantity} units at ${exit.price}. Remaining levels use observation-only tracking to avoid duplicate estimated fills.`,
+            message: `Recorded ${data.reason} exit: ${exit.quantity} units at ${exit.price}. Remaining simulation quantity continues automatic tracking.`,
             price: exit.price,
+            ...(data.reconcile ? { actualEntryConfirmed: true, actualEntry: data.actualEntry } : {}),
           },
           reviewStatus: "pending",
         },
@@ -415,7 +641,7 @@ export class JournalTradesService {
       where: {
         ...journalWhere(userId, query),
         plan: { path: ["quote"], equals: quote },
-        resultBasis: query.basis ?? "recorded",
+        resultBasis: query.basis ?? "estimated",
         status: { in: ["open", "closed"] },
       },
       include: { exits: { orderBy: { occurredAt: "asc" } } },
@@ -463,8 +689,9 @@ export class JournalTradesService {
     let cumulative = 0;
     return {
       quote,
-      basis: query.basis ?? "recorded",
+      basis: query.basis ?? "estimated",
       closedTrades,
+      unsizedTrades: entries.filter((e) => e.quantity === null).length,
       openTrades: entries.filter((e) => e.status === "open").length,
       net,
       fees,

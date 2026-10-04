@@ -30,7 +30,7 @@ export function JournalDeleteTrade({
     try {
       await apiRequest(`/journal/${entry.id}`, {
         method: "DELETE",
-        body: JSON.stringify({ confirm: true, updatedAt: entry.updatedAt }),
+        body: JSON.stringify({ confirm: true, updatedAt: entry.updatedAt, editVersion: entry.editVersion }),
       });
       close();
       changed();

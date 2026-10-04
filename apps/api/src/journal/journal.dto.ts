@@ -27,6 +27,7 @@ export class SaveJournalDto {
   @IsBoolean() @Equals(true) confirm!: boolean;
 }
 export class JournalUpdateDto {
+  @IsOptional() @IsDateString() openedAt?: string;
   @IsOptional() @IsIn(["open", "closed", "cancelled"]) status?: "open" | "closed" | "cancelled";
   @IsOptional() @IsString() @MaxLength(4000) notes?: string;
   @IsOptional() @IsNumber() @Min(0.00000001) @Max(1e12) entryPrice?: number;

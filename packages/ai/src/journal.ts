@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { EntryPolicySchema, entryDurations } from "./entry-policy";
+export * from "./entry-policy";
 
 export const TradePreferencesSchema = z
   .object({
@@ -8,9 +10,48 @@ export const TradePreferencesSchema = z
     interval: z.enum(["1m", "5m", "15m", "1h", "6h", "1d"]),
     holding: z.enum(["scalp", "day", "swing", "hybrid"]),
     autoReview: z.boolean(),
+    entryPolicy: EntryPolicySchema.optional(),
   })
-  .strict();
-export const TradeContextSchema = TradePreferencesSchema.extend({ symbol: z.string().min(1).max(32) }).strict();
+  .strict()
+  .superRefine((value, context) => {
+    const rule = value.entryPolicy;
+    if (!rule) return;
+    if (rule.timeframeMode === "manual" && entryDurations[rule.trendInterval] <= entryDurations[value.interval])
+      context.addIssue({
+        code: "custom",
+        path: ["entryPolicy", "trendInterval"],
+        message: "Trend timeframe must be higher than entry timeframe.",
+      });
+    if (
+      rule.timeframeMode === "manual" &&
+      rule.validityMode === "manual" &&
+      rule.validityCandles * entryDurations[value.interval] > 72 * 3_600_000
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["entryPolicy", "validityCandles"],
+        message: "Entry validity cannot exceed seventy-two hours.",
+      });
+    if (rule.scenario === "breakout" && rule.condition === "touch")
+      context.addIssue({
+        code: "custom",
+        path: ["entryPolicy", "condition"],
+        message: "Breakout requires candle confirmation.",
+      });
+  });
+export const TradeContextSchema = TradePreferencesSchema.safeExtend({
+  symbol: z.string().min(1).max(32),
+  revisesEntryId: z.string().uuid().optional(),
+  revisesPlanVersion: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+})
+  .strict()
+  .superRefine((value, context) => {
+    if (!!value.revisesEntryId !== !!value.revisesPlanVersion)
+      context.addIssue({ code: "custom", message: "A revision requires the current plan version." });
+  });
 export type TradeContext = z.infer<typeof TradeContextSchema>;
 export type TradePreferences = z.infer<typeof TradePreferencesSchema>;
 export const defaultTradePreferences: TradePreferences = {
@@ -20,23 +61,43 @@ export const defaultTradePreferences: TradePreferences = {
   interval: "15m",
   holding: "day",
   autoReview: false,
+  entryPolicy: {
+    timeframeMode: "auto",
+    trendInterval: "1h",
+    validityMode: "auto",
+    validityCandles: 3,
+    scenario: "auto",
+    condition: "auto",
+  },
 };
 export interface JournalEventRecord {
+  key?: string;
   id: string;
   kind: string;
   occurredAt: string;
-  evidence: { message: string; price?: number; interval?: string; source?: string };
+  evidence: {
+    message: string;
+    price?: number;
+    interval?: string;
+    source?: string;
+    previousEntryId?: string;
+    replacementEntryId?: string;
+    previousPlan?: import("./contracts").TradeSetup;
+    confirmedPlan?: import("./contracts").TradeSetup;
+  };
   review: string | null;
   reviewStatus: string;
   reviewStartedAt: string | null;
 }
 export interface JournalRecord {
   updatedAt: string;
+  planVersion?: string;
+  editVersion?: string;
   id: string;
   runId: string | null;
   source: "ai" | "manual" | "import";
   trackingMode: "automatic" | "observed";
-  entryTrigger: "touch" | "close_above" | "close_below";
+  entryTrigger: "touch" | "close_above" | "close_below" | "break_retest";
   resultBasis: "recorded" | "estimated";
   targetAllocations: number[];
   archivedAt: string | null;
@@ -66,10 +127,9 @@ export function journalNoteOutcome(entry: {
 }): "sl" | "tp" | "expired" | null {
   if (entry.status === "expired") return "expired";
   if (entry.status === "cancelled") return null;
-  const outcomes = [
-    ...entry.exits.map((exit) => ({ kind: exit.reason, time: new Date(exit.occurredAt).getTime() })),
-    ...entry.events.map((event) => ({ kind: event.kind, time: new Date(event.occurredAt).getTime() })),
-  ].filter((event) => ["sl", "stop", "tp", "target"].includes(event.kind));
+  const outcomes = entry.exits
+    .map((exit) => ({ kind: exit.reason, time: new Date(exit.occurredAt).getTime() }))
+    .filter((event) => ["sl", "stop", "tp", "target"].includes(event.kind));
   const latest = outcomes.sort((a, b) => b.time - a.time)[0];
   return latest ? (["sl", "stop"].includes(latest.kind) ? "sl" : "tp") : null;
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConditionalEntrySchema, entryDurations } from "./entry-policy";
 
 export const IntervalSchema = z.enum(["1m", "5m", "15m", "1h", "6h", "1d"]);
 const symbol = z
@@ -62,7 +63,19 @@ export const toolSchemas = {
     })
     .strict(),
   createAlert: AlertInputSchema,
-  getTradeSetup: z.object({ symbol, interval: IntervalSchema, direction: z.enum(["AUTO", "BUY", "SELL"]) }).strict(),
+  getTradeSetup: z
+    .object({
+      symbol,
+      interval: IntervalSchema,
+      direction: z.enum(["AUTO", "BUY", "SELL"]),
+      scenario: z.enum(["breakout", "pullback"]).optional(),
+      trendInterval: z.enum(["15m", "1h", "6h", "1d"]).optional(),
+      condition: z.enum(["touch", "candle_close", "break_retest"]).optional(),
+      validityCandles: z.number().int().min(1).max(12).optional(),
+      rationale: z.string().min(20).max(500).optional(),
+      validityReason: z.string().min(20).max(400).optional(),
+    })
+    .strict(),
 };
 export const ToolNameSchema = z.enum([
   "getMarketPrice",
@@ -90,7 +103,7 @@ const descriptions: Record<ToolName, string> = {
   createAlert:
     "Propose a rule only when the current user explicitly requests an alert. Never saves it. Separate user confirmation is required.",
   getTradeSetup:
-    "Only on an explicit entry/exit or trade setup request. Calculate a conditional pullback/reclaim scenario from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use observed structural levels, with one to three targets when supported. AUTO selects a conditional side only when entry and higher-timeframe context align. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
+    "Only on an explicit entry/exit or trade setup request, after mandatory stored-news retrieval. Propose breakout or pullback, an entry interval from the confirmed allowed set, a higher trend interval, a supported touch/candle_close/break_retest condition and validity of one to twelve entry candles (maximum seventy-two hours). Manual preferences override proposals. Reversal is unsupported. The server validates the proposal and calculates levels from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use observed structural levels, with one to three targets when supported. AUTO selects a conditional side only when entry and higher-timeframe context align. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
 };
 export function toolDefinitions(allowAlert: boolean, allowTrade = false) {
   return Object.entries(toolSchemas)
@@ -158,6 +171,7 @@ export const ProposalSchema = z
   .strict();
 export const TradeSetupSchema = z
   .object({
+    conditionalEntry: ConditionalEntrySchema.optional(),
     symbol: z.string().min(1).max(32),
     interval: IntervalSchema,
     direction: z.enum(["BUY", "SELL"]),
@@ -184,6 +198,19 @@ export const TradeSetupSchema = z
         : plan.stopLoss > plan.entry &&
           plan.entry > plan.targets[0] &&
           plan.targets.every((target, i) => i === 0 || target < plan.targets[i - 1]);
+    const rule = plan.conditionalEntry;
+    if (rule) {
+      const validity = Date.parse(plan.expiresAt) - Date.parse(rule.proposedAt);
+      if (
+        rule.invalidation.price !== plan.stopLoss ||
+        rule.trendInterval !== plan.contextInterval ||
+        entryDurations[rule.trendInterval] <= entryDurations[plan.interval] ||
+        validity !== rule.validityCandles * entryDurations[plan.interval] ||
+        validity > 72 * 3_600_000 ||
+        (rule.scenario === "breakout" && rule.condition === "touch")
+      )
+        context.addIssue({ code: "custom", message: "Invalid conditional entry rules" });
+    }
     if (!valid) context.addIssue({ code: "custom", message: "Invalid scenario level ordering" });
   });
 export type TradeSetup = z.infer<typeof TradeSetupSchema>;
@@ -229,6 +256,8 @@ export const ResearchResultSchema = z
             tool: ToolNameSchema,
             status: z.enum(["ok", "partial", "unavailable"]),
             latencyMs: z.number().int().nonnegative(),
+            reason: z.string().max(160).optional(),
+            outcome: z.enum(["ready", "no_setup"]).optional(),
           })
           .strict(),
       )
@@ -247,6 +276,8 @@ export type StreamEvent =
       tool: ToolName;
       state: "running" | "complete";
       status?: ToolResult["status"];
+      reason?: string;
+      outcome?: "ready" | "no_setup";
     }
   | { type: "result"; result: ResearchResult }
   | { type: "error"; code: string; message: string };
@@ -298,6 +329,8 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
       tool: ToolNameSchema,
       state: z.enum(["running", "complete"]),
       status: z.enum(["ok", "partial", "unavailable"]).optional(),
+      reason: z.string().max(160).optional(),
+      outcome: z.enum(["ready", "no_setup"]).optional(),
     })
     .strict(),
   z.object({ type: z.literal("result"), result: ResearchResultSchema }).strict(),

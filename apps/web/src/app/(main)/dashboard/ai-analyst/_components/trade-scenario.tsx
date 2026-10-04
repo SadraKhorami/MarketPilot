@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from "react";
 
 import Link from "next/link";
 
-import type { Proposal, ResearchResult, TradeSetup } from "@marketpilot/ai/contracts";
+import { entryAlertApproach, type Proposal, type ResearchResult, type TradeSetup } from "@marketpilot/ai/contracts";
 import { BellPlus, LoaderCircle, Target } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,6 +15,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
 
+import { ConditionalEntrySummary } from "../../_components/conditional-entry-summary";
 import { SaveJournalPlan } from "./save-journal-plan";
 
 export function TradeScenario({
@@ -22,17 +23,19 @@ export function TradeScenario({
   result,
   change,
   persian,
+  edit,
 }: {
   plan: TradeSetup;
   result: ResearchResult;
   change: (result: ResearchResult) => void;
   persian: boolean;
+  edit?: () => void;
 }) {
   const id = useId();
   const unit = plan.pipSize ? "pips" : "quote";
   const scale = plan.pipSize ?? 1;
   const decimals = plan.pipSize === 0.0001 ? 5 : plan.quote === "JPY" ? 3 : plan.quote === "USD" ? 2 : 8;
-  const gap = plan.direction === "BUY" ? plan.entry - plan.observedPrice : plan.observedPrice - plan.entry;
+  const { gap, fromBelow } = entryAlertApproach(plan);
   const initial = Math.min(Math.abs(plan.entry - plan.stopLoss) * 0.1, Math.max(0, gap) * 0.25) / scale;
   const [distance, setDistance] = useState(
     initial > 0 ? String(Number(initial.toFixed(plan.pipSize ? 2 : decimals))) : "",
@@ -48,7 +51,7 @@ export function TradeScenario({
   const expired = Date.parse(plan.expiresAt) <= now;
   const amount = Number(distance);
   const offset = amount * scale;
-  const threshold = Number((plan.entry + (plan.direction === "BUY" ? -offset : offset)).toFixed(decimals));
+  const threshold = Number((plan.entry + (fromBelow ? -offset : offset)).toFixed(decimals));
   const valid =
     Number.isFinite(amount) &&
     amount > 0 &&
@@ -96,17 +99,12 @@ export function TradeScenario({
         <CardDescription>
           {expired
             ? text("Expired — request a fresh scenario", "منقضی شده؛ سناریوی جدید درخواست کنید")
-            : stages[plan.stage]}
+            : plan.conditionalEntry
+              ? text("Waiting for the saved entry condition", "در انتظار تحقق شرط ورود ثبت‌شده")
+              : stages[plan.stage]}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <SaveJournalPlan
-          runId={result.runId}
-          expired={expired}
-          persian={persian}
-          saved={result.journalEntryId ?? null}
-          onSaved={(journalEntryId) => change({ ...result, journalEntryId })}
-        />
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             [text("Entry trigger", "شرط ورود"), plan.entry],
@@ -124,17 +122,21 @@ export function TradeScenario({
             </div>
           ))}
         </dl>
-        <p className="text-sm leading-relaxed">
-          {plan.direction === "BUY"
-            ? text(
-                "BUY only after a pullback and a completed candle above Entry. Below Stop loss, the scenario is invalid.",
-                "ورود BUY فقط بعد از اصلاح و بسته‌شدن کندل بالای Entry بررسی شود. زیر حد ضرر، سناریو باطل است.",
-              )
-            : text(
-                "SELL only after an upward pullback and a completed candle below Entry. Above Stop loss, the scenario is invalid.",
-                "ورود SELL فقط بعد از اصلاح صعودی و بسته‌شدن کندل زیر Entry بررسی شود. بالای حد ضرر، سناریو باطل است.",
-              )}
-        </p>
+        <ConditionalEntrySummary plan={plan} persian={persian} />
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <SaveJournalPlan
+            runId={result.runId}
+            expired={expired}
+            persian={persian}
+            saved={result.journalEntryId ?? null}
+            onSaved={(journalEntryId) => change({ ...result, journalEntryId })}
+          />
+          {edit ? (
+            <Button variant="ghost" size="sm" onClick={edit}>
+              {text("Edit & request a new proposal", "ویرایش و درخواست پیشنهاد جدید")}
+            </Button>
+          ) : null}
+        </div>
         <p className="text-muted-foreground text-xs">
           {text("Observed price", "قیمت مشاهده‌شده")}:{" "}
           <span dir="ltr" className="tabular-nums">
@@ -187,7 +189,7 @@ export function TradeScenario({
               <p className="text-muted-foreground text-xs">{text("Alert trigger price", "قیمت فعال‌شدن هشدار")}</p>
             </div>
             <output htmlFor={id} className="font-semibold text-lg tabular-nums" dir="ltr">
-              {valid ? `${price(threshold)} ${plan.direction === "BUY" ? "↑" : "↓"}` : "—"}
+              {valid ? `${price(threshold)} ${fromBelow ? "↑" : "↓"}` : "—"}
             </output>
           </div>
           <div className="flex flex-wrap items-end justify-between gap-3">

@@ -1,7 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
 
-import { permitsTradeSetup } from "@marketpilot/ai/contracts";
+import { permitsTradeSetup, type TradeContext } from "@marketpilot/ai/contracts";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -28,7 +28,7 @@ export function ResearchConversation({
   research: ReturnType<typeof useResearch>;
   disabled: boolean;
   watchlistId: string;
-  onTradeRequest: (input: string) => void;
+  onTradeRequest: (input: string, edit?: { context?: TradeContext; revisionId?: string }) => void;
   children?: ReactNode;
 }) {
   return (
@@ -59,6 +59,12 @@ export function ResearchConversation({
                             <ResearchResponse
                               result={turn.result}
                               change={research.changeResult}
+                              edit={() =>
+                                onTradeRequest(turn.input, {
+                                  context: turn.tradeContext,
+                                  revisionId: turn.result?.journalEntryId ?? undefined,
+                                })
+                              }
                               persian={/[\u0600-\u06ff]/u.test(turn.input)}
                             />
                           </MessageContent>

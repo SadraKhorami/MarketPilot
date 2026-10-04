@@ -1,4 +1,4 @@
-import { TradeSetupSchema } from "@marketpilot/ai";
+import { TradeSetupSchema, entryConditionMet } from "@marketpilot/ai";
 import type { Prisma } from "@marketpilot/db";
 import type { MarketSnapshot } from "../market-data/market-data.service";
 
@@ -11,26 +11,50 @@ export const candleDurations = {
   "1d": 86400_000,
 };
 type Entry = Prisma.JournalEntryGetPayload<{ include: { exits: true; events: true } }>;
-export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry, snapshot: MarketSnapshot) {
+export async function trackAutomatic(
+  tx: Prisma.TransactionClient,
+  entry: Entry,
+  snapshot: MarketSnapshot,
+  confirmation?: MarketSnapshot,
+) {
   const plan = TradeSetupSchema.parse(entry.plan);
-  const duration = candleDurations[plan.interval];
+  const duration = confirmation ? candleDurations["1m"] : candleDurations[plan.interval];
+  const simulated = entry.source === "ai" || !!plan.conditionalEntry;
   const start = entry.checkedAt?.getTime() ?? entry.openedAt?.getTime() ?? entry.createdAt.getTime();
-  const candles = snapshot.data.candles.filter(
+  let candles = snapshot.data.candles.filter(
     (c) => Date.parse(c.time) >= start && Date.parse(c.time) + duration <= Date.now(),
   );
-  const seen = new Set(entry.events.map((e) => e.key));
-  if (seen.has("ambiguous") || seen.has("auto-gap")) return;
+  const reset = entry.events
+    .filter((event) => {
+      const evidence = event.evidence;
+      return (
+        typeof evidence === "object" &&
+        evidence !== null &&
+        !Array.isArray(evidence) &&
+        evidence.monitoringReset === true
+      );
+    })
+    .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0];
+  const prefix = reset ? `monitor:${reset.occurredAt.toISOString()}:` : "";
+  const seen = new Set(
+    entry.events
+      .filter((event) => !reset || event.key.startsWith(prefix) || !["ambiguous", "auto-gap"].includes(event.key))
+      .map((event) => (event.key.startsWith(prefix) ? event.key.slice(prefix.length) : event.key)),
+  );
+  if (!simulated && (seen.has("ambiguous") || seen.has("auto-gap"))) return;
   const event = async (key: string, kind: string, time: Date, message: string, price?: number) => {
-    if (seen.has(key)) return;
-    seen.add(key);
+    const eventKey =
+      simulated && ["ambiguous", "gap"].includes(kind) ? `${key}:${kind === "gap" ? start : time.getTime()}` : key;
+    if (seen.has(eventKey)) return;
+    seen.add(eventKey);
     await tx.journalEvent.create({
       data: {
         entryId: entry.id,
-        key,
+        key: reset && ["ambiguous", "auto-gap"].includes(key) ? `${prefix}${eventKey}` : eventKey,
         kind,
         occurredAt: time,
-        evidence: { message, price, source: snapshot.source, interval: plan.interval },
-        reviewStatus: kind === "gap" ? "not_needed" : "pending",
+        evidence: { message, price, source: snapshot.source, interval: confirmation ? "1m" : plan.interval },
+        reviewStatus: ["gap", "entry", "breakout", "retest"].includes(kind) ? "not_needed" : "pending",
       },
     });
   };
@@ -48,7 +72,8 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
     const touch = partial.low <= plan.entry && partial.high >= plan.entry;
     if (
       (entry.status === "open" && (stop || target)) ||
-      (entry.status === "planned" && entry.entryTrigger === "touch" && (touch || stop))
+      (entry.status === "planned" &&
+        (stop || ((plan.conditionalEntry?.condition === "touch" || entry.entryTrigger === "touch") && touch)))
     ) {
       await event(
         "ambiguous",
@@ -63,13 +88,20 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
       return;
     }
   }
+  if (
+    partial &&
+    entry.status === "planned" &&
+    entry.entryTrigger !== "touch" &&
+    plan.conditionalEntry?.condition !== "touch"
+  )
+    candles = [partial, ...candles];
   const availableStart = snapshot.data.candles[0] ? Date.parse(snapshot.data.candles[0].time) : null;
-  if (availableStart !== null && start + duration < availableStart) {
+  if (availableStart !== null && Math.floor(start / duration) * duration < availableStart) {
     await event(
       "auto-gap",
       "gap",
       new Date(),
-      "Historical candles do not cover this trade. Automatic results are paused; import executions or review the missing period.",
+      "Historical candles do not cover this trade. Automatic results are paused; review the missing period.",
     );
     await tx.journalEntry.update({
       where: { id: entry.id },
@@ -83,13 +115,15 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
   const allocations = Array.isArray(entry.targetAllocations)
     ? entry.targetAllocations.filter((n): n is number => typeof n === "number")
     : [];
-  const quantity = entry.quantity;
+  // Unsized simulations use a reference unit internally; quantity stays null so monetary analytics exclude them.
+  const quantity = entry.quantity ?? (simulated ? 1 : null);
+  let breakoutSeen = !!plan.conditionalEntry?.breakoutAt || seen.has("auto:breakout");
   if (!quantity || allocations.length !== plan.targets.length) return;
-  let exits = [...entry.exits];
+  const exits = [...entry.exits];
   for (const candle of candles) {
     const openTime = Date.parse(candle.time);
     const time = new Date(openTime + duration);
-    if (openTime > cursor + duration) {
+    if (openTime > Math.ceil(cursor / duration) * duration) {
       await event(
         "auto-gap",
         "gap",
@@ -102,7 +136,28 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
       });
       return;
     }
-    if (status === "planned" && time.getTime() > Date.parse(plan.expiresAt)) break;
+    if (status === "planned" && time.getTime() > Date.parse(plan.expiresAt)) {
+      const deadline = Date.parse(plan.expiresAt);
+      if (openTime < deadline) {
+        const stopTouched = plan.direction === "BUY" ? candle.low <= plan.stopLoss : candle.high >= plan.stopLoss;
+        const entryTouched = candle.low <= plan.entry && candle.high >= plan.entry;
+        if (stopTouched || (plan.conditionalEntry?.condition === "touch" && entryTouched)) {
+          await event(
+            `deadline:${openTime}`,
+            "ambiguous",
+            time,
+            "A relevant level was touched inside the minute containing the entry deadline. Its timing is unknown; the simulation remains paused for review.",
+          );
+          await tx.journalEntry.update({
+            where: { id: entry.id },
+            data: { monitoringStatus: "Needs review · deadline minute timing unknown" },
+          });
+          return;
+        }
+        cursor = time.getTime();
+      }
+      break;
+    }
     const long = plan.direction === "BUY";
     const stop = long ? candle.low <= plan.stopLoss : candle.high >= plan.stopLoss;
     const targets = plan.targets.flatMap((price, i) =>
@@ -111,13 +166,40 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
         : [],
     );
     if (status === "planned") {
+      const confirmationCandle = confirmation?.data.candles.find(
+        (c) => Date.parse(c.time) + candleDurations[plan.interval] === time.getTime(),
+      );
+      const closeCondition = plan.conditionalEntry
+        ? plan.conditionalEntry.condition !== "touch"
+        : entry.entryTrigger !== "touch";
+      const signalCandle = closeCondition && confirmation ? confirmationCandle : candle;
+      const periodEnd =
+        Math.floor(openTime / candleDurations[plan.interval]) * candleDurations[plan.interval] +
+        candleDurations[plan.interval];
+      const retestKey = `auto:retest:${periodEnd}`;
+      if (confirmation && breakoutSeen && candle.low <= plan.entry && candle.high >= plan.entry)
+        await event(retestKey, "retest", time, "Entry retest observed after simulation start.", plan.entry);
+      const requiresRetest =
+        plan.conditionalEntry?.scenario === "pullback" || plan.conditionalEntry?.condition === "break_retest";
       const touched =
-        entry.entryTrigger === "close_above"
-          ? candle.close >= plan.entry
-          : entry.entryTrigger === "close_below"
-            ? candle.close <= plan.entry
-            : candle.low <= plan.entry && candle.high >= plan.entry;
-      if (touched && (stop || targets.length)) {
+        !!signalCandle &&
+        (!confirmation || !closeCondition || !requiresRetest || seen.has(retestKey)) &&
+        entryConditionMet(plan, signalCandle, breakoutSeen, entry.entryTrigger);
+      if (
+        confirmationCandle &&
+        !breakoutSeen &&
+        (long ? confirmationCandle.close > plan.entry : confirmationCandle.close < plan.entry)
+      ) {
+        breakoutSeen = true;
+        await event(
+          "auto:breakout",
+          "breakout",
+          time,
+          "Completed analysis candle confirmed a break; a later retest is required.",
+          confirmationCandle.close,
+        );
+      }
+      if (touched && !closeCondition && (stop || targets.length)) {
         await event(
           "ambiguous",
           "ambiguous",
@@ -141,9 +223,9 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
         );
         break;
       }
-      if (touched) {
+      if (touched && signalCandle) {
         status = "open";
-        entryPrice = entry.entryTrigger === "touch" ? plan.entry : candle.close;
+        entryPrice = closeCondition ? signalCandle.close : plan.entry;
         await tx.journalEntry.update({
           where: { id: entry.id },
           data: { status, entryPrice, openedAt: time, resultBasis: "estimated" },
@@ -152,7 +234,7 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
           "auto:entry",
           "entry",
           time,
-          "Entry condition met on a completed candle. Journal entry is an estimate, not a broker execution.",
+          "Entry condition met on a completed candle. Simulated position opened automatically.",
           entryPrice,
         );
       }
@@ -162,7 +244,7 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
           "ambiguous",
           "ambiguous",
           time,
-          "SL and TP were reached in the same candle. Automatic closing is paused because their order is unknown.",
+          "SL and TP were reached in the same candle. Simulation closing is paused because their order is unknown.",
         );
         await tx.journalEntry.update({
           where: { id: entry.id },
@@ -205,7 +287,7 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
           fill.key,
           fill.reason,
           time,
-          `Automatic ${fill.reason.toUpperCase()} estimate: ${exit.quantity} units at ${price}. Slippage and exit fees are not known.`,
+          `Simulated ${fill.reason.toUpperCase()} at ${price}. ${entry.quantity === null ? "Return is measured as a percentage; no capital was supplied." : "Simulation fees are zero."}`,
           price,
         );
       }
@@ -224,11 +306,7 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
     }
     cursor = time.getTime();
   }
-  if (
-    status === "planned" &&
-    Date.now() >= Date.parse(plan.expiresAt) &&
-    cursor + duration >= Date.parse(plan.expiresAt)
-  ) {
+  if (status === "planned" && Date.now() >= Date.parse(plan.expiresAt) && cursor >= Date.parse(plan.expiresAt)) {
     status = "expired";
     await event(
       "expired",
@@ -247,8 +325,8 @@ export async function trackAutomatic(tx: Prisma.TransactionClient, entry: Entry,
         status === "expired"
           ? "Entry window ended"
           : status === "closed"
-            ? "Automatic result · verify against broker executions"
-            : "Automatic tracking · completed candles checked",
+            ? "Simulation completed"
+            : "Simulation active · completed candles checked",
     },
   });
 }

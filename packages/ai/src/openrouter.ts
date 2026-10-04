@@ -124,8 +124,7 @@ export class OpenRouterProvider implements AIProvider {
     const body = {
       model: this.model,
       messages,
-      tools: toolDefinitions(allowAlert, allowTrade),
-      tool_choice: final ? "none" : "auto",
+      ...(final ? {} : { tools: toolDefinitions(allowAlert, allowTrade), tool_choice: "auto" }),
       max_tokens: responseSchema ? 3000 : 1200,
       stream: false,
       provider: {

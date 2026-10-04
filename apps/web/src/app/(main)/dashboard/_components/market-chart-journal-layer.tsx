@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+import { ConditionalEntrySummary } from "./conditional-entry-summary";
 import type { PlacedChartMarker } from "./market-chart-markers";
 import { chartDate, chartPrice } from "./market-chart-utils";
 export interface JournalPosition {
@@ -26,7 +27,12 @@ export interface JournalPosition {
 }
 export function journalChartWindow(entry: JournalRecord, latestTime: string) {
   const start = Date.parse(entry.openedAt ?? entry.createdAt);
-  const inactiveTime = entry.events?.find((event) => event.kind === entry.status)?.occurredAt;
+  const inactiveTime = entry.events?.find(
+    (event) =>
+      event.kind === entry.status ||
+      (entry.status === "expired" && event.kind === "invalidated") ||
+      (entry.status === "cancelled" && event.kind === "replaced"),
+  )?.occurredAt;
   const end =
     entry.status === "planned"
       ? Date.parse(entry.plan.expiresAt)
@@ -200,6 +206,7 @@ export function MarketChartJournalLayer({
                 </PopoverDescription>
               </PopoverHeader>
               <Badge variant="outline">{status}</Badge>
+              <ConditionalEntrySummary plan={entry.plan} />
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 {levels.map((level) => (
                   <div key={level.label}>

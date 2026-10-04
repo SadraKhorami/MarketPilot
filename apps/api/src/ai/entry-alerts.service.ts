@@ -1,4 +1,4 @@
-import { AIError, permitsTradeSetup, ResearchResultSchema } from "@marketpilot/ai";
+import { AIError, entryAlertApproach, permitsTradeSetup, ResearchResultSchema } from "@marketpilot/ai";
 import { Prisma } from "@marketpilot/db";
 import { Injectable } from "@nestjs/common";
 import { AlertsService } from "../alerts/alerts.service";
@@ -33,10 +33,13 @@ export class EntryAlertsService {
         "Choose a positive distance smaller than the entry-to-stop distance. Pips are available only for instruments with a defined convention.",
       );
     const buy = plan.direction === "BUY";
-    const threshold = Number((plan.entry + (buy ? -offset : offset)).toFixed(scenarioPriceDecimals(plan.symbol)));
+    const { fromBelow, gap } = entryAlertApproach(plan);
+    if (offset >= gap)
+      throw new AIError("AI_INPUT_INVALID", "Choose a warning distance smaller than the observed gap to Entry.");
+    const threshold = Number((plan.entry + (fromBelow ? -offset : offset)).toFixed(scenarioPriceDecimals(plan.symbol)));
     if (threshold === plan.entry)
       throw new AIError("AI_INPUT_INVALID", "The warning distance is smaller than this scenario's price precision.");
-    const condition = buy ? "PRICE_ABOVE" : "PRICE_BELOW";
+    const condition = fromBelow ? "PRICE_ABOVE" : "PRICE_BELOW";
     const existing = await this.db.aiAlertProposal.findUnique({ where: { runId } });
     if (existing) {
       if (
@@ -62,7 +65,7 @@ export class EntryAlertsService {
       age > 120_000
     )
       throw new AIError("AI_INPUT_INVALID", "Fresh market observations are required before this alert can be saved.");
-    if (buy ? snapshot.data.price >= threshold : snapshot.data.price <= threshold)
+    if (fromBelow ? snapshot.data.price >= threshold : snapshot.data.price <= threshold)
       throw new AIError(
         "AI_ENTRY_REACHED",
         "Price has already reached the chosen warning level. Request a new scenario or use a smaller distance.",
