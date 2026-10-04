@@ -33,6 +33,9 @@ import { useAccountPreference } from "./use-account-preference";
 import { type MarketChartView, useInteractiveMarketChart } from "./use-interactive-market-chart";
 
 const defaultLayers = { alerts: true, journal: true, average: true };
+function validPositionLabels(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
 function validLayers(value: unknown): value is typeof defaultLayers {
   return (
     typeof value === "object" &&
@@ -65,6 +68,7 @@ export function InteractiveMarketChart({
 }) {
   const layerControlId = useId();
   const layers = useAccountPreference("chart-layers", defaultLayers, validLayers);
+  const positionLabels = useAccountPreference("chart-position-labels", true, validPositionLabels);
   const [journalId, setJournalId] = useState<string | null>(null);
   const activeJournal =
     journal.find((item) => item.id === journalId) ??
@@ -208,6 +212,14 @@ export function InteractiveMarketChart({
                   {key === "alerts" ? "My alerts" : key === "journal" ? "Journal plans" : "Moving average"}
                 </label>
               ))}
+              <label htmlFor={`${layerControlId}-position-labels`} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  id={`${layerControlId}-position-labels`}
+                  checked={positionLabels.value}
+                  onCheckedChange={(checked) => positionLabels.update(checked === true)}
+                />
+                Position labels · Entry, SL & TP
+              </label>
               {journal.length ? (
                 <>
                   <Select value={activeJournal?.id} onValueChange={setJournalId}>
@@ -337,6 +349,7 @@ export function InteractiveMarketChart({
           <MarketChartJournalLayer
             entry={activeJournal}
             preview={journalPreview}
+            showLabels={positionLabels.value}
             position={geometry.journalPosition}
             width={geometry.width}
             height={geometry.height}

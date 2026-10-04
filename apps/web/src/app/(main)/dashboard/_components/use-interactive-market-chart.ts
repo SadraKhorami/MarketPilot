@@ -232,7 +232,8 @@ export function useInteractiveMarketChart({
       lineWidth: 2,
       priceFormat,
       lastValueVisible: true,
-      priceLineVisible: false,
+      priceLineVisible: true,
+      priceLineStyle: LineStyle.Dashed,
     });
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: colors.up,
@@ -242,7 +243,8 @@ export function useInteractiveMarketChart({
       borderVisible: false,
       priceFormat,
       visible: false,
-      priceLineVisible: false,
+      priceLineVisible: true,
+      priceLineStyle: LineStyle.Dashed,
     });
     const average = chart.addSeries(LineSeries, {
       color: colors.average,

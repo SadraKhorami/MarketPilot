@@ -53,6 +53,7 @@ export function MarketChartJournalLayer({
   onSelect,
   marker,
   preview = false,
+  showLabels = true,
 }: {
   entry: JournalRecord;
   position: JournalPosition;
@@ -61,12 +62,15 @@ export function MarketChartJournalLayer({
   onSelect?: (id: string) => void;
   marker?: PlacedChartMarker;
   preview?: boolean;
+  showLabels?: boolean;
 }) {
   const status = journalChartStatus(entry);
   const needsReview = entry.monitoringStatus?.startsWith("Needs review") ?? false;
   const active = (status === "planned" || status === "open") && !needsReview;
   const showLevels = active || preview;
   const end = Math.max(position.x, Math.min(position.endX, width));
+  const labelOnRight = width - end >= 140;
+  const labelX = labelOnRight ? end + 6 : Math.max(0, end - 6);
   const target = position.targets.at(-1) ?? position.entry;
   const top = Math.max(0, Math.min(position.entry, target));
   const bottom = Math.min(height, Math.max(position.entry, target));
@@ -108,16 +112,17 @@ export function MarketChartJournalLayer({
               height={Math.max(0, stopBottom - stopTop)}
               className="fill-rose-500/15"
             />
-            {positioned.map((level) => (
-              <line
-                key={`label:${level.label}`}
-                x1={end}
-                x2={Math.max(0, end - 140)}
-                y1={level.y}
-                y2={level.labelY + 8}
-                className="stroke-muted-foreground/40"
-              />
-            ))}
+            {showLabels &&
+              positioned.map((level) => (
+                <line
+                  key={`label:${level.label}`}
+                  x1={end}
+                  x2={labelX}
+                  y1={level.y}
+                  y2={level.labelY + 8}
+                  className="stroke-muted-foreground/40"
+                />
+              ))}
             {levels.map((level) => (
               <line
                 key={level.label}
@@ -136,15 +141,17 @@ export function MarketChartJournalLayer({
               />
             ))}
           </svg>
-          {positioned.map((level) => (
-            <span
-              key={level.label}
-              className="pointer-events-none absolute whitespace-nowrap rounded-sm bg-background/90 px-1.5 text-xs tabular-nums"
-              style={{ left: Math.max(0, end - 140), top: level.labelY }}
-            >
-              {level.label} {chartPrice(level.price)}
-            </span>
-          ))}
+          {showLabels &&
+            positioned.map((level) => (
+              <span
+                key={level.label}
+                aria-label={`${level.label} ${chartPrice(level.price)}`}
+                className="pointer-events-none absolute whitespace-nowrap text-xs tabular-nums"
+                style={{ left: labelX, top: level.labelY, transform: labelOnRight ? undefined : "translateX(-100%)" }}
+              >
+                {level.label} {chartPrice(level.price)}
+              </span>
+            ))}
         </>
       ) : null}
       {marker ? (
