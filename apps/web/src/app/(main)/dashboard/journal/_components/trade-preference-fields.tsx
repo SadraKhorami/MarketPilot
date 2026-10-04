@@ -1,7 +1,7 @@
 "use client";
 import { useId } from "react";
 
-import type { TradePreferences } from "@marketpilot/ai/contracts";
+import { resolveEntryPolicy, type TradePreferences } from "@marketpilot/ai/contracts";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -18,6 +18,7 @@ export function TradePreferenceFields({
   disabled?: boolean;
 }) {
   const id = useId();
+  const policy = resolveEntryPolicy(value);
   return (
     <FieldGroup className="grid gap-4 sm:grid-cols-2">
       <Field>
@@ -34,7 +35,9 @@ export function TradePreferenceFields({
           disabled={disabled}
           onChange={(e) => onChange({ ...value, capital: e.target.value === "" ? null : Number(e.target.value) })}
         />
-        <FieldDescription>Your supplied sizing capital, not verified broker free balance.</FieldDescription>
+        <FieldDescription>
+          Capital available for this simulation. Position value is capped by this amount; no leverage.
+        </FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor={`${id}-currency`}>Account currency</FieldLabel>
@@ -71,7 +74,9 @@ export function TradePreferenceFields({
           disabled={disabled}
           onChange={(e) => onChange({ ...value, riskPercent: Number(e.target.value) })}
         />
-        <FieldDescription>Your limit, not an AI recommendation.</FieldDescription>
+        <FieldDescription>
+          Maximum loss budget at SL, not the amount invested. Capital is needed for a monetary size.
+        </FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor={`${id}-holding`}>Holding style</FieldLabel>
@@ -97,6 +102,54 @@ export function TradePreferenceFields({
         </Select>
         <FieldDescription>
           Holding style bounds Auto entry timeframes. It never sets a deadline to close an open trade.
+        </FieldDescription>
+      </Field>
+      <Field data-invalid={policy.roundTripCostPercent === null || policy.roundTripCostPercent === undefined}>
+        <FieldLabel htmlFor={`${id}-cost`}>Round-trip cost estimate · %</FieldLabel>
+        <Input
+          id={`${id}-cost`}
+          type="number"
+          min="0"
+          max="10"
+          step="0.01"
+          required
+          placeholder="Enter total estimated costs"
+          value={policy.roundTripCostPercent ?? ""}
+          disabled={disabled}
+          aria-invalid={policy.roundTripCostPercent === null || policy.roundTripCostPercent === undefined}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              entryPolicy: {
+                ...policy,
+                roundTripCostPercent: event.target.value === "" ? null : Number(event.target.value),
+              },
+            })
+          }
+        />
+        <FieldDescription>
+          Total entry + exit fees, spread and slippage as a percentage of position value. Enter 0 explicitly for a
+          cost-free simulation. This is your estimate.
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor={`${id}-reward`}>Minimum net reward / risk</FieldLabel>
+        <Input
+          id={`${id}-reward`}
+          type="number"
+          min="1"
+          max="5"
+          step="0.1"
+          required
+          value={policy.minimumNetRewardRisk ?? 1.5}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange({ ...value, entryPolicy: { ...policy, minimumNetRewardRisk: Number(event.target.value) } })
+          }
+        />
+        <FieldDescription>
+          1.5 means at least 1.50 of potential profit per 1 of risk, after estimated costs and across all targets. It
+          does not predict success.
         </FieldDescription>
       </Field>
       <div className="sm:col-span-2">

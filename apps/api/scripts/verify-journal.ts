@@ -2,7 +2,7 @@ import "reflect-metadata";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { config } from "dotenv";
-import { defaultTradePreferences, ConditionalEntrySchema, TradeSetupSchema, type ManualTrade } from "@marketpilot/ai";
+import { defaultTradePreferences, ConditionalEntrySchema, TradeSetupSchema, assessTradeEconomics, type ManualTrade } from "@marketpilot/ai";
 import { DatabaseService } from "../src/database.module";
 import { JournalTradesService, netResult } from "../src/journal/journal-trades.service";
 import { JournalService } from "../src/journal/journal.service";
@@ -314,6 +314,32 @@ async function main() {
         assert.equal(simulated.resultBasis, "estimated");
         assert.equal(netResult(simulated), 0);
         console.log("PASS simulations: open positions survive expiry; reference fills exclude monetary P&L; sizing rescales partial exits; manual closes preserve simulation basis");
+        const costPlan = TradeSetupSchema.parse({ ...TradeSetupSchema.parse(ai.plan), targets: [130] });
+        const quality = assessTradeEconomics(costPlan, 1);
+        assert.ok(quality.accepted);
+        costPlan.conditionalEntry!.economics = quality.economics;
+        const costSimulation = await tx.journalEntry.create({ data: {
+          userId: user.id, source: "ai", symbol: trade.symbol, plan: costPlan,
+          context: defaultTradePreferences, analysis: [], status: "open", trackingMode: "automatic",
+          resultBasis: "estimated", targetAllocations: [100], quantity: null, entryPrice: 100,
+          openedAt: new Date(startedAt), createdAt: new Date(startedAt),
+        } });
+        await trades.exit(user.id, costSimulation.id, { requestId: randomUUID(), price: 130, quantity: 0.5, fees: 0, occurredAt, reason: "tp" });
+        let costRecord = await tx.journalEntry.findUniqueOrThrow({ where: { id: costSimulation.id }, include: { exits: true } });
+        assert.equal(costRecord.exits[0].fees, 0.5);
+        assert.equal(costRecord.exits[0].basis, "estimated");
+        await trades.correctExecution(user.id, costRecord.id, { editVersion: journalEditVersion(costRecord),
+          price: 100, quantity: 2, fees: 0.5, occurredAt: startedAt });
+        costRecord = await tx.journalEntry.findUniqueOrThrow({ where: { id: costRecord.id }, include: { exits: true } });
+        assert.equal(costRecord.exits[0].quantity, 1);
+        assert.equal(costRecord.exits[0].fees, 0.75);
+        assert.equal(netResult(costRecord), 29);
+        await trades.correctExecution(user.id, costRecord.id, { editVersion: journalEditVersion(costRecord),
+          price: 102, quantity: 2, fees: 0.5, occurredAt: startedAt });
+        costRecord = await tx.journalEntry.findUniqueOrThrow({ where: { id: costRecord.id }, include: { exits: true } });
+        assert.ok(Math.abs(costRecord.exits[0].fees - 0.77) < 1e-10);
+        assert.ok(Math.abs(netResult(costRecord)! - 26.98) < 1e-10);
+        console.log("PASS simulation costs: late sizing, entry fee allocation and entry-price correction rebudget estimated exits without double charging");
         throw rollback;
       },
       { timeout: 30_000 },

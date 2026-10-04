@@ -69,6 +69,10 @@ export function TradeScenario({
     waiting_pullback: text("Waiting for pullback", "در انتظار اصلاح قیمت"),
     waiting_reclaim: text("Waiting for a completed-candle breakout", "در انتظار تأیید شکست با بسته‌شدن کندل"),
     confirmed: text("Candle breakout observed", "شکست در کندل بسته‌شده مشاهده شد"),
+    waiting_touch: text("Waiting for Entry retest", "در انتظار بازآزمایی سطح ورود"),
+    waiting_close: text("Waiting for entry-timeframe close", "در انتظار بسته‌شدن کندل تایم‌فریم ورود"),
+    waiting_break: text("Waiting for a completed break", "در انتظار شکست در کندل بسته‌شده"),
+    waiting_retest: text("Waiting for a later retest and close", "در انتظار بازآزمایی و بسته‌شدن کندل بعدی"),
   };
   async function save() {
     if (pending || !valid || expired || saved) return;
@@ -107,7 +111,7 @@ export function TradeScenario({
       <CardContent className="flex flex-col gap-3">
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
-            [text("Entry trigger", "شرط ورود"), plan.entry],
+            [text("Entry level", "سطح ورود"), plan.entry],
             [text("Stop loss", "حد ضرر"), plan.stopLoss],
             ...plan.targets.map((target, index) => [
               `TP ${index + 1} · ${(Math.abs(target - plan.entry) / Math.abs(plan.entry - plan.stopLoss)).toFixed(1)}R`,
@@ -151,8 +155,8 @@ export function TradeScenario({
           <div className="mt-2 flex flex-col gap-2 text-muted-foreground text-xs leading-relaxed">
             <p>
               {text(
-                "Entry uses the previous candle range. Stop loss uses recent swing extremes and an ATR buffer. Targets use observed structural levels, not price predictions; fees, spread and slippage are excluded.",
-                "ورود بر اساس محدودهٔ کندل‌های قبلی، حد ضرر بر اساس اکسترمم اصلاح اخیر و حاشیهٔ ATR است. تارگت‌ها سطوح واقعی ساختار قیمت هستند، نه پیش‌بینی قیمت؛ کارمزد، اسپرد و لغزش لحاظ نشده‌اند.",
+                "Entry uses the previous candle range. Stop loss uses recent swing extremes and an ATR buffer. Targets use observed structural levels, not price predictions. Economic checks use your combined cost estimate, not verified live execution costs.",
+                "ورود بر اساس محدودهٔ کندل‌های قبلی، حد ضرر بر اساس اکسترمم اصلاح اخیر و حاشیهٔ ATR است. تارگت‌ها سطوح واقعی ساختار قیمت هستند، نه پیش‌بینی قیمت؛ کنترل اقتصادی بر مبنای برآورد هزینهٔ شماست، نه هزینهٔ لحظه‌ای تأییدشده.",
               )}
             </p>
             <p>

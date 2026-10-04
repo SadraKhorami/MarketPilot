@@ -98,4 +98,32 @@ describe("MarketDataService", () => {
       ServiceUnavailableException,
     );
   });
+  it.each([
+    { ...observation, symbol: "SOL-USD" },
+    { ...observation, providerSymbol: "BTC-EUR" },
+    { ...observation, interval: "1m" },
+    { ...observation, candles: [{ ...observation.candles[0], low: 102 }] },
+    { ...observation, candles: [...observation.candles, ...observation.candles] },
+  ])("rejects mismatching or invalid provider observations before caching", async (invalid) => {
+    provider.getMarketData.mockResolvedValue(invalid);
+    await expect(new MarketDataService(provider, redis).getMarketData("BTC-USD", "15m")).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(redis.client.set).not.toHaveBeenCalled();
+  });
+  it.each(["wrong-symbol", "wrong-source", "future", "expired"])("ignores %s cache entries", async (kind) => {
+    store.set(
+      "marketpilot:market-data:v1:coinbase-exchange:BTC-USD:15m",
+      JSON.stringify({
+        source: kind === "wrong-source" ? "other" : "coinbase-exchange",
+        requestedSymbol: "BTC-USD",
+        data: kind === "wrong-symbol" ? { ...observation, symbol: "SOL-USD" } : observation,
+        fetchedAt: new Date(
+          Date.now() + (kind === "future" ? 60_000 : kind === "expired" ? -901_000 : -1000),
+        ).toISOString(),
+      }),
+    );
+    await new MarketDataService(provider, redis).getMarketData("BTC-USD", "15m");
+    expect(provider.getMarketData).toHaveBeenCalledTimes(1);
+  });
 });

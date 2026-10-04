@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { ManualTradeSchema, type JournalRecord } from "@marketpilot/ai/contracts";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -173,12 +173,6 @@ function AddTradeForm({
   const numberFields = [
     ["entry", "Entry price", entry, setEntry],
     ["stop", "Stop loss", stopLoss, setStopLoss],
-    [
-      "fees",
-      `${status === "closed" && !trade ? "Total fees" : "Entry fees"} · ${symbol.split("-").at(-1)}`,
-      fees,
-      setFees,
-    ],
   ] as const;
   return (
     <Sheet
@@ -191,10 +185,8 @@ function AddTradeForm({
         <SheetHeader>
           <SheetTitle>{trade ? `Edit trade · ${trade.symbol}` : "Add a trade"}</SheetTitle>
           <SheetDescription>
-            {trade
-              ? "Correct trade details. Recorded exits keep their market, side and status. Partial-exit totals are preserved."
-              : "Record a trade or a waiting plan."}{" "}
-            Dates use your device timezone.
+            {trade ? "Update your position, targets and notes." : "Record a trade or a waiting plan."} Dates use your
+            device timezone.
           </SheetDescription>
           {initial && Date.parse(initial.time) > Date.now() ? (
             <p className="text-muted-foreground text-xs">
@@ -211,175 +203,235 @@ function AddTradeForm({
           }}
         >
           <fieldset disabled={pending} className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-4">
-            <FieldGroup className="grid gap-4 sm:grid-cols-2">
-              <Field className="sm:col-span-2">
-                <FieldLabel htmlFor="manual-market">Market</FieldLabel>
-                <MarketSymbolField
-                  id="manual-market"
-                  value={symbol}
-                  onChange={setSymbol}
-                  disabled={pending || !!trade?.exits.length}
-                />
-              </Field>
-              <Choice
-                id="manual-direction"
-                disabled={!!trade?.exits.length}
-                label="Side"
-                value={direction}
-                onChange={setDirection}
-                values={[
-                  ["BUY", "Long"],
-                  ["SELL", "Short"],
-                ]}
-              />
-              <Choice
-                id="manual-status"
-                disabled={!!trade?.exits.length}
-                label="Current status"
-                value={status}
-                onChange={setStatus}
-                values={
-                  trade?.openedAt
-                    ? [
-                        ["open", "Entered trade"],
-                        ["closed", "Already closed"],
-                      ]
-                    : [
-                        ["open", "Entered trade"],
-                        ["planned", "Waiting for entry"],
-                        ["closed", "Already closed"],
-                        ["cancelled", "Cancelled plan"],
-                        ["expired", "Expired plan"],
-                      ]
-                }
-              />
-              <Field>
-                <FieldLabel htmlFor="manual-start">
-                  {status === "planned" ? "Plan start" : "Entry / plan time"}
-                </FieldLabel>
-                <JournalDatePicker id="manual-start" value={startedAt} onChange={setStartedAt} />
-              </Field>
-              <Choice
-                id="manual-interval"
-                label="Tracking timeframe"
-                value={interval}
-                onChange={setInterval}
-                values={["1m", "5m", "15m", "1h", "6h", "1d"].map((v) => [v, v])}
-              />
-              {numberFields.map(([id, label, value, setter]) => (
-                <Field key={id}>
-                  <FieldLabel htmlFor={`manual-${id}`}>{label}</FieldLabel>
-                  <Input
-                    required
-                    id={`manual-${id}`}
-                    type="number"
-                    min={id === "fees" ? 0 : "0.00000001"}
-                    step="any"
-                    value={value}
-                    onChange={(e) => setter(e.target.value)}
-                  />
+            <FieldSet>
+              <FieldLegend>Trade details</FieldLegend>
+              <FieldGroup className="grid items-start gap-4 sm:grid-cols-2">
+                {trade?.exits.length ? (
+                  <p className="text-muted-foreground text-sm sm:col-span-2">
+                    {direction === "BUY" ? "Long" : "Short"} · {status === "closed" ? "Closed" : "Open"} ·{" "}
+                    {trade.resultBasis === "estimated" ? "Simulated position" : "Recorded trade"}
+                  </p>
+                ) : (
+                  <>
+                    <Field className="sm:col-span-2">
+                      <FieldLabel htmlFor="manual-market">Market</FieldLabel>
+                      <MarketSymbolField
+                        id="manual-market"
+                        value={symbol}
+                        onChange={setSymbol}
+                        disabled={pending || !!trade?.exits.length}
+                      />
+                    </Field>
+                    <Choice
+                      id="manual-direction"
+                      disabled={!!trade?.exits.length}
+                      label="Side"
+                      value={direction}
+                      onChange={setDirection}
+                      values={[
+                        ["BUY", "Long"],
+                        ["SELL", "Short"],
+                      ]}
+                    />
+                    <Choice
+                      id="manual-status"
+                      disabled={!!trade?.exits.length}
+                      label="Current status"
+                      value={status}
+                      onChange={setStatus}
+                      values={
+                        trade?.openedAt
+                          ? [
+                              ["open", "Entered trade"],
+                              ["closed", "Already closed"],
+                            ]
+                          : [
+                              ["open", "Entered trade"],
+                              ["planned", "Waiting for entry"],
+                              ["closed", "Already closed"],
+                              ["cancelled", "Cancelled plan"],
+                              ["expired", "Expired plan"],
+                            ]
+                      }
+                    />
+                  </>
+                )}
+                <Field>
+                  <FieldLabel htmlFor="manual-start">{status === "planned" ? "Plan start" : "Entry time"}</FieldLabel>
+                  <JournalDatePicker id="manual-start" value={startedAt} onChange={setStartedAt} />
                 </Field>
-              ))}
-              <TradeSizeField id="manual-quantity" symbol={symbol} price={entry} size={size} disabled={pending} />
-              <Field className="sm:col-span-2">
-                <FieldLabel>Targets & exit allocation</FieldLabel>
-                <FieldDescription>Allocate 100% across up to three targets.</FieldDescription>
-                {targets.map((target, i) => (
-                  <div key={target.id} className="flex items-center gap-2">
+                <Choice
+                  id="manual-interval"
+                  label="Tracking timeframe"
+                  value={interval}
+                  onChange={setInterval}
+                  values={["1m", "5m", "15m", "1h", "6h", "1d"].map((v) => [v, v])}
+                />
+              </FieldGroup>
+            </FieldSet>
+            <FieldSet className="border-t pt-5">
+              <FieldLegend>Position</FieldLegend>
+              <FieldGroup className="grid items-start gap-4 sm:grid-cols-2">
+                {numberFields.map(([id, label, value, setter]) => (
+                  <Field key={id}>
+                    <FieldLabel htmlFor={`manual-${id}`}>{label}</FieldLabel>
                     <Input
-                      aria-label={`Target ${i + 1} price`}
-                      placeholder={`TP ${i + 1} price`}
                       required
+                      id={`manual-${id}`}
                       type="number"
                       min="0.00000001"
                       step="any"
-                      value={target.price}
-                      onChange={(e) =>
-                        setTargets((all) => all.map((t, n) => (n === i ? { ...t, price: e.target.value } : t)))
-                      }
+                      value={value}
+                      onChange={(e) => setter(e.target.value)}
                     />
-                    <Input
-                      className="w-24"
-                      aria-label={`Target ${i + 1} exit percent`}
-                      required
-                      type="number"
-                      min="0.01"
-                      max="100"
-                      step="any"
-                      readOnly={!!trade?.exits.length}
-                      value={target.percent}
-                      onChange={(e) =>
-                        setTargets((all) => all.map((t, n) => (n === i ? { ...t, percent: e.target.value } : t)))
-                      }
-                    />
-                    <span>%</span>
-                    {targets.length > 1 && !trade?.exits.length ? (
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={`Remove target ${i + 1}`}
-                        onClick={() => setTargets((all) => all.filter((_, n) => n !== i))}
-                      >
-                        <Trash2 />
-                      </Button>
-                    ) : null}
-                  </div>
-                ))}
-                {targets.length < 3 && !trade?.exits.length ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="self-start"
-                    onClick={() => setTargets((all) => [...all, { id: crypto.randomUUID(), price: "", percent: "" }])}
-                  >
-                    <Plus data-icon="inline-start" />
-                    Add target
-                  </Button>
-                ) : null}
-              </Field>
-              {status === "planned" ? (
-                <>
-                  <Choice
-                    id="manual-trigger"
-                    label="Entry condition"
-                    value={entryTrigger}
-                    onChange={setEntryTrigger}
-                    values={[
-                      ["touch", "Price touches entry"],
-                      ["close_above", "Candle closes above entry"],
-                      ["close_below", "Candle closes below entry"],
-                    ]}
-                  />
-                  <Field>
-                    <FieldLabel htmlFor="manual-expiry">Entry valid until</FieldLabel>
-                    <JournalDatePicker id="manual-expiry" value={expiresAt} onChange={setExpiresAt} />
-                    <FieldDescription>No entry before this time → expired.</FieldDescription>
                   </Field>
-                </>
-              ) : null}
-              {status === "open" || status === "planned" ? (
+                ))}
+                <div className="sm:col-span-2">
+                  <TradeSizeField id="manual-quantity" symbol={symbol} price={entry} size={size} disabled={pending} />
+                </div>
                 <Field className="sm:col-span-2">
-                  <Choice
-                    id="manual-tracking"
-                    disabled={trade?.exits.some((exit) => exit.basis === "recorded")}
-                    label="Tracking"
-                    value={trackingMode}
-                    onChange={setTrackingMode}
-                    values={[
-                      ["automatic", "Automatic · candle-based estimates"],
-                      ["observed", "Observe levels · I record executions"],
-                    ]}
+                  <FieldLabel htmlFor="manual-fees">
+                    {status === "closed" && !trade ? "Total fees" : "Entry fee"} · {symbol.split("-").at(-1)}
+                  </FieldLabel>
+                  <Input
+                    id="manual-fees"
+                    type="number"
+                    min="0"
+                    step="any"
+                    required
+                    value={fees}
+                    onChange={(event) => setFees(event.target.value)}
                   />
                   <FieldDescription>
-                    Automatic mode records estimated SL/TP exits using your allocations. It does not execute orders.
-                    Gaps and ambiguous candles require review; estimated results have their own analytics filter.
+                    {status === "closed" && !trade
+                      ? "Combined entry and exit costs."
+                      : "Cost of opening this position."}{" "}
+                    Leave at 0 for a simulation without fees.
                   </FieldDescription>
                 </Field>
-              ) : null}
-              {status === "closed" ? (
-                <>
+              </FieldGroup>
+            </FieldSet>
+            <FieldSet className="border-t pt-5">
+              <FieldLegend>Take-profit targets</FieldLegend>
+              <FieldGroup className="gap-4">
+                <Field className="sm:col-span-2">
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>Target price</span>
+                    <span>Position to close · %</span>
+                  </div>
+                  <FieldDescription>Allocate 100% across up to three targets.</FieldDescription>
+                  {targets.map((target, i) => (
+                    <div key={target.id} className="flex items-center gap-2">
+                      <Input
+                        aria-label={`Target ${i + 1} price`}
+                        placeholder={`TP ${i + 1} price`}
+                        required
+                        type="number"
+                        min="0.00000001"
+                        step="any"
+                        value={target.price}
+                        onChange={(e) =>
+                          setTargets((all) => all.map((t, n) => (n === i ? { ...t, price: e.target.value } : t)))
+                        }
+                      />
+                      <Input
+                        className="w-24"
+                        aria-label={`Target ${i + 1} exit percent`}
+                        required
+                        type="number"
+                        min="0.01"
+                        max="100"
+                        step="any"
+                        readOnly={!!trade?.exits.length}
+                        value={target.percent}
+                        onChange={(e) =>
+                          setTargets((all) => all.map((t, n) => (n === i ? { ...t, percent: e.target.value } : t)))
+                        }
+                      />
+                      <span>%</span>
+                      {targets.length > 1 && !trade?.exits.length ? (
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={`Remove target ${i + 1}`}
+                          onClick={() => setTargets((all) => all.filter((_, n) => n !== i))}
+                        >
+                          <Trash2 />
+                        </Button>
+                      ) : null}
+                    </div>
+                  ))}
+                  {targets.length < 3 && !trade?.exits.length ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="self-start"
+                      onClick={() => setTargets((all) => [...all, { id: crypto.randomUUID(), price: "", percent: "" }])}
+                    >
+                      <Plus data-icon="inline-start" />
+                      Add target
+                    </Button>
+                  ) : null}
+                </Field>
+              </FieldGroup>
+            </FieldSet>
+            {status === "planned" || status === "open" ? (
+              <FieldSet className="border-t pt-5">
+                <FieldLegend>Tracking & validity</FieldLegend>
+                <FieldGroup className="grid items-start gap-4 sm:grid-cols-2">
+                  {status === "planned" ? (
+                    <>
+                      <Choice
+                        id="manual-trigger"
+                        label="Entry condition"
+                        value={entryTrigger}
+                        onChange={setEntryTrigger}
+                        values={[
+                          ["touch", "Price touches entry"],
+                          ["close_above", "Candle closes above entry"],
+                          ["close_below", "Candle closes below entry"],
+                        ]}
+                      />
+                      <Field>
+                        <FieldLabel htmlFor="manual-expiry">Entry valid until</FieldLabel>
+                        <JournalDatePicker id="manual-expiry" value={expiresAt} onChange={setExpiresAt} />
+                        <FieldDescription>No entry before this time → expired.</FieldDescription>
+                      </Field>
+                    </>
+                  ) : null}
+                  {status === "open" || status === "planned" ? (
+                    <Field className="sm:col-span-2">
+                      <Choice
+                        id="manual-tracking"
+                        disabled={trade?.exits.some((exit) => exit.basis === "recorded")}
+                        label="Tracking"
+                        value={trackingMode}
+                        onChange={setTrackingMode}
+                        values={[
+                          ["automatic", "Automatic · candle-based estimates"],
+                          ["observed", "Observe levels · I record executions"],
+                        ]}
+                      />
+                      <FieldDescription>
+                        Automatic simulation tracks SL/TP exits using these allocations. Unclear candles pause tracking
+                        for review.
+                      </FieldDescription>
+                    </Field>
+                  ) : null}
+                </FieldGroup>
+              </FieldSet>
+            ) : null}
+            {status === "closed" ? (
+              <FieldSet className="border-t pt-5">
+                <FieldLegend>Closed result</FieldLegend>
+                {(trade?.exits.length ?? 0) > 1 ? (
+                  <FieldDescription>
+                    Exit price is the average of your partial exits; their prices and times are preserved.
+                  </FieldDescription>
+                ) : null}
+                <FieldGroup className="grid items-start gap-4 sm:grid-cols-2">
                   <Field>
                     <FieldLabel htmlFor="manual-exit-price">Exit price</FieldLabel>
                     <Input
@@ -413,19 +465,19 @@ function AddTradeForm({
                       ["manual", "Other exit"],
                     ]}
                   />
-                </>
-              ) : null}
-              <Field className="sm:col-span-2">
-                <FieldLabel htmlFor="manual-notes">Notes · optional</FieldLabel>
-                <Textarea
-                  id="manual-notes"
-                  maxLength={4000}
-                  rows={3}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
-              </Field>
-            </FieldGroup>
+                </FieldGroup>
+              </FieldSet>
+            ) : null}
+            <Field className="border-t pt-5">
+              <FieldLabel htmlFor="manual-notes">Notes · optional</FieldLabel>
+              <Textarea
+                id="manual-notes"
+                maxLength={4000}
+                rows={3}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </Field>
             {conflict && reload ? (
               <Button
                 type="button"

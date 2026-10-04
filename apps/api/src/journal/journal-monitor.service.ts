@@ -1,10 +1,12 @@
-import { TradeSetupSchema, entryConditionMet } from "@marketpilot/ai";
+import { entryConditionMet, entryDurations, TradeSetupSchema } from "@marketpilot/ai";
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { DatabaseService } from "../database.module";
+import { completedSnapshotCandles } from "../market-data/completed-candles";
 import { MarketDataService } from "../market-data/market-data.service";
-import { trackAutomatic } from "./journal-auto-tracking";
 import { JournalService } from "./journal.service";
-const durations = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3600_000, "6h": 21600_000, "1d": 86400_000 };
+import { trackAutomatic } from "./journal-auto-tracking";
+
+const durations = entryDurations;
 @Injectable()
 export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
@@ -44,7 +46,13 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
         const plan = parsed.data;
         try {
           const snapshot = await this.market.getMarketData(entry.symbol, plan.interval);
-          if (snapshot.freshness !== "fresh") throw new Error("Fresh market data unavailable.");
+          if (
+            snapshot.freshness !== "fresh" ||
+            snapshot.requestedSymbol !== entry.symbol ||
+            snapshot.data.symbol !== entry.symbol ||
+            snapshot.data.interval !== plan.interval
+          )
+            throw new Error("Fresh matching market data unavailable.");
           if (
             !snapshot.data.candles.every((candle, index, candles) => {
               const time = Date.parse(candle.time);
@@ -61,7 +69,7 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
           )
             throw new Error("Valid ordered candles are required for tracking.");
           const fine =
-            entry.trackingMode === "automatic" && plan.conditionalEntry
+            entry.trackingMode === "automatic" && (entry.source === "ai" || plan.conditionalEntry)
               ? plan.interval === "1m"
                 ? snapshot
                 : await this.market.getMarketData(entry.symbol, "1m")
@@ -69,6 +77,7 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
           if (
             fine &&
             (fine.freshness !== "fresh" ||
+              fine.requestedSymbol !== entry.symbol ||
               fine.data.symbol !== entry.symbol ||
               fine.data.interval !== "1m" ||
               !fine.data.candles.every(
@@ -89,7 +98,12 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
             });
             if (!["planned", "open"].includes(current.status)) return;
             // The request preceded the lock; edited plans need a fresh provider request.
-            if (current.symbol !== entry.symbol || JSON.stringify(current.plan) !== JSON.stringify(entry.plan)) return;
+            if (
+              current.symbol !== entry.symbol ||
+              current.trackingMode !== entry.trackingMode ||
+              JSON.stringify(current.plan) !== JSON.stringify(entry.plan)
+            )
+              return;
             if (current.trackingMode === "automatic") {
               await trackAutomatic(tx, current, fine ?? snapshot, fine ? snapshot : undefined);
               return;
@@ -98,9 +112,8 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
               current.checkedAt?.getTime() ?? current.createdAt.getTime(),
               current.openedAt?.getTime() ?? 0,
             );
-            const completed = snapshot.data.candles.filter(
-              (c) => Date.parse(c.time) >= start && Date.parse(c.time) + durations[plan.interval] <= Date.now(),
-            );
+            const finalCandles = completedSnapshotCandles(snapshot, Date.now());
+            const completed = finalCandles.filter((c) => Date.parse(c.time) >= start);
             const reset = current.events
               .filter((event) => {
                 const evidence = event.evidence;
@@ -146,11 +159,8 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
                 },
               });
             };
-            const partial = snapshot.data.candles.find(
-              (candle) =>
-                Date.parse(candle.time) < start &&
-                Date.parse(candle.time) + durations[plan.interval] > start &&
-                Date.parse(candle.time) + durations[plan.interval] <= Date.now(),
+            const partial = finalCandles.find(
+              (candle) => Date.parse(candle.time) < start && Date.parse(candle.time) + durations[plan.interval] > start,
             );
             if (partial) {
               const stop = plan.direction === "BUY" ? partial.low <= plan.stopLoss : partial.high >= plan.stopLoss;

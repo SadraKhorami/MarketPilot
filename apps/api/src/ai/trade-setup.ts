@@ -1,13 +1,19 @@
 import {
-  TradeSetupSchema,
+  assessTradeEconomics,
+  type ConditionalEntry,
+  conditionalEntryStage,
+  describeEntryCondition,
+  entryDeadline,
   entryDurations,
   resolveEntryPolicy,
-  type ConditionalEntry,
+  sizeUnleveragedTrade,
   type TradePreferences,
   type TradeSetup,
+  TradeSetupSchema,
 } from "@marketpilot/ai";
-import { calculateSupportResistance, calculateTechnicalIndicators, referenceMarkets } from "@marketpilot/market-data";
+import { calculateStructuralLevels, calculateTechnicalIndicators, referenceMarkets } from "@marketpilot/market-data";
 import type { MarketSnapshot } from "../market-data/market-data.service";
+import { completedSnapshotCandles } from "./market-evidence";
 
 const durations = entryDurations;
 
@@ -53,7 +59,7 @@ export function calculateTradeSetup(
     now - Date.parse(data.timestamp) > Math.max(duration * 2, 120_000)
   )
     return unavailable("The current price observation is stale or its timestamp is invalid.");
-  const candles = data.candles.filter((candle) => Date.parse(candle.time) + duration <= now);
+  const candles = completedSnapshotCandles(snapshot, now);
   const last = candles.at(-1);
   const previous = candles.at(-2);
   if (snapshot.freshness !== "fresh" || !last || !previous || now - Date.parse(last.time) > duration * 2)
@@ -84,18 +90,32 @@ export function calculateTradeSetup(
   if (!indicators.atr || !indicators.sma50) return unavailable("Volatility or moving-average context is unavailable.");
   const direction = requested === "AUTO" ? (last.close >= indicators.sma50 ? "BUY" : "SELL") : requested;
   const buy = direction === "BUY";
-  if (context) {
-    const contextCandles = context.data.candles.filter(
-      (candle) => Date.parse(candle.time) + durations[context.data.interval] <= now,
+  if (buy ? last.close < indicators.sma50 : last.close > indicators.sma50)
+    return unavailable(
+      "The requested direction conflicts with the completed entry-timeframe trend. Wait for alignment.",
     );
+  if (context) {
+    const contextCandles = completedSnapshotCandles(context, now);
+    if (
+      contextCandles
+        .slice(-50)
+        .some(
+          (candle, index, window) =>
+            index > 0 &&
+            Date.parse(candle.time) - Date.parse(window[index - 1].time) !== durations[context.data.interval],
+        )
+    )
+      return unavailable("Recent higher-timeframe candles contain gaps. Trend alignment cannot be validated.");
     const contextAverage = calculateTechnicalIndicators(contextCandles).sma50;
-    const contextClose = contextCandles.at(-1)?.close;
+    const contextLast = contextCandles.at(-1);
+    const contextClose = contextLast?.close;
     if (
       context.freshness !== "fresh" ||
       !contextAverage ||
       !contextClose ||
+      !contextLast ||
       contextCandles.length < 50 ||
-      now - Date.parse(contextCandles.at(-1)!.time) > durations[context.data.interval] * 2
+      now - Date.parse(contextLast.time) > durations[context.data.interval] * 2
     )
       return unavailable("Higher-timeframe context is unavailable. Recheck before forming a plan.");
     if (buy ? contextClose < contextAverage : contextClose > contextAverage)
@@ -150,27 +170,18 @@ export function calculateTradeSetup(
     return unavailable(
       "Price has moved beyond this entry area. Recheck for a new pullback instead of chasing the move.",
     );
-  const pullback = recent
-    .slice(1, -1)
-    .some((candle, index) => (buy ? candle.close < recent[index].close : candle.close > recent[index].close));
-  const crossed = buy ? previous.close <= entry && last.close > entry : previous.close >= entry && last.close < entry;
-  const stage = pullback && crossed ? "confirmed" : pullback ? "waiting_reclaim" : "waiting_pullback";
-  const levels = calculateSupportResistance(candles);
-  const contextLevels = context
-    ? calculateSupportResistance(
-        context.data.candles.filter((candle) => Date.parse(candle.time) + durations[context.data.interval] <= now),
-      )
-    : null;
+  const levels = calculateStructuralLevels(candles);
+  const contextLevels = context ? calculateStructuralLevels(completedSnapshotCandles(context, now)) : null;
   const candidates = buy
     ? [...levels.resistance, ...(contextLevels?.resistance ?? [])]
     : [...levels.support, ...(contextLevels?.support ?? [])];
   const targets = [...new Set(candidates.map(round))]
-    .filter((target) => (buy ? target > entry : target < entry) && Math.abs(target - entry) >= risk * 0.5)
+    .filter((target) => (buy ? target > entry : target < entry))
     .sort((a, b) => (buy ? a - b : b - a))
     .slice(0, 3);
   if (!targets.length)
     return unavailable(
-      "No supported target beyond Entry offers a meaningful reward relative to the stop distance. Wait for a clearer structure.",
+      "No confirmed historical swing target exists beyond Entry. Wait for an observed level; price extensions are not invented.",
     );
   if (targets.some((target) => target <= 0)) return unavailable("Risk-based targets fall outside a valid price range.");
   const validityCandles =
@@ -179,10 +190,39 @@ export function calculateTradeSetup(
       : (options?.validityCandles ?? (scenario === "pullback" ? 5 : 3));
   if (validityCandles < 1 || validityCandles > 12 || duration * validityCandles > 72 * 3_600_000)
     return unavailable("Entry validity must be one to twelve entry candles and no longer than seventy-two hours.");
-  const capital = options?.preferences.capital ?? null;
-  const quote = data.symbol.split("-").at(-1)!;
-  const riskAmount = capital ? (capital * options!.preferences.riskPercent) / 100 : null;
-  const baseUnits = riskAmount && options?.preferences.currency === quote ? riskAmount / risk : null;
+  const validityBasis = condition === "touch" ? "elapsed_duration" : "entry_candle_closes";
+  const candleOffsetMs = Date.parse(last.time) % duration;
+  const expiresAt = new Date(
+    entryDeadline(now, data.interval, validityCandles, validityBasis, candleOffsetMs),
+  ).toISOString();
+  const breakoutAt =
+    scenario === "pullback" && observedBreak ? new Date(Date.parse(observedBreak.time) + duration).toISOString() : null;
+  const entryDescription = describeEntryCondition({
+    interval: data.interval,
+    direction,
+    conditionalEntry: { scenario, condition },
+  });
+  const quality = assessTradeEconomics(
+    { entry, stopLoss, targets, direction },
+    policy.roundTripCostPercent,
+    policy.minimumNetRewardRisk ?? 1.5,
+  );
+  if (!quality.accepted) return unavailable(quality.reason);
+  const preferences = options?.preferences;
+  const capital = preferences?.capital ?? null;
+  const quote = data.symbol.split("-").at(-1);
+  if (!quote) return unavailable("The market quote currency is unavailable.");
+  const riskAmount = capital && preferences ? (capital * preferences.riskPercent) / 100 : null;
+  const baseUnits =
+    riskAmount && capital && preferences?.currency === quote
+      ? sizeUnleveragedTrade(
+          entry,
+          quality.economics.stopRiskPerUnit,
+          quality.economics.costPerUnit,
+          capital,
+          preferences.riskPercent,
+        ).baseUnits
+      : null;
   const plan = TradeSetupSchema.parse({
     conditionalEntry: {
       version: 2,
@@ -192,21 +232,12 @@ export function calculateTradeSetup(
       timeframeMode: policy.timeframeMode,
       validityMode: policy.validityMode,
       validityCandles,
-      breakoutAt:
-        scenario === "pullback" && observedBreak
-          ? new Date(Date.parse(observedBreak.time) + duration).toISOString()
-          : null,
+      validityBasis,
+      candleOffsetMs,
+      breakoutAt,
       proposedAt: new Date(now).toISOString(),
-      rationale:
-        options?.rationale ??
-        (scenario === "pullback"
-          ? "Prior range break observed on completed candles; trend alignment and a bounded ATR distance support a conditional pullback."
-          : "Prior completed-candle range boundary with aligned higher-timeframe trend; a future close or break and retest is required."),
-      validityReason:
-        policy.validityMode === "manual"
-          ? "User-selected entry candle count, validated against the twelve-candle and seventy-two-hour limits. Independent of holding style."
-          : (options?.validityReason ??
-            "Bounded proposed candle count, validated against fresh structure and ATR distance. This is only the deadline for an unexecuted entry."),
+      rationale: `${data.symbol}: prior completed-candle range boundary, aligned ${context.data.interval} trend and entry within 1.5 ATR. Required: ${entryDescription}.`,
+      validityReason: `${validityBasis === "entry_candle_closes" ? `${validityCandles} future ${data.interval} candle closes from proposal` : `${validityCandles} × ${data.interval} elapsed from proposal`}; deadline ${expiresAt}, inclusive. Entry is monitored only after saving. Stop touched before entry invalidates; expiry applies only while waiting.`,
       invalidation: { kind: "stop_before_entry", price: stopLoss },
       atr: indicators.atr,
       maxEntryDistance,
@@ -218,12 +249,13 @@ export function calculateTradeSetup(
         calendar: "unavailable",
       },
       executionData: { spread: "unavailable", fees: "unavailable", liquidity: "unavailable" },
+      economics: quality.economics,
       sizing: {
         capitalBasis: "user_supplied",
         riskAmount,
         baseUnits,
         reason: baseUnits
-          ? "Indicative base units from manually supplied capital, risk and entry-stop distance. Simulation fees are zero unless supplied."
+          ? "Unleveraged position capped by supplied capital including estimated costs. Risk percentage is a maximum loss budget, not an investment amount."
           : capital
             ? "Account and quote currencies differ; verified conversion is unavailable."
             : "Manual capital was not supplied; size is unknown.",
@@ -232,7 +264,7 @@ export function calculateTradeSetup(
     symbol: data.symbol,
     interval: data.interval,
     direction,
-    stage,
+    stage: conditionalEntryStage({ scenario, condition, breakoutAt }),
     entry,
     stopLoss,
     targets,
@@ -240,7 +272,7 @@ export function calculateTradeSetup(
     ...(context ? { contextInterval: context.data.interval } : {}),
     observedPrice: data.price,
     observedAt: data.timestamp,
-    expiresAt: new Date(now + duration * validityCandles).toISOString(),
+    expiresAt,
     quote: data.symbol.split("-")[1],
     pipSize,
     sourceId,

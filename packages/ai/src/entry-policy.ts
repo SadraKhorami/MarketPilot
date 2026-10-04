@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { TradeEconomicsSchema } from "./trade-economics";
+
+export * from "./trade-economics";
 
 export const entryDurations = {
   "1m": 60_000,
@@ -10,6 +13,8 @@ export const entryDurations = {
 };
 export const EntryPolicySchema = z
   .object({
+    roundTripCostPercent: z.number().min(0).max(10).finite().nullable().optional(),
+    minimumNetRewardRisk: z.number().min(1).max(5).finite().optional(),
     timeframeMode: z.enum(["auto", "manual"]),
     trendInterval: z.enum(["15m", "1h", "6h", "1d"]),
     validityMode: z.enum(["auto", "manual"]),
@@ -54,6 +59,9 @@ export const ConditionalEntrySchema = z
     timeframeMode: z.enum(["auto", "manual"]),
     validityMode: z.enum(["auto", "manual"]),
     validityCandles: z.number().int().min(1).max(12),
+    // Absent on existing plans: their exact elapsed-duration deadline is preserved.
+    validityBasis: z.enum(["elapsed_duration", "entry_candle_closes"]).optional(),
+    candleOffsetMs: z.number().int().min(0).max(86_399_999).optional(),
     breakoutAt: z.string().datetime({ offset: true }).nullable(),
     proposedAt: z.string().datetime({ offset: true }),
     rationale: z.string().min(1).max(500),
@@ -77,6 +85,7 @@ export const ConditionalEntrySchema = z
         liquidity: z.literal("unavailable"),
       })
       .strict(),
+    economics: TradeEconomicsSchema.optional(),
     sizing: z
       .object({
         capitalBasis: z.literal("user_supplied"),
@@ -100,6 +109,55 @@ export const ConditionalEntrySchema = z
   })
   .strict();
 export type ConditionalEntry = z.infer<typeof ConditionalEntrySchema>;
+
+export function entryDeadline(
+  proposedAt: number,
+  interval: keyof typeof entryDurations,
+  count: number,
+  basis: ConditionalEntry["validityBasis"] = "elapsed_duration",
+  candleOffsetMs = 0,
+) {
+  const duration = entryDurations[interval];
+  return (
+    (basis === "entry_candle_closes"
+      ? Math.floor((proposedAt - candleOffsetMs) / duration) * duration + candleOffsetMs
+      : proposedAt) +
+    count * duration
+  );
+}
+
+export function conditionalEntryStage(rule: Pick<ConditionalEntry, "scenario" | "condition" | "breakoutAt">) {
+  if (rule.condition === "touch") return "waiting_touch";
+  if (rule.scenario === "pullback" || (rule.condition === "break_retest" && rule.breakoutAt)) return "waiting_retest";
+  return rule.condition === "break_retest" ? "waiting_break" : "waiting_close";
+}
+
+// Operational prose is derived from the executable fields, never from model text.
+export function describeEntryCondition(
+  plan: {
+    interval: keyof typeof entryDurations;
+    direction: "BUY" | "SELL";
+    conditionalEntry: Pick<ConditionalEntry, "scenario" | "condition">;
+  },
+  persian = false,
+) {
+  const { scenario, condition } = plan.conditionalEntry;
+  const side = plan.direction === "BUY" ? "above" : "below";
+  const faSide = plan.direction === "BUY" ? "بالای" : "پایینِ";
+  if (condition === "touch")
+    return persian ? "بازآزمایی سطح ورود پس از شکست مشاهده‌شده" : "Retest Entry after the observed break";
+  if (scenario === "pullback")
+    return persian
+      ? `پس از شکست مشاهده‌شده، بازآزمایی ورود در کندلی بعدی و بسته‌شدن کندل ${plan.interval} ${faSide} سطح ورود`
+      : `After the observed break, a later candle retests Entry and the ${plan.interval} candle closes ${side} Entry`;
+  if (condition === "break_retest")
+    return persian
+      ? `بسته‌شدن کندل ${plan.interval} ${faSide} ورود، سپس بازآزمایی در کندلی بعدی که ${faSide} ورود بسته شود`
+      : `A ${plan.interval} candle closes ${side} Entry, then a later candle retests Entry and closes ${side} it`;
+  return persian
+    ? `بسته‌شدن کندل ${plan.interval} ${faSide} سطح ورود`
+    : `A ${plan.interval} candle closes ${side} Entry`;
+}
 
 export function entryConditionMet(
   plan: { entry: number; direction: "BUY" | "SELL"; conditionalEntry?: ConditionalEntry },

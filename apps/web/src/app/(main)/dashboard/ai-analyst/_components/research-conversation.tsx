@@ -76,18 +76,24 @@ export function ResearchConversation({
                           className="@2xl/main:grid-cols-[minmax(0,1fr)_auto] @2xl/main:items-center gap-3"
                         >
                           <div className="min-w-0">
-                            <AlertTitle>Research did not complete</AlertTitle>
+                            <AlertTitle>
+                              {turn.errorCode === "AI_MISSING_CITATION" || turn.errorCode === "AI_INVALID_CITATION"
+                                ? "AI response could not be verified"
+                                : "Research did not complete"}
+                            </AlertTitle>
                             <AlertDescription className="mt-1 [overflow-wrap:anywhere]">{turn.error}</AlertDescription>
                           </div>
                           <div className="flex flex-wrap items-center @2xl/main:justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={research.running}
-                              onClick={() => void research.recover()}
-                            >
-                              Recover result
-                            </Button>
+                            {turn.status === "interrupted" || turn.status === "running" ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={research.running}
+                                onClick={() => void research.recover()}
+                              >
+                                Recover result
+                              </Button>
+                            ) : null}
                             <Button
                               variant="outline"
                               size="sm"

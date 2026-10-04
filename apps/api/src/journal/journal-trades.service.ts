@@ -14,6 +14,7 @@ import { z } from "zod";
 import { DatabaseService } from "../database.module";
 import { hasEstimatedEntry } from "./journal-execution-basis";
 import { journalEditVersion } from "./journal-edit-version";
+import { estimatedExitFees } from "./simulation-costs";
 import type { JournalQueryDto } from "./journal.dto";
 
 export function journalWhere(userId: string, query: JournalQueryDto) {
@@ -279,6 +280,15 @@ export class JournalTradesService {
           });
         }
       }
+      if (oldPlan.conditionalEntry?.economics && executed) {
+        for (const exit of current.exits) {
+          if (exit.basis !== "estimated" || (current.exits.length === 1 && actualExitChanged)) continue;
+          await tx.journalExit.update({
+            where: { id: exit.id },
+            data: { fees: estimatedExitFees(oldPlan, trade.entry, trade.quantity, trade.fees, exit.quantity) },
+          });
+        }
+      }
       return tx.journalEntry.update({
         where: { id },
         data: {
@@ -387,8 +397,9 @@ export class JournalTradesService {
       if (entry.source === "ai" && entry.resultBasis === "estimated" && entry.quantity === null) {
         for (const exit of entry.exits) {
           const quantity = exit.quantity * data.quantity;
-          await tx.journalExit.update({ where: { id: exit.id }, data: { quantity } });
+          await tx.journalExit.update({ where: { id: exit.id }, data: { quantity, fees: exit.fees * data.quantity } });
           exit.quantity = quantity;
+          exit.fees *= data.quantity;
         }
       }
       const exited = entry.exits.reduce((sum, exit) => sum + exit.quantity, 0);
@@ -396,6 +407,15 @@ export class JournalTradesService {
         throw new BadRequestException(
           "Position size must remain consistent with recorded exits. Reconcile an estimated closed result to replace its fills.",
         );
+      if (plan.conditionalEntry?.economics) {
+        for (const exit of entry.exits) {
+          if (exit.basis !== "estimated") continue;
+          await tx.journalExit.update({
+            where: { id: exit.id },
+            data: { fees: estimatedExitFees(plan, data.price, data.quantity, data.fees, exit.quantity) },
+          });
+        }
+      }
       return tx.journalEntry.update({
         where: { id },
         data: {
@@ -524,7 +544,7 @@ export class JournalTradesService {
         if (data.fees !== 0) throw new BadRequestException("Set a position amount before recording monetary fees.");
         entry.quantity = 1; // Reference units only; the stored quantity remains null.
       }
-      if (entry.status !== "open" || !entry.quantity)
+      if (entry.status !== "open" || !entry.quantity || entry.entryPrice === null)
         throw new ConflictException("Only open trades can record an exit.");
       const remaining = entry.quantity - entry.exits.reduce((sum, exit) => sum + exit.quantity, 0);
       if (data.quantity > remaining + entry.quantity * 1e-9)
@@ -540,10 +560,18 @@ export class JournalTradesService {
           key: data.requestId,
           price: data.price,
           quantity: Math.min(data.quantity, remaining),
-          fees: data.fees,
+          fees: referenceSimulation
+            ? estimatedExitFees(
+                TradeSetupSchema.parse(entry.plan),
+                entry.entryPrice,
+                1,
+                0,
+                Math.min(data.quantity, remaining),
+              )
+            : data.fees,
           occurredAt: new Date(data.occurredAt),
           reason: data.reason,
-          basis: "recorded",
+          basis: referenceSimulation ? "estimated" : "recorded",
         },
       });
       const exits = [...entry.exits, exit];

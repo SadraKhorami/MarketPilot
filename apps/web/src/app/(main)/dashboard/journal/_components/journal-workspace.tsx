@@ -24,6 +24,9 @@ import { AddTrade } from "./add-trade";
 import { JournalActions } from "./journal-actions";
 import { JournalImport } from "./journal-import";
 import { JournalAssistant } from "./journal-assistant";
+import { JournalSelectionActions } from "./journal-selection-actions";
+import { journalMoney } from "./journal-money";
+
 export function JournalWorkspace() {
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -105,87 +108,94 @@ export function JournalWorkspace() {
         <CardHeader>
           <CardTitle>Your plans & trades</CardTitle>
           <CardDescription>
-            Automatic tracking records candle-based estimates. Broker executions and estimated results stay distinct.
+            Track simulated positions and manually recorded trades. Select rows for AI review, archiving or deletion.
           </CardDescription>
-          <div className="flex flex-wrap gap-2 pt-2">
-            <InputGroup className="w-full sm:w-80">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                placeholder="Search market"
-                aria-label="Search journal"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </InputGroup>
-            <Select
-              value={status}
-              onValueChange={(value) => {
-                setStatus(value);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-44" aria-label="Journal status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {["all", "planned", "open", "closed", "cancelled", "expired"].map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "all" ? "All entries" : value[0].toUpperCase() + value.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Select
-              value={source}
-              onValueChange={(v) => {
-                setSource(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-36" aria-label="Trade source">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {[
-                    ["all", "All sources"],
-                    ["manual", "Manual"],
-                    ["ai", "AI"],
-                    ["import", "Imported"],
-                  ].map(([v, text]) => (
-                    <SelectItem key={v} value={v}>
-                      {text}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Select
-              value={archived}
-              onValueChange={(v) => {
-                setArchived(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-36" aria-label="Journal archive">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="false">Active journal</SelectItem>
-                  <SelectItem value="true">Archived</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-start justify-between gap-3 pt-2">
+            <div className="flex w-full min-w-0 flex-wrap gap-2 sm:flex-1">
+              <InputGroup className="w-full sm:w-56">
+                <InputGroupAddon>
+                  <Search />
+                </InputGroupAddon>
+                <InputGroupInput
+                  placeholder="Search market"
+                  aria-label="Search journal"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </InputGroup>
+              <Select
+                value={status}
+                onValueChange={(value) => {
+                  setStatus(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-36" aria-label="Journal status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {["all", "planned", "open", "closed", "cancelled", "expired"].map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value === "all" ? "All entries" : value[0].toUpperCase() + value.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Select
+                value={source}
+                onValueChange={(v) => {
+                  setSource(v);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-36" aria-label="Trade source">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {[
+                      ["all", "All sources"],
+                      ["manual", "Manual"],
+                      ["ai", "AI"],
+                      ["import", "Imported"],
+                    ].map(([v, text]) => (
+                      <SelectItem key={v} value={v}>
+                        {text}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Select
+                value={archived}
+                onValueChange={(v) => {
+                  setArchived(v);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-36" aria-label="Journal archive">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="false">Active journal</SelectItem>
+                    <SelectItem value="true">Archived</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
             {selection.length ? (
-              <Button variant="outline" size="sm" onClick={() => setAssistant(true)}>
-                <Sparkles data-icon="inline-start" />
-                Ask about {selection.length} selected
-              </Button>
+              <JournalSelectionActions
+                ids={selection}
+                archived={archived === "true"}
+                ask={() => setAssistant(true)}
+                completed={(ids) => {
+                  setSelection((selected) => selected.filter((id) => !ids.includes(id)));
+                  entries.reload();
+                }}
+              />
             ) : null}
           </div>
         </CardHeader>
@@ -202,7 +212,7 @@ export function JournalWorkspace() {
                 <TableRow>
                   <TableHead className="pl-6">
                     <Checkbox
-                      aria-label="Select page for journal assistant"
+                      aria-label="Select trades on this page"
                       checked={
                         !!entries.data?.items.length && entries.data.items.every((e) => selection.includes(e.id))
                       }
@@ -219,7 +229,7 @@ export function JournalWorkspace() {
                   <TableHead>Status</TableHead>
                   <TableHead>Entry / SL</TableHead>
                   <TableHead>Targets</TableHead>
-                  <TableHead>Recorded result</TableHead>
+                  <TableHead>Realised P&amp;L</TableHead>
                   <TableHead className="pr-6 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -267,14 +277,16 @@ export function JournalWorkspace() {
                           {entry.plan.targets.length} target{entry.plan.targets.length > 1 ? "s" : ""}
                         </span>
                         <p className="mt-1 text-muted-foreground text-xs">
-                          {entry.quantity ? `${entry.quantity} units` : `${entry.context.riskPercent}% risk limit`}
+                          {entry.quantity
+                            ? `${journalMoney(entry.quantity * (entry.entryPrice ?? entry.plan.entry))} ${entry.plan.quote} position`
+                            : `${entry.context.riskPercent}% risk limit`}
                         </p>
                       </TableCell>
                       <TableCell className="tabular-nums">
-                        {profit === null ? "—" : `${profit >= 0 ? "+" : ""}${chartPrice(profit)} ${entry.plan.quote}`}
+                        {profit === null ? "—" : `${profit >= 0 ? "+" : ""}${journalMoney(profit)} ${entry.plan.quote}`}
                         {profit !== null ? (
                           <p className="mt-1 text-muted-foreground text-xs">
-                            {entry.resultBasis === "estimated" ? "Estimated" : "Recorded"}
+                            {entry.resultBasis === "estimated" ? "Simulated" : "Recorded"}
                             {entry.status === "open" ? " · partial exits" : ""}
                           </p>
                         ) : null}

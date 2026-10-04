@@ -13,7 +13,7 @@ import {
   toolSchemas,
 } from "@marketpilot/ai";
 import {
-  calculateSupportResistance,
+  calculateStructuralLevels,
   calculateTechnicalIndicators,
   calculateTrend,
   type MarketCandle,
@@ -27,6 +27,7 @@ import { randomUUID } from "node:crypto";
 import { MarketDataService, type MarketSnapshot } from "../market-data/market-data.service";
 import { NewsService } from "../news/news.service";
 import { WatchlistsService } from "../watchlists/watchlists.service";
+import { completedSnapshotCandles } from "./market-evidence";
 import { calculateTradeSetup } from "./trade-setup";
 
 export interface ResearchContext {
@@ -203,19 +204,21 @@ export class AiToolsService {
       }
       const symbol = resolveResearchSymbol(args.symbol);
       const snapshot = await this.snapshot(symbol, args.interval, context);
-      const source = this.marketSource(snapshot, 50, tool);
+
       const higher = { "1m": "15m", "5m": "1h", "15m": "1h", "1h": "6h", "6h": "1d", "1d": "1d" } as const;
       const trendInterval =
         policy.timeframeMode === "manual" ? policy.trendInterval : (args.trendInterval ?? higher[args.interval]);
       const contextSnapshot = await this.snapshot(symbol, trendInterval, context);
-      const contextSource = this.marketSource(contextSnapshot, 50, "getTrendAnalysis");
+      const evaluatedAt = Date.now();
+      const source = this.marketSource(snapshot, 50, tool, undefined, evaluatedAt);
+      const contextSource = this.marketSource(contextSnapshot, 50, "getTrendAnalysis", undefined, evaluatedAt);
       const newsSources = context.newsResult.sources.filter((source) => source.status !== "unavailable");
       const latestPublishedAt =
         newsSources
           .map((source) => source.observedAt)
           .filter((time): time is string => !!time)
           .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
-      const scenario = calculateTradeSetup(snapshot, args.direction, source.id, Date.now(), contextSnapshot, {
+      const scenario = calculateTradeSetup(snapshot, args.direction, source.id, evaluatedAt, contextSnapshot, {
         preferences,
         scenario: args.scenario,
         condition: args.condition,
@@ -239,6 +242,7 @@ export class AiToolsService {
       if (scenario.plan?.conditionalEntry) {
         scenario.plan.conditionalEntry.openRisk = await context.readOpenRisk?.(scenario.plan.quote);
       }
+      result.status = scenario.plan ? "ok" : "unavailable";
       result.tradeSetup = scenario.plan;
       result.error = scenario.reason;
       if (scenario.plan) {
@@ -254,6 +258,20 @@ export class AiToolsService {
           { label: "Stop basis", value: "Recent swing extreme plus a quarter ATR buffer", unit: "method" },
           { label: "Conditional entry", value: scenario.plan.entry, unit: scenario.plan.quote },
           { label: "Scenario stop loss", value: scenario.plan.stopLoss, unit: scenario.plan.quote },
+          ...(scenario.plan.conditionalEntry?.economics
+            ? [
+                {
+                  label: "Weighted net reward/risk after user-estimated costs",
+                  value: scenario.plan.conditionalEntry.economics.netRewardRisk,
+                  unit: "R",
+                },
+                {
+                  label: "User-estimated combined round-trip costs",
+                  value: scenario.plan.conditionalEntry.economics.roundTripCostPercent,
+                  unit: "%",
+                },
+              ]
+            : []),
           ...scenario.plan.targets.map((target, index) => ({
             label: `Target ${index + 1} (observed structural level)`,
             value: target,
@@ -346,14 +364,23 @@ export class AiToolsService {
       return this.marketSource(result.value, window, "compareAssets", candles);
     });
   }
-  private marketSource(snapshot: MarketSnapshot, window: number, tool: ToolName, aligned?: MarketCandle[]): Source {
+  private marketSource(
+    snapshot: MarketSnapshot,
+    window: number,
+    tool: ToolName,
+    aligned?: MarketCandle[],
+    evaluatedAt = Date.now(),
+  ): Source {
     const data = snapshot.data;
-    const candles = aligned ?? data.candles.slice(-window);
+    const completed = completedSnapshotCandles(snapshot, evaluatedAt);
+    const candles = aligned
+      ? aligned.filter((candle) => completed.some((item) => item.time === candle.time))
+      : completed.slice(-window);
     const quote = data.symbol.split("-")[1];
     const end = candles.at(-1);
     if (!end) return this.unavailable(data.symbol);
     // Earlier candles initialize indicators; comparison calculations never include bars after the shared endpoint.
-    const calculationCandles = data.candles.filter((candle) => Date.parse(candle.time) <= Date.parse(end.time));
+    const calculationCandles = completed.filter((candle) => Date.parse(candle.time) <= Date.parse(end.time));
     const indicators = calculateTechnicalIndicators(calculationCandles);
     const price = aligned ? end.close : data.price;
     const source: Source = {
@@ -385,6 +412,8 @@ export class AiToolsService {
     };
     if (tool !== "getMarketPrice") {
       source.facts.push(
+        { label: "Latest completed candle close", value: end.close, unit: quote },
+        { label: "Indicator basis", value: "Completed candles only", unit: "method" },
         { label: "RSI", value: indicators.rsi, unit: "index" },
         { label: "SMA 50", value: indicators.sma50, unit: quote },
         { label: "SMA 200", value: indicators.sma200, unit: quote },
@@ -400,11 +429,18 @@ export class AiToolsService {
       );
     }
     if (tool === "getTrendAnalysis" || tool === "compareAssets" || tool === "getWatchlist") {
-      const levels = calculateSupportResistance(candles);
+      const levels = calculateStructuralLevels(calculationCandles);
       source.facts.push(
-        { label: "Deterministic trend", value: calculateTrend(price, indicators), unit: "classification" },
-        ...levels.support.slice(0, 3).map((value, i) => ({ label: `Support ${i + 1}`, value, unit: quote })),
-        ...levels.resistance.slice(0, 3).map((value, i) => ({ label: `Resistance ${i + 1}`, value, unit: quote })),
+        { label: "Deterministic trend", value: calculateTrend(end.close, indicators), unit: "classification" },
+        ...levels.support
+          .filter((value) => value < price)
+          .slice(-3)
+          .reverse()
+          .map((value, i) => ({ label: `Confirmed swing support ${i + 1}`, value, unit: quote })),
+        ...levels.resistance
+          .filter((value) => value > price)
+          .slice(0, 3)
+          .map((value, i) => ({ label: `Confirmed swing resistance ${i + 1}`, value, unit: quote })),
       );
     }
     if (candles.length < window || source.facts.some((f) => f.value === null)) {

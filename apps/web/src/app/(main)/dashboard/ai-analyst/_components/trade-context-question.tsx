@@ -63,7 +63,8 @@ export function TradeContextQuestion({
       setInitialized(true);
     }
   }, [memory.data, initialized, revisionId, revision.data, initialContext, symbol]);
-  const valid = TradePreferencesSchema.safeParse(value).success;
+  const valid =
+    TradePreferencesSchema.safeParse(value).success && resolveEntryPolicy(value).roundTripCostPercent != null;
   async function confirm() {
     if (
       !valid ||
@@ -144,6 +145,13 @@ export function TradeContextQuestion({
                 }[value.holding],
               ],
               ["Risk limit", `${value.riskPercent}%`],
+              [
+                "Estimated round-trip costs",
+                resolveEntryPolicy(value).roundTripCostPercent == null
+                  ? "Required · edit preferences"
+                  : `${resolveEntryPolicy(value).roundTripCostPercent}%`,
+              ],
+              ["Minimum net reward / risk", `${resolveEntryPolicy(value).minimumNetRewardRisk ?? 1.5}R`],
               [
                 "Manual capital",
                 value.capital ? `${value.capital.toLocaleString()} ${value.currency}` : "Not supplied · no sizing",

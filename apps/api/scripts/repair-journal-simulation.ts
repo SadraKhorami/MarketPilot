@@ -19,7 +19,7 @@ const market = new MarketDataService(new CoinbaseExchangeProvider(), redis);
 async function main() {
   const saved = await db.journalEntry.findUniqueOrThrow({ where: { id } });
   const plan = TradeSetupSchema.parse(saved.plan);
-  if (saved.source !== "ai" || !plan.conditionalEntry) throw new Error("Only a conditional AI simulation can be repaired.");
+  if (saved.source !== "ai") throw new Error("Only an AI simulation can be repaired.");
   const fine = await market.getMarketData(saved.symbol, "1m");
   const coarse = plan.interval === "1m" ? fine : await market.getMarketData(saved.symbol, plan.interval);
   if (fine.freshness !== "fresh" || coarse.freshness !== "fresh") throw new Error("Fresh candles required.");
@@ -29,15 +29,22 @@ async function main() {
   await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "JournalEntry" WHERE id = ${id}::uuid FOR UPDATE`;
     const current = await tx.journalEntry.findUniqueOrThrow({ where: { id }, include: { exits: true, events: true } });
+    if (JSON.stringify(current.plan) !== JSON.stringify(saved.plan) || current.symbol !== saved.symbol)
+      throw new Error("The plan changed during retrieval; retry with fresh data.");
     if (current.trackingMode === "automatic") return;
     if (current.openedAt || current.exits.length || !["planned", "expired"].includes(current.status))
       throw new Error("Entry has an execution or was cancelled; repair skipped.");
     await tx.journalEntry.update({ where: { id }, data: {
       status: "planned", trackingMode: "automatic", resultBasis: "estimated", checkedAt: current.createdAt,
-      quantity: plan.conditionalEntry!.sizing.baseUnits,
-      targetAllocations: plan.targets.map((_, i) => i === plan.targets.length - 1 ? 100 - Math.floor(100 / plan.targets.length) * i : Math.floor(100 / plan.targets.length)),
+      quantity: current.quantity ?? plan.conditionalEntry?.sizing.baseUnits ?? null,
+      targetAllocations: Array.isArray(current.targetAllocations) &&
+        current.targetAllocations.length === plan.targets.length &&
+        current.targetAllocations.every((n) => typeof n === "number" && n > 0) &&
+        Math.abs(current.targetAllocations.reduce<number>((sum, n) => sum + (typeof n === "number" ? n : 0), 0) - 100) < 1e-8
+        ? current.targetAllocations
+        : plan.targets.map((_, i) => i === plan.targets.length - 1 ? 100 - Math.floor(100 / plan.targets.length) * i : Math.floor(100 / plan.targets.length)),
       events: { create: { key: "simulation-repair", kind: "edited", occurredAt: new Date(), reviewStatus: "not_needed",
-        evidence: { message: "Observation-only plan corrected to an automatic simulation. Earlier coarse-candle ambiguity is superseded by one-minute replay; original plan and historical events are preserved." } } },
+        evidence: { message: "Observation-only plan corrected to an automatic simulation. Entry and exits are replayed from one-minute candles; original plan and historical events are preserved." } } },
     } });
     const simulation = await tx.journalEntry.findUniqueOrThrow({ where: { id }, include: { events: true, exits: true } });
     await trackAutomatic(tx, simulation, fine, coarse);

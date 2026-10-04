@@ -52,6 +52,34 @@ export function calculateSupportResistance(candles: readonly MarketCandle[]) {
 	};
 }
 
+// A pivot is confirmed only after two completed candles on its right.
+// Use observed wick prices, never extrapolated targets or close-price percentiles.
+export function calculateStructuralLevels(candles: readonly MarketCandle[]) {
+	const support = new Set<number>();
+	const resistance = new Set<number>();
+	for (let index = 2; index < candles.length - 2; index++) {
+		const pivot = candles[index];
+		const left = candles.slice(index - 2, index);
+		const right = candles.slice(index + 1, index + 3);
+		if (
+			left.every((candle) => pivot.high > candle.high) &&
+			right.every((candle) => pivot.high >= candle.high) &&
+			!candles.slice(index + 3).some((candle) => candle.close > pivot.high)
+		)
+			resistance.add(pivot.high);
+		if (
+			left.every((candle) => pivot.low < candle.low) &&
+			right.every((candle) => pivot.low <= candle.low) &&
+			!candles.slice(index + 3).some((candle) => candle.close < pivot.low)
+		)
+			support.add(pivot.low);
+	}
+	return {
+		support: [...support].sort((a, b) => a - b),
+		resistance: [...resistance].sort((a, b) => a - b),
+	};
+}
+
 export function calculateVolatility(
 	indicators: TechnicalIndicators,
 	price: number,

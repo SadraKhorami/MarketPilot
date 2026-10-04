@@ -24,7 +24,7 @@ import { useApiResource } from "@/hooks/use-api-resource";
 import { MarketPilotPage } from "../../_components/marketpilot-page";
 import { MarketSymbolField } from "../../_components/market-symbol-field";
 import { ResourceState } from "../../_components/resource-state";
-import { chartPrice } from "../../_components/market-chart-utils";
+import { journalMoney } from "./journal-money";
 export function JournalAnalyticsWorkspace() {
   const currencies = useApiResource<string[]>("/journal/currencies");
   const [chartMode, setChartMode] = useState("cumulative");
@@ -270,8 +270,8 @@ export function JournalAnalyticsWorkspace() {
               {[
                 [
                   "Realised net P&L",
-                  `${chartPrice(data.net)} ${data.quote}`,
-                  "After recorded fees · includes partial exits",
+                  `${journalMoney(data.net)} ${data.quote}`,
+                  "Profit from exits after fees · excludes unrealised P&L",
                 ],
                 [
                   "Win rate",
@@ -280,12 +280,12 @@ export function JournalAnalyticsWorkspace() {
                 ],
                 [
                   "Average closed trade",
-                  data.average === null ? "—" : `${chartPrice(data.average)} ${data.quote}`,
+                  data.average === null ? "—" : `${journalMoney(data.average)} ${data.quote}`,
                   "Full lifetime result of trades closed in this period",
                 ],
                 [
                   "Fees",
-                  `${chartPrice(data.fees)} ${data.quote}`,
+                  `${journalMoney(data.fees)} ${data.quote}`,
                   `Allocated to exits in this period · ${data.openTrades} currently open`,
                 ],
               ].map(([label, value, detail], index) => (

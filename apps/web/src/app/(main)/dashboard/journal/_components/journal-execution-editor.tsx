@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { JournalRecord } from "@marketpilot/ai/contracts";
 import { Button } from "@/components/ui/button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ApiError, apiRequest, type ApiEnvelope } from "@/lib/api/client";
@@ -160,6 +160,11 @@ function ExecutionForm({
             required
             disabled={pending || loading}
           />
+          {entry.plan.conditionalEntry?.economics ? (
+            <FieldDescription>
+              This cost is counted inside the saved round-trip budget. Estimated exit costs update when you save.
+            </FieldDescription>
+          ) : null}
         </Field>
         <Field>
           <FieldLabel htmlFor="correct-entry-time">Entry time</FieldLabel>

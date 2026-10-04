@@ -1,15 +1,17 @@
-import { TradeSetupSchema, entryConditionMet } from "@marketpilot/ai";
+import {
+  assessTradeEconomics,
+  entryConditionMet,
+  entryDeadline,
+  entryDurations,
+  TradeContextSchema,
+  TradeSetupSchema,
+} from "@marketpilot/ai";
 import type { Prisma } from "@marketpilot/db";
+import { completedSnapshotCandles } from "../market-data/completed-candles";
 import type { MarketSnapshot } from "../market-data/market-data.service";
+import { estimatedExitFees } from "./simulation-costs";
 
-export const candleDurations = {
-  "1m": 60_000,
-  "5m": 300_000,
-  "15m": 900_000,
-  "1h": 3600_000,
-  "6h": 21600_000,
-  "1d": 86400_000,
-};
+export const candleDurations = entryDurations;
 type Entry = Prisma.JournalEntryGetPayload<{ include: { exits: true; events: true } }>;
 export async function trackAutomatic(
   tx: Prisma.TransactionClient,
@@ -21,9 +23,14 @@ export async function trackAutomatic(
   const duration = confirmation ? candleDurations["1m"] : candleDurations[plan.interval];
   const simulated = entry.source === "ai" || !!plan.conditionalEntry;
   const start = entry.checkedAt?.getTime() ?? entry.openedAt?.getTime() ?? entry.createdAt.getTime();
-  let candles = snapshot.data.candles.filter(
-    (c) => Date.parse(c.time) >= start && Date.parse(c.time) + duration <= Date.now(),
-  );
+  const evaluatedAt = Date.now();
+  const completed = completedSnapshotCandles(snapshot, evaluatedAt);
+  const confirmations = confirmation ? completedSnapshotCandles(confirmation, evaluatedAt) : [];
+  const analysisDuration = candleDurations[plan.interval];
+  const candleOffsetMs =
+    plan.conditionalEntry?.candleOffsetMs ??
+    (confirmation?.data.candles[0] ? Date.parse(confirmation.data.candles[0].time) % analysisDuration : 0);
+  let candles = completed.filter((c) => Date.parse(c.time) >= start);
   const reset = entry.events
     .filter((event) => {
       const evidence = event.evidence;
@@ -42,6 +49,12 @@ export async function trackAutomatic(
       .map((event) => (event.key.startsWith(prefix) ? event.key.slice(prefix.length) : event.key)),
   );
   if (!simulated && (seen.has("ambiguous") || seen.has("auto-gap"))) return;
+  const closeCondition = plan.conditionalEntry
+    ? plan.conditionalEntry.condition !== "touch"
+    : entry.entryTrigger !== "touch";
+  const requiresRetest =
+    plan.conditionalEntry?.scenario === "pullback" || plan.conditionalEntry?.condition === "break_retest";
+  const initialBreakoutKnown = !!plan.conditionalEntry?.breakoutAt || seen.has("auto:breakout");
   const event = async (key: string, kind: string, time: Date, message: string, price?: number) => {
     const eventKey =
       simulated && ["ambiguous", "gap"].includes(kind) ? `${key}:${kind === "gap" ? start : time.getTime()}` : key;
@@ -53,17 +66,20 @@ export async function trackAutomatic(
         key: reset && ["ambiguous", "auto-gap"].includes(key) ? `${prefix}${eventKey}` : eventKey,
         kind,
         occurredAt: time,
-        evidence: { message, price, source: snapshot.source, interval: confirmation ? "1m" : plan.interval },
+        evidence: {
+          message,
+          price,
+          source:
+            closeCondition && ["entry", "breakout"].includes(kind)
+              ? (confirmation ?? snapshot).source
+              : snapshot.source,
+          interval: closeCondition && ["entry", "breakout"].includes(kind) ? plan.interval : snapshot.data.interval,
+        },
         reviewStatus: ["gap", "entry", "breakout", "retest"].includes(kind) ? "not_needed" : "pending",
       },
     });
   };
-  const partial = snapshot.data.candles.find(
-    (c) =>
-      Date.parse(c.time) < start &&
-      Date.parse(c.time) + duration > start &&
-      Date.parse(c.time) + duration <= Date.now(),
-  );
+  const partial = completed.find((c) => Date.parse(c.time) < start && Date.parse(c.time) + duration > start);
   if (partial) {
     const stop = plan.direction === "BUY" ? partial.low <= plan.stopLoss : partial.high >= plan.stopLoss;
     const target = plan.targets.some((price) =>
@@ -72,8 +88,7 @@ export async function trackAutomatic(
     const touch = partial.low <= plan.entry && partial.high >= plan.entry;
     if (
       (entry.status === "open" && (stop || target)) ||
-      (entry.status === "planned" &&
-        (stop || ((plan.conditionalEntry?.condition === "touch" || entry.entryTrigger === "touch") && touch)))
+      (entry.status === "planned" && (stop || ((!closeCondition || (requiresRetest && initialBreakoutKnown)) && touch)))
     ) {
       await event(
         "ambiguous",
@@ -88,13 +103,7 @@ export async function trackAutomatic(
       return;
     }
   }
-  if (
-    partial &&
-    entry.status === "planned" &&
-    entry.entryTrigger !== "touch" &&
-    plan.conditionalEntry?.condition !== "touch"
-  )
-    candles = [partial, ...candles];
+  if (partial && entry.status === "planned" && closeCondition) candles = [partial, ...candles];
   const availableStart = snapshot.data.candles[0] ? Date.parse(snapshot.data.candles[0].time) : null;
   if (availableStart !== null && Math.floor(start / duration) * duration < availableStart) {
     await event(
@@ -109,6 +118,29 @@ export async function trackAutomatic(
     });
     return;
   }
+  if (
+    entry.status === "planned" &&
+    closeCondition &&
+    confirmation &&
+    plan.conditionalEntry?.candleOffsetMs === undefined &&
+    !confirmation.data.candles.length
+  ) {
+    await event(
+      "confirmation-gap:unknown",
+      "gap",
+      new Date(),
+      "Entry-timeframe candle boundaries are unavailable. Tracking is paused until the actual confirmation grid is known.",
+    );
+    await tx.journalEntry.update({
+      where: { id: entry.id },
+      data: {
+        status: entry.status,
+        checkedAt: new Date(start),
+        monitoringStatus: "Waiting for completed entry-timeframe data",
+      },
+    });
+    return;
+  }
   let status = entry.status;
   let entryPrice = entry.entryPrice;
   let cursor = start;
@@ -117,7 +149,7 @@ export async function trackAutomatic(
     : [];
   // Unsized simulations use a reference unit internally; quantity stays null so monetary analytics exclude them.
   const quantity = entry.quantity ?? (simulated ? 1 : null);
-  let breakoutSeen = !!plan.conditionalEntry?.breakoutAt || seen.has("auto:breakout");
+  let breakoutSeen = initialBreakoutKnown;
   if (!quantity || allocations.length !== plan.targets.length) return;
   const exits = [...entry.exits];
   for (const candle of candles) {
@@ -141,7 +173,10 @@ export async function trackAutomatic(
       if (openTime < deadline) {
         const stopTouched = plan.direction === "BUY" ? candle.low <= plan.stopLoss : candle.high >= plan.stopLoss;
         const entryTouched = candle.low <= plan.entry && candle.high >= plan.entry;
-        if (stopTouched || (plan.conditionalEntry?.condition === "touch" && entryTouched)) {
+        const touchCondition = plan.conditionalEntry
+          ? plan.conditionalEntry.condition === "touch"
+          : entry.entryTrigger === "touch";
+        if (stopTouched || (touchCondition && entryTouched)) {
           await event(
             `deadline:${openTime}`,
             "ambiguous",
@@ -166,29 +201,37 @@ export async function trackAutomatic(
         : [],
     );
     if (status === "planned") {
-      const confirmationCandle = confirmation?.data.candles.find(
+      const confirmationCandle = confirmations.find(
         (c) => Date.parse(c.time) + candleDurations[plan.interval] === time.getTime(),
       );
-      const closeCondition = plan.conditionalEntry
-        ? plan.conditionalEntry.condition !== "touch"
-        : entry.entryTrigger !== "touch";
       const signalCandle = closeCondition && confirmation ? confirmationCandle : candle;
-      const periodEnd =
-        Math.floor(openTime / candleDurations[plan.interval]) * candleDurations[plan.interval] +
-        candleDurations[plan.interval];
+      const periodEnd = entryDeadline(openTime, plan.interval, 1, "entry_candle_closes", candleOffsetMs);
       const retestKey = `auto:retest:${periodEnd}`;
-      if (confirmation && breakoutSeen && candle.low <= plan.entry && candle.high >= plan.entry)
+      // Never count a partial start minute as proof of a retest after saving.
+      if (confirmation && openTime >= start && breakoutSeen && candle.low <= plan.entry && candle.high >= plan.entry)
         await event(retestKey, "retest", time, "Entry retest observed after simulation start.", plan.entry);
-      const requiresRetest =
-        plan.conditionalEntry?.scenario === "pullback" || plan.conditionalEntry?.condition === "break_retest";
+      if (confirmation && closeCondition && time.getTime() === periodEnd && !confirmationCandle && !stop) {
+        await event(
+          `confirmation-gap:${periodEnd}`,
+          "gap",
+          time,
+          "The completed entry-timeframe candle is unavailable. Tracking will retry this boundary before inferring entry or expiry.",
+        );
+        await tx.journalEntry.update({
+          where: { id: entry.id },
+          data: { checkedAt: new Date(cursor), monitoringStatus: "Waiting for completed entry-timeframe data" },
+        });
+        return;
+      }
       const touched =
         !!signalCandle &&
         (!confirmation || !closeCondition || !requiresRetest || seen.has(retestKey)) &&
         entryConditionMet(plan, signalCandle, breakoutSeen, entry.entryTrigger);
       if (
-        confirmationCandle &&
+        signalCandle &&
+        plan.conditionalEntry?.condition === "break_retest" &&
         !breakoutSeen &&
-        (long ? confirmationCandle.close > plan.entry : confirmationCandle.close < plan.entry)
+        (long ? signalCandle.close > plan.entry : signalCandle.close < plan.entry)
       ) {
         breakoutSeen = true;
         await event(
@@ -196,7 +239,7 @@ export async function trackAutomatic(
           "breakout",
           time,
           "Completed analysis candle confirmed a break; a later retest is required.",
-          confirmationCandle.close,
+          signalCandle.close,
         );
       }
       if (touched && !closeCondition && (stop || targets.length)) {
@@ -224,8 +267,41 @@ export async function trackAutomatic(
         break;
       }
       if (touched && signalCandle) {
-        status = "open";
         entryPrice = closeCondition ? signalCandle.close : plan.entry;
+        const economics = plan.conditionalEntry?.economics;
+        if (economics) {
+          const quality = assessTradeEconomics(
+            { ...plan, entry: entryPrice },
+            economics.roundTripCostPercent,
+            economics.minimumNetRewardRisk,
+            allocations,
+          );
+          const context = TradeContextSchema.safeParse(entry.context);
+          const unaffordable =
+            quality.accepted &&
+            entry.quantity !== null &&
+            context.success &&
+            context.data.capital !== null &&
+            context.data.currency === plan.quote &&
+            ((entryPrice + quality.economics.costPerUnit) * quantity > context.data.capital * (1 + 1e-9) ||
+              quality.economics.stopRiskPerUnit * quantity >
+                ((context.data.capital * context.data.riskPercent) / 100) * (1 + 1e-9));
+          if (!quality.accepted || unaffordable) {
+            status = "cancelled";
+            await event(
+              "quality-rejected",
+              "invalidated",
+              time,
+              !quality.accepted
+                ? quality.reason
+                : "Entry confirmation exceeds the supplied capital or loss budget. No simulated position was opened.",
+              entryPrice,
+            );
+            entryPrice = null;
+            break;
+          }
+        }
+        status = "open";
         await tx.journalEntry.update({
           where: { id: entry.id },
           data: { status, entryPrice, openedAt: time, resultBasis: "estimated" },
@@ -276,7 +352,13 @@ export async function trackAutomatic(
             key: fill.key,
             price,
             quantity: Math.min(left, fill.quantity),
-            fees: 0,
+            fees: estimatedExitFees(
+              plan,
+              entryPrice ?? plan.entry,
+              quantity,
+              entry.fees,
+              Math.min(left, fill.quantity),
+            ),
             reason: fill.reason,
             basis: "estimated",
             occurredAt: time,
@@ -287,7 +369,7 @@ export async function trackAutomatic(
           fill.key,
           fill.reason,
           time,
-          `Simulated ${fill.reason.toUpperCase()} at ${price}. ${entry.quantity === null ? "Return is measured as a percentage; no capital was supplied." : "Simulation fees are zero."}`,
+          `Simulated ${fill.reason.toUpperCase()} at ${price}. ${entry.quantity === null ? "Return is measured as a percentage; no capital was supplied." : plan.conditionalEntry?.economics ? "Budgeted round-trip costs are allocated to this exit; actual market costs may differ." : "Simulation fees are zero."}`,
           price,
         );
       }
@@ -306,7 +388,7 @@ export async function trackAutomatic(
     }
     cursor = time.getTime();
   }
-  if (status === "planned" && Date.now() >= Date.parse(plan.expiresAt) && cursor >= Date.parse(plan.expiresAt)) {
+  if (status === "planned" && evaluatedAt >= Date.parse(plan.expiresAt) && cursor >= Date.parse(plan.expiresAt)) {
     status = "expired";
     await event(
       "expired",
@@ -322,11 +404,13 @@ export async function trackAutomatic(
       checkedAt: new Date(cursor),
       ...(exits.length ? { resultBasis: "estimated" } : {}),
       monitoringStatus:
-        status === "expired"
-          ? "Entry window ended"
-          : status === "closed"
-            ? "Simulation completed"
-            : "Simulation active · completed candles checked",
+        status === "cancelled"
+          ? "Entry rejected by economic or capital checks"
+          : status === "expired"
+            ? "Entry window ended"
+            : status === "closed"
+              ? "Simulation completed"
+              : "Simulation active · completed candles checked",
     },
   });
 }

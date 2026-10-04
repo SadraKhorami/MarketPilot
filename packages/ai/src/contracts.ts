@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConditionalEntrySchema, entryDurations } from "./entry-policy";
+import { ConditionalEntrySchema, entryDeadline, entryDurations } from "./entry-policy";
 
 export const IntervalSchema = z.enum(["1m", "5m", "15m", "1h", "6h", "1d"]);
 const symbol = z
@@ -103,7 +103,7 @@ const descriptions: Record<ToolName, string> = {
   createAlert:
     "Propose a rule only when the current user explicitly requests an alert. Never saves it. Separate user confirmation is required.",
   getTradeSetup:
-    "Only on an explicit entry/exit or trade setup request, after mandatory stored-news retrieval. Propose breakout or pullback, an entry interval from the confirmed allowed set, a higher trend interval, a supported touch/candle_close/break_retest condition and validity of one to twelve entry candles (maximum seventy-two hours). Manual preferences override proposals. Reversal is unsupported. The server validates the proposal and calculates levels from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use observed structural levels, with one to three targets when supported. AUTO selects a conditional side only when entry and higher-timeframe context align. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
+    "Only on an explicit entry/exit or trade setup request, after mandatory stored-news retrieval. Propose breakout or pullback, an entry interval from the confirmed allowed set, a higher trend interval, a supported touch/candle_close/break_retest condition and validity of one to twelve entry candles (maximum seventy-two hours). Manual preferences override proposals. For new close/retest plans the count means future entry-timeframe candle closes from proposal; touch uses elapsed duration. Saving never restarts the deadline. candle_close breakout requires a strict close beyond Entry; a close on the other side does not invalidate. Price-based invalidation is only Stop touched before entry; economic and capital checks can also reject confirmation. Pullback requires an observed break and later retest; break_retest uses separate candles. Never add unsupported execution rules to rationale or validityReason. The server generates the saved operational prose. Reversal is unsupported. The server validates the proposal and calculates levels from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use observed structural levels, with one to three targets when supported. AUTO selects a conditional side only when entry and higher-timeframe context align. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
 };
 export function toolDefinitions(allowAlert: boolean, allowTrade = false) {
   return Object.entries(toolSchemas)
@@ -143,7 +143,7 @@ export const SourceSchema = z
       .url()
       .refine((s) => new URL(s).protocol === "https:")
       .nullable(),
-    facts: z.array(FactSchema).max(25),
+    facts: z.array(FactSchema).max(32),
     history: z.array(z.object({ time: timestamp, price: z.number().positive().finite() }).strict()).max(300),
     interval: IntervalSchema.nullable(),
     windowStart: timestamp.nullable(),
@@ -175,7 +175,15 @@ export const TradeSetupSchema = z
     symbol: z.string().min(1).max(32),
     interval: IntervalSchema,
     direction: z.enum(["BUY", "SELL"]),
-    stage: z.enum(["waiting_pullback", "waiting_reclaim", "confirmed"]),
+    stage: z.enum([
+      "waiting_pullback",
+      "waiting_reclaim",
+      "confirmed",
+      "waiting_touch",
+      "waiting_close",
+      "waiting_break",
+      "waiting_retest",
+    ]),
     entry: z.number().positive().finite(),
     stopLoss: z.number().positive().finite(),
     targets: z.array(z.number().positive().finite()).min(1).max(3),
@@ -205,7 +213,16 @@ export const TradeSetupSchema = z
         rule.invalidation.price !== plan.stopLoss ||
         rule.trendInterval !== plan.contextInterval ||
         entryDurations[rule.trendInterval] <= entryDurations[plan.interval] ||
-        validity !== rule.validityCandles * entryDurations[plan.interval] ||
+        Date.parse(plan.expiresAt) !==
+          entryDeadline(
+            Date.parse(rule.proposedAt),
+            plan.interval,
+            rule.validityCandles,
+            rule.validityBasis,
+            rule.candleOffsetMs,
+          ) ||
+        (rule.candleOffsetMs ?? 0) >= entryDurations[plan.interval] ||
+        (rule.validityBasis === "entry_candle_closes" && rule.condition === "touch") ||
         validity > 72 * 3_600_000 ||
         (rule.scenario === "breakout" && rule.condition === "touch")
       )
@@ -344,7 +361,5 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export * from "./journal";
-
-export * from "./settings";
-
 export * from "./journal-trades";
+export * from "./settings";

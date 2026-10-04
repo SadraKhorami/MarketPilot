@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -124,8 +124,10 @@ function JournalActionSheet({
   changed: () => void;
 }) {
   const reconcile = entry.status === "closed" && entry.resultBasis === "estimated";
+  const referenceSimulation =
+    !reconcile && entry.source === "ai" && entry.resultBasis === "estimated" && entry.quantity === null;
   const remaining =
-    (entry.quantity ?? 0) -
+    (entry.quantity ?? (referenceSimulation ? 1 : 0)) -
     (entry.exits ?? [])
       .filter((exit) => !reconcile || exit.basis === "recorded")
       .reduce((sum, e) => sum + e.quantity, 0);
@@ -137,7 +139,8 @@ function JournalActionSheet({
   const [entryFees, setEntryFees] = useState(String(entry.fees));
   const [entryTime, setEntryTime] = useState(localDate(new Date(entry.openedAt ?? entry.createdAt)));
   const size = useTradeSize(String(entry.entryPrice ?? entry.plan.entry), String(remaining));
-  const quantity = size.quantity;
+  const [exitPercent, setExitPercent] = useState("100");
+  const quantity = referenceSimulation ? String((remaining * Number(exitPercent)) / 100) : size.quantity;
   const [fees, setFees] = useState("0");
   const instant = useRef(new Date());
   const [time, setTime] = useState(() => localDate(instant.current));
@@ -282,38 +285,68 @@ function JournalActionSheet({
                   </Field>
                 </>
               ) : null}
-              <TradeSizeField
-                id="exit-quantity"
-                symbol={entry.symbol}
-                price={String(entry.entryPrice ?? entry.plan.entry)}
-                size={size}
-                disabled={pending}
-                label="Exit size"
-              />
-              <p className="text-muted-foreground text-xs">
-                {remaining.toLocaleString(undefined, { maximumSignificantDigits: 10 })} {entry.symbol.split("-")[0]}{" "}
-                remaining{reconcile ? " before entry correction" : ""}.
-              </p>
+              {referenceSimulation ? (
+                <Field data-disabled={pending}>
+                  <FieldLabel htmlFor="exit-percent">Close remaining position · %</FieldLabel>
+                  <Input
+                    id="exit-percent"
+                    type="number"
+                    min="0.01"
+                    max="100"
+                    step="any"
+                    required
+                    disabled={pending}
+                    value={exitPercent}
+                    onChange={(event) => setExitPercent(event.target.value)}
+                  />
+                  <FieldDescription>
+                    Percentage simulation. Saved estimated costs are included; set a position amount for monetary
+                    results.
+                  </FieldDescription>
+                </Field>
+              ) : (
+                <TradeSizeField
+                  id="exit-quantity"
+                  symbol={entry.symbol}
+                  price={String(entry.entryPrice ?? entry.plan.entry)}
+                  size={size}
+                  disabled={pending}
+                  label="Exit size"
+                />
+              )}
+              {!referenceSimulation ? (
+                <p className="text-muted-foreground text-xs">
+                  {remaining.toLocaleString(undefined, { maximumSignificantDigits: 10 })} {entry.symbol.split("-")[0]}{" "}
+                  remaining{reconcile ? " before entry correction" : ""}.
+                </p>
+              ) : null}
               {[
                 ["price", `Actual exit price · ${entry.plan.quote}`, price, setPrice],
                 ["fees", `Exit fees · ${entry.plan.quote}`, fees, setFees],
-              ].map(([id, label, value, setter]) => (
-                <Field key={String(id)}>
-                  <FieldLabel htmlFor={`exit-${id}`}>{String(label)}</FieldLabel>
-                  <Input
-                    required
-                    id={`exit-${id}`}
-                    type="number"
-                    step="any"
-                    min={id === "fees" ? 0 : "0.00000001"}
-                    value={String(value)}
-                    onChange={(e) => {
-                      if (typeof setter === "function") setter(e.target.value);
-                    }}
-                    disabled={pending}
-                  />
-                </Field>
-              ))}
+              ]
+                .filter(([id]) => !referenceSimulation || id !== "fees")
+                .map(([id, label, value, setter]) => (
+                  <Field key={String(id)}>
+                    <FieldLabel htmlFor={`exit-${id}`}>{String(label)}</FieldLabel>
+                    <Input
+                      required
+                      id={`exit-${id}`}
+                      type="number"
+                      step="any"
+                      min={id === "fees" ? 0 : "0.00000001"}
+                      value={String(value)}
+                      onChange={(e) => {
+                        if (typeof setter === "function") setter(e.target.value);
+                      }}
+                      disabled={pending}
+                    />
+                    {id === "fees" ? (
+                      <FieldDescription>
+                        Manual exits use this cost. Automatic exits use your saved estimate.
+                      </FieldDescription>
+                    ) : null}
+                  </Field>
+                ))}
               <Field>
                 <FieldLabel htmlFor="exit-date">Execution time</FieldLabel>
                 <JournalDatePicker id="exit-date" value={time} onChange={setTime} disabled={pending} />

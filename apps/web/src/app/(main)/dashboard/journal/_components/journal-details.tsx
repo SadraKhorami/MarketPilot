@@ -158,7 +158,8 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
   const risk = entry?.context.capital ? (entry.context.capital * entry.context.riskPercent) / 100 : null;
   const size =
     entry && risk !== null && entry.context.currency === entry.plan.quote
-      ? risk / Math.abs(entry.plan.entry - entry.plan.stopLoss)
+      ? (entry.plan.conditionalEntry?.sizing.baseUnits ??
+        Math.min(risk / Math.abs(entry.plan.entry - entry.plan.stopLoss), entry.context.capital! / entry.plan.entry))
       : null;
   const profit = entry ? journalProfit(entry) : null;
   const simulation = entry?.trackingMode === "automatic" || entry?.resultBasis === "estimated";
@@ -166,7 +167,9 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
     entry?.source === "ai" && entry.quantity === null && entry.entryPrice && entry.exits?.length
       ? (entry.exits.reduce(
           (sum, exit) =>
-            sum + (exit.price - entry.entryPrice!) * exit.quantity * (entry.plan.direction === "BUY" ? 1 : -1),
+            sum +
+            (exit.price - entry.entryPrice!) * exit.quantity * (entry.plan.direction === "BUY" ? 1 : -1) -
+            exit.fees,
           0,
         ) /
           entry.entryPrice) *
@@ -232,8 +235,8 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
               ) : null}
               {size !== null ? (
                 <p className="text-muted-foreground text-xs">
-                  Unleveraged base units from entry-to-stop distance; excludes fees, spread and slippage. Simulation
-                  size follows your supplied risk budget.
+                  Unleveraged size is capped by supplied capital. New AI plans include your estimated round-trip costs;
+                  actual costs may differ.
                 </p>
               ) : null}
               {market.data ? (

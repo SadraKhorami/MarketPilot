@@ -5,29 +5,43 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
+function displayPositionAmount(amount: number) {
+  return String(Number(amount >= 0.01 ? amount.toFixed(2) : amount.toPrecision(6)));
+}
+
 export function useTradeSize(price: string, initialQuantity = "") {
   const original = useRef({
     price,
     quantity: initialQuantity,
-    amount: initialQuantity && Number(price) > 0 ? String(Number(initialQuantity) * Number(price)) : initialQuantity,
+    amount:
+      initialQuantity && Number(price) > 0
+        ? displayPositionAmount(Number(initialQuantity) * Number(price))
+        : initialQuantity,
   });
   const [mode, setMode] = useState(initialQuantity && !(Number(price) > 0) ? "units" : "amount");
   const [value, setValue] = useState(() =>
-    initialQuantity && Number(price) > 0 ? String(Number(initialQuantity) * Number(price)) : initialQuantity,
+    initialQuantity && Number(price) > 0
+      ? displayPositionAmount(Number(initialQuantity) * Number(price))
+      : initialQuantity,
   );
   const quantity =
     mode === "units"
       ? value
-      : value === original.current.amount && price === original.current.price
+      : value !== "" && Number(value) === Number(original.current.amount) && price === original.current.price
         ? original.current.quantity
         : Number(price) > 0 && value
           ? String(Number(value) / Number(price))
           : "";
   function changeMode(next: string) {
     if ((next !== "amount" && next !== "units") || next === mode) return;
-    setValue(
-      next === "units" ? quantity : quantity && Number(price) > 0 ? String(Number(quantity) * Number(price)) : "",
-    );
+    const nextValue =
+      next === "units"
+        ? quantity
+        : quantity && Number(price) > 0
+          ? displayPositionAmount(Number(quantity) * Number(price))
+          : "";
+    if (next === "amount") original.current = { price, quantity, amount: nextValue };
+    setValue(nextValue);
     setMode(next);
   }
   return { mode, value, setValue, changeMode, quantity };
@@ -84,9 +98,9 @@ export function TradeSizeField({
         {!validPrice
           ? "Enter the entry price to calculate the asset amount."
           : size.quantity && Number(size.quantity) > 0
-            ? `${Number(size.quantity).toLocaleString(undefined, { maximumSignificantDigits: 10 })} ${base} · ${(Number(size.quantity) * Number(price)).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${quote} at your entry price.`
+            ? `${Number(size.quantity).toLocaleString(undefined, { maximumSignificantDigits: 6 })} ${base} · ${(Number(size.quantity) * Number(price)).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${quote} at entry.`
             : "Enter the position value; the asset amount is calculated from your entry price."}{" "}
-        Position value excludes fees and is not leveraged margin.
+        Fees are separate.
       </FieldDescription>
     </Field>
   );

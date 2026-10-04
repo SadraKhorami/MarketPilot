@@ -1,5 +1,5 @@
-import { assetSearchTerms } from "@marketpilot/market-data";
-import type { Prisma } from "@marketpilot/db";
+import { assetNewsPattern, assetSearchTerms } from "@marketpilot/market-data";
+import { Prisma } from "@marketpilot/db";
 import { MarketCatalogService } from "../market-data/market-catalog.service";
 import { Injectable } from "@nestjs/common";
 import { DatabaseService } from "../database.module";
@@ -36,22 +36,20 @@ export class NewsService {
     ];
     if (assets.length) {
       const catalog = await this.catalog.list();
-      conditions.push({
-        OR: assets.map((symbol) => {
+      const matchingIds = await Promise.all(
+        assets.map(async (symbol) => {
           const instrument = catalog.instruments.find((item) => item.symbol === symbol || item.baseAsset === symbol);
-          const searchTerms = assetSearchTerms(symbol, instrument?.name);
-          if (symbol === asset) terms = searchTerms;
-          return {
-            OR: [
-              { affectedAssets: { hasSome: [symbol, symbol.split("-")[0]] } },
-              ...searchTerms.flatMap((term) => [
-                { title: { contains: term, mode: "insensitive" as const } },
-                { description: { contains: term, mode: "insensitive" as const } },
-              ]),
-            ],
-          };
+          if (symbol === asset) terms = assetSearchTerms(symbol, instrument?.name);
+          const pattern = assetNewsPattern(symbol, instrument?.name);
+          const tags = [symbol, symbol.split("-")[0]];
+          return this.db.$queryRaw<{ id: string }[]>(Prisma.sql`
+          SELECT id FROM "NewsArticle"
+          WHERE "affectedAssets" && ARRAY[${Prisma.join(tags)}]::text[]
+             OR title ~* ${pattern} OR description ~* ${pattern}
+        `);
         }),
-      });
+      );
+      conditions.push({ id: { in: [...new Set(matchingIds.flat().map((row) => row.id))] } });
     }
     const categories = [...new Set([...(query.categories ?? []), ...(query.category ? [query.category] : [])])];
     if (categories.length) conditions.push({ sourceCategories: { hasSome: categories } });
@@ -77,7 +75,7 @@ export class NewsService {
     const [articles, total, refreshState, categoryGroups] = await Promise.all([
       this.db.newsArticle.findMany({
         where,
-        orderBy: [{ publishedAt: "desc" }, { fetchedAt: "desc" }, { id: "desc" }],
+        orderBy: [{ publishedAt: { sort: "desc", nulls: "last" } }, { fetchedAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

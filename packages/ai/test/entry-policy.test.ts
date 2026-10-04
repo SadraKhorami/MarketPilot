@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConditionalEntrySchema, entryAlertApproach, entryConditionMet } from "../src/entry-policy";
+import { TradeSetupSchema } from "../src/contracts";
+import {
+  ConditionalEntrySchema,
+  conditionalEntryStage,
+  describeEntryCondition,
+  entryAlertApproach,
+  entryConditionMet,
+  entryDeadline,
+} from "../src/entry-policy";
 import { JournalExitInputSchema } from "../src/journal-trades";
+
 const time = "2026-10-04T10:00:00Z";
 function plan(
   direction: "BUY" | "SELL",
@@ -52,6 +61,78 @@ test("break-retest requires a later retest; a breakout close can activate indepe
 test("alert approach depends on price location rather than the trade side", () => {
   assert.deepEqual(entryAlertApproach({ entry: 100, observedPrice: 105 }), { fromBelow: false, gap: 5 });
   assert.deepEqual(entryAlertApproach({ entry: 100, observedPrice: 95 }), { fromBelow: true, gap: 5 });
+});
+test("close deadlines count future boundaries; existing elapsed deadlines remain unchanged", () => {
+  const proposedAt = Date.parse("2026-10-04T19:34:14.456Z");
+  assert.equal(
+    new Date(entryDeadline(proposedAt, "15m", 3, "entry_candle_closes")).toISOString(),
+    "2026-10-04T20:15:00.000Z",
+  );
+  assert.equal(new Date(entryDeadline(proposedAt, "15m", 3)).toISOString(), "2026-10-04T20:19:14.456Z");
+  assert.equal(entryDeadline(Date.parse(time), "15m", 3, "entry_candle_closes"), Date.parse(time) + 2700_000);
+  const rule = {
+    ...plan("BUY", "candle_close", "breakout").conditionalEntry,
+    breakoutAt: null,
+    proposedAt: new Date(proposedAt).toISOString(),
+  };
+  const setup = {
+    symbol: "BTC-USD",
+    interval: "15m",
+    direction: "BUY",
+    stage: "waiting_reclaim",
+    entry: 100,
+    stopLoss: 90,
+    targets: [120],
+    observedPrice: 99,
+    observedAt: rule.proposedAt,
+    contextInterval: "1h",
+    quote: "USD",
+    pipSize: null,
+    sourceId: "fixture",
+    conditionalEntry: rule,
+    expiresAt: "2026-10-04T20:19:14.456Z",
+  };
+  assert.equal(TradeSetupSchema.safeParse(setup).success, true);
+  assert.equal(
+    TradeSetupSchema.safeParse({ ...setup, conditionalEntry: { ...rule, validityBasis: "entry_candle_closes" } })
+      .success,
+    false,
+  );
+  assert.equal(
+    TradeSetupSchema.safeParse({
+      ...setup,
+      expiresAt: "2026-10-04T20:15:00.000Z",
+      conditionalEntry: { ...rule, validityBasis: "entry_candle_closes" },
+    }).success,
+    true,
+  );
+});
+test("stages and operational descriptions follow the saved condition", () => {
+  assert.equal(
+    conditionalEntryStage({ scenario: "breakout", condition: "candle_close", breakoutAt: null }),
+    "waiting_close",
+  );
+  assert.equal(
+    conditionalEntryStage({ scenario: "breakout", condition: "break_retest", breakoutAt: null }),
+    "waiting_break",
+  );
+  assert.equal(
+    conditionalEntryStage({ scenario: "pullback", condition: "candle_close", breakoutAt: time }),
+    "waiting_retest",
+  );
+  assert.equal(conditionalEntryStage({ scenario: "pullback", condition: "touch", breakoutAt: time }), "waiting_touch");
+  assert.match(
+    describeEntryCondition({ ...plan("SELL", "candle_close", "breakout"), interval: "15m" }),
+    /15m candle closes below Entry/,
+  );
+});
+test("close validity follows the observed candle grid rather than assuming UTC-hour boundaries", () => {
+  const proposedAt = Date.parse("2026-10-04T19:34:14.456Z");
+  assert.equal(
+    new Date(entryDeadline(proposedAt, "1h", 3, "entry_candle_closes", 1800_000)).toISOString(),
+    "2026-10-04T22:30:00.000Z",
+  );
+  assert.equal(entryDeadline(proposedAt, "1h", 3, "elapsed_duration", 1800_000), proposedAt + 10800_000);
 });
 test("reconciling estimates requires actual entry details and normal exits cannot change entry", () => {
   const exit = {

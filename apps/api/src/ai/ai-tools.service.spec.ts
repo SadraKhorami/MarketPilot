@@ -68,6 +68,45 @@ describe("AI application tools", () => {
     );
     expect(result.status).toBe("ok");
   });
+  it("excludes the open candle from AI indicators and calculates structural levels independently of chart size", async () => {
+    const snapshot = fixture();
+    snapshot.data.candles.push({
+      time: new Date().toISOString(),
+      open: 1000,
+      high: 1100,
+      low: 900,
+      close: 1050,
+      volume: 1,
+    });
+    const { service, context } = setup(snapshot);
+    const short = await service.execute("getTrendAnalysis", { symbol: "BTC", interval: "1h", window: 30 }, context);
+    const long = await service.execute("getTrendAnalysis", { symbol: "BTC", interval: "1h", window: 200 }, context);
+    expect(short.sources[0].calculationHistory?.candles).toBe(250);
+    expect(short.sources[0].history).toHaveLength(30);
+    expect(short.sources[0].facts.find((fact) => fact.label === "SMA 50")?.value).toBe(
+      calculateTechnicalIndicators(fixture().data.candles).sma50,
+    );
+    expect(short.sources[0].facts.filter((fact) => fact.label.startsWith("Confirmed swing"))).toEqual(
+      long.sources[0].facts.filter((fact) => fact.label.startsWith("Confirmed swing")),
+    );
+    expect(short.sources[0].facts.find((fact) => fact.label === "Indicator basis")?.value).toBe(
+      "Completed candles only",
+    );
+  });
+  it("does not promote a cached unfinished candle after its interval has elapsed", async () => {
+    const data = fixture();
+    data.data.candles.push({ time: data.fetchedAt, open: 1000, high: 1100, low: 900, close: 1050, volume: 1 });
+    const { service, context } = setup(data);
+    const result = await service.execute(
+      "getTechnicalIndicators",
+      { symbol: "BTC", interval: "1h", window: 30 },
+      context,
+    );
+    expect(result.sources[0].calculationHistory?.candles).toBe(250);
+    expect(result.sources[0].facts.find((fact) => fact.label === "SMA 50")?.value).toBe(
+      calculateTechnicalIndicators(fixture().data.candles).sma50,
+    );
+  });
   it("preserves stale freshness and rejects mismatched/malformed observations", async () => {
     const setupStale = setup(fixture("BTC-USD", 40, "stale"));
     expect(

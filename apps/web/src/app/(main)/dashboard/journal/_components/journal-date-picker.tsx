@@ -55,7 +55,7 @@ export function JournalDatePicker({
           type="button"
           variant="outline"
           disabled={Boolean(disabled) || Boolean(readOnly)}
-          className="h-10 w-full min-w-0 justify-between"
+          className="w-full min-w-0 justify-between"
         >
           <span className="truncate">
             {selected

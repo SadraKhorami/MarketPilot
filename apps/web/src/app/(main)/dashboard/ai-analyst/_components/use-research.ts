@@ -20,11 +20,24 @@ export interface ResearchTurn {
 function failureMessage(error: unknown) {
   return error instanceof Error ? error.message : "Research was interrupted.";
 }
+function researchFailure(code: string | undefined, fallback: string) {
+  switch (code) {
+    case "AI_MISSING_CITATION":
+      return "AI returned an analysis without citing the retrieved sources. The answer could not be verified; retry the question. This is not a rejection of the trade conditions.";
+    case "AI_INVALID_CITATION":
+      return "AI cited a source that was not retrieved for this request. The answer could not be verified; retry the question.";
+    case "AI_EMPTY_OR_INVALID_ANSWER":
+      return "AI returned an incomplete or incorrectly formatted answer. Retry the question.";
+    default:
+      return fallback;
+  }
+}
 function historyTurn(turn: ResearchTurn): ResearchTurn {
   let error: string | undefined;
   if (turn.status === "running")
     error = "This request is still running or was interrupted. Recover its result before retrying.";
-  else if (turn.status !== "completed") error = "This research request did not complete. You can retry.";
+  else if (turn.status !== "completed")
+    error = researchFailure(turn.errorCode, "This research request did not complete. You can retry.");
   return { ...turn, error };
 }
 export function useResearch() {
@@ -88,7 +101,9 @@ export function useResearch() {
     setTurns((current) =>
       current.some((turn) => turn.requestId === requestId)
         ? current.map((turn) =>
-            turn.requestId === requestId ? { ...turn, error: undefined, status: "running" } : turn,
+            turn.requestId === requestId
+              ? { ...turn, error: undefined, errorCode: undefined, status: "running" }
+              : turn,
           )
         : [...current, { requestId, input, tradeContext, result: null, status: "running" }],
     );
@@ -126,7 +141,11 @@ export function useResearch() {
           if (event.type === "result")
             update(requestId, { result: event.result, status: "completed", error: undefined });
           if (event.type === "error")
-            update(requestId, { status: "failed", error: event.message, errorCode: event.code });
+            update(requestId, {
+              status: "failed",
+              error: researchFailure(event.code, event.message),
+              errorCode: event.code,
+            });
         },
       );
     } catch (error) {

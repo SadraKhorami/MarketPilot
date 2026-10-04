@@ -60,6 +60,18 @@ export function assetSearchTerms(symbol: string, name?: string) {
 		...new Set([base, ...(aliases[base] ?? []), ...(name ? [name] : [])]),
 	];
 }
+function escapePattern(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// PostgreSQL POSIX classes preserve word boundaries for Latin and non-Latin names.
+export function assetNewsPattern(symbol: string, name?: string) {
+	const alternatives = assetSearchTerms(symbol, name)
+		.map(escapePattern)
+		.join("|");
+	return `(^|[^[:alnum:]_])(${alternatives})([^[:alnum:]_]|$)`;
+}
+
 export function articleMatchesAsset(
 	article: {
 		affectedAssets: string[];
@@ -79,7 +91,10 @@ export function articleMatchesAsset(
 	const text =
 		`${article.title} ${article.description ?? ""}`.toLocaleLowerCase();
 	return assetSearchTerms(symbol, name).some((term) =>
-		text.includes(term.toLocaleLowerCase()),
+		new RegExp(
+			`(^|[^\\p{L}\\p{N}_])${escapePattern(term)}([^\\p{L}\\p{N}_]|$)`,
+			"iu",
+		).test(text),
 	);
 }
 export function marketSourceLabel(source: string) {

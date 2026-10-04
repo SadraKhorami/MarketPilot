@@ -374,3 +374,38 @@ test("unknown citations do not trigger a numerical repair", async () => {
   );
   assert.equal(provider.count(), 3);
 });
+
+test("missing citations receive one repair from the same evidence", async () => {
+  const invalid = JSON.stringify({ interpretation: [{ text: "The observation suggests momentum.", sourceIds: [] }] });
+  const provider = fake([
+    completion([call("getMarketPrice")]),
+    completion(),
+    completion([], invalid),
+    completion([], answer),
+  ]);
+  let lookups = 0;
+  const research = await run(provider.provider, {
+    execute: async () => {
+      lookups++;
+      return result;
+    },
+  });
+  assert.deepEqual(research.answer.interpretation[0].sourceIds, [source.id]);
+  assert.equal(provider.count(), 4);
+  assert.equal(lookups, 1);
+});
+
+test("missing citations remain rejected if the single repair fails", async () => {
+  const invalid = JSON.stringify({ interpretation: [{ text: "The observation suggests momentum.", sourceIds: [] }] });
+  const provider = fake([
+    completion([call("getMarketPrice")]),
+    completion(),
+    completion([], invalid),
+    completion([], invalid),
+  ]);
+  await assert.rejects(
+    run(provider.provider),
+    (error: unknown) => error instanceof AIError && error.code === "AI_MISSING_CITATION",
+  );
+  assert.equal(provider.count(), 4);
+});

@@ -2,6 +2,10 @@ import {
   AIError,
   AnswerSchema,
   defaultTradePreferences,
+  assessTradeEconomics,
+  matchesTradeEconomics,
+  sameComputedNumber,
+  sizeUnleveragedTrade,
   ResearchResultSchema,
   TradeContextSchema,
   TradePreferencesSchema,
@@ -154,6 +158,32 @@ export class JournalService {
     } catch {
       throw new ConflictException("The analysis does not match this plan's market. Request a fresh analysis.");
     }
+    const policy = context.data.entryPolicy;
+    const quality = assessTradeEconomics(plan, policy?.roundTripCostPercent, policy?.minimumNetRewardRisk ?? 1.5);
+    if (!quality.accepted) throw new ConflictException(quality.reason);
+    if (!matchesTradeEconomics(plan.conditionalEntry?.economics, quality.economics))
+      throw new ConflictException("Request a fresh plan with the current economic quality checks before saving.");
+    const capital = context.data.capital;
+    const baseUnits =
+      capital !== null && context.data.currency === plan.quote
+        ? sizeUnleveragedTrade(
+            plan.entry,
+            quality.economics.stopRiskPerUnit,
+            quality.economics.costPerUnit,
+            capital,
+            context.data.riskPercent,
+          ).baseUnits
+        : null;
+    if (
+      !plan.conditionalEntry ||
+      (baseUnits === null
+        ? plan.conditionalEntry.sizing.baseUnits !== null
+        : plan.conditionalEntry.sizing.baseUnits === null ||
+          !sameComputedNumber(plan.conditionalEntry.sizing.baseUnits, baseUnits))
+    )
+      throw new ConflictException(
+        "The plan's position size does not match the confirmed capital and risk. Request a fresh plan.",
+      );
     const snapshot = await this.market.getMarketData(plan.symbol, plan.interval);
     const priceAge = Date.now() - Date.parse(snapshot.data.timestamp);
     if (
@@ -218,12 +248,8 @@ export class JournalService {
           symbol: plan.symbol,
           trackingMode: "automatic",
           resultBasis: "estimated",
-          quantity: plan.conditionalEntry?.sizing.baseUnits ?? null,
-          targetAllocations: plan.targets.map((_, index) =>
-            index === plan.targets.length - 1
-              ? 100 - Math.floor(100 / plan.targets.length) * index
-              : Math.floor(100 / plan.targets.length),
-          ),
+          quantity: baseUnits,
+          targetAllocations: quality.economics.targetAllocations,
           entryTrigger:
             plan.conditionalEntry?.condition === "break_retest"
               ? "break_retest"
