@@ -3,6 +3,7 @@ import {
   entryConditionMet,
   entryDeadline,
   entryDurations,
+  profitProtectionLevel,
   TradeContextSchema,
   TradeSetupSchema,
 } from "@marketpilot/ai";
@@ -85,9 +86,24 @@ export async function trackAutomatic(
     const target = plan.targets.some((price) =>
       plan.direction === "BUY" ? partial.high >= price : partial.low <= price,
     );
+    const protection = profitProtectionLevel(plan, entry.entryPrice ?? plan.entry);
+    const effectiveAt = plan.conditionalEntry?.profitProtection?.effectiveAt;
+    const armed = entry.exits.some(
+      (exit) =>
+        (exit.key === "auto:tp:0" ||
+          (exit.reason === "tp" &&
+            (plan.direction === "BUY" ? exit.price >= plan.targets[0] : exit.price <= plan.targets[0]))) &&
+        exit.occurredAt.getTime() <= start,
+    );
+    const protectedTouch =
+      protection !== null &&
+      !!effectiveAt &&
+      Date.parse(effectiveAt) <= start &&
+      armed &&
+      (plan.direction === "BUY" ? partial.low <= protection : partial.high >= protection);
     const touch = partial.low <= plan.entry && partial.high >= plan.entry;
     if (
-      (entry.status === "open" && (stop || target)) ||
+      (entry.status === "open" && (stop || target || protectedTouch)) ||
       (entry.status === "planned" && (stop || ((!closeCondition || (requiresRetest && initialBreakoutKnown)) && touch)))
     ) {
       await event(
@@ -315,12 +331,58 @@ export async function trackAutomatic(
         );
       }
     } else if (status === "open") {
-      if (stop && targets.length) {
+      const protection = profitProtectionLevel(plan, entryPrice ?? plan.entry);
+      const effectiveAt = plan.conditionalEntry?.profitProtection?.effectiveAt;
+      const activation = effectiveAt ? Date.parse(effectiveAt) : null;
+      const activatedInsideCandle = activation !== null && activation > openTime && activation < time.getTime();
+      const enabled = protection !== null && activation !== null && openTime >= activation;
+      const protectionTouched = enabled && (long ? candle.low <= protection : candle.high >= protection);
+      const firstTarget = exits.find(
+        (exit) =>
+          exit.key === "auto:tp:0" ||
+          (exit.reason === "tp" && (long ? exit.price >= plan.targets[0] : exit.price <= plan.targets[0])),
+      );
+      const armed = !!firstTarget && Date.parse(String(firstTarget.occurredAt)) <= openTime;
+      if (
+        armed &&
+        activatedInsideCandle &&
+        protection !== null &&
+        (long ? candle.low <= protection : candle.high >= protection)
+      ) {
         await event(
           "ambiguous",
           "ambiguous",
           time,
-          "SL and TP were reached in the same candle. Simulation closing is paused because their order is unknown.",
+          "The protection activation time falls inside a candle that touched the protection level. Its timing is unknown; no retrospective exit was inferred.",
+        );
+        await tx.journalEntry.update({
+          where: { id: entry.id },
+          data: { monitoringStatus: "Needs review · protection activation timing unknown" },
+        });
+        return;
+      }
+      if (protectionTouched && !armed && allocations[0] < 100 && targets.some((target) => target.i === 0)) {
+        await event(
+          "ambiguous",
+          "ambiguous",
+          time,
+          "TP1 and the profit-protection level were reached in the same candle. Their order is unknown; remaining exits require review.",
+        );
+        await tx.journalEntry.update({
+          where: { id: entry.id },
+          data: { monitoringStatus: "Needs review · TP1/protection order unknown" },
+        });
+        return;
+      }
+      const protectedExit = protectionTouched && armed;
+      const stopped = stop || protectedExit;
+      const stopPrice = protectedExit && protection !== null ? protection : plan.stopLoss;
+      if (stopped && targets.length) {
+        await event(
+          "ambiguous",
+          "ambiguous",
+          time,
+          "An active stop and TP were reached in the same candle. Simulation closing is paused because their order is unknown.",
         );
         await tx.journalEntry.update({
           where: { id: entry.id },
@@ -329,8 +391,15 @@ export async function trackAutomatic(
         return;
       }
       const remaining = quantity - exits.reduce((sum, exit) => sum + exit.quantity, 0);
-      const candidates = stop
-        ? [{ price: plan.stopLoss, quantity: remaining, key: "auto:sl", reason: "sl" }]
+      const candidates = stopped
+        ? [
+            {
+              price: stopPrice,
+              quantity: remaining,
+              key: protectedExit ? "auto:protection" : "auto:sl",
+              reason: protectedExit ? "protection" : "sl",
+            },
+          ]
         : targets.map((target) => ({
             price: target.price,
             quantity: (quantity * allocations[target.i]) / 100,
@@ -341,7 +410,7 @@ export async function trackAutomatic(
         const left = quantity - exits.reduce((sum, e) => sum + e.quantity, 0);
         if (left <= quantity * 1e-9) break;
         // Gap opens use the observed open instead of a fictitious stop/limit fill.
-        const price = stop
+        const price = stopped
           ? long
             ? Math.min(fill.price, candle.open)
             : Math.max(fill.price, candle.open)

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MarketInstrumentSchema, type MarketInstrument } from "../catalog";
+import { type MarketInstrument, MarketInstrumentSchema } from "../catalog";
 import {
 	calculateSupportResistance,
 	calculateTechnicalIndicators,
@@ -7,12 +7,12 @@ import {
 	calculateVolatility,
 } from "../indicators";
 import {
-	MarketDataProviderError,
-	MarketObservationSchema,
 	type MarketCandle,
 	type MarketDataInterval,
 	type MarketDataProvider,
+	MarketDataProviderError,
 	type MarketObservation,
+	MarketObservationSchema,
 } from "../types";
 
 const API_BASE_URL = "https://api.exchange.coinbase.com";
@@ -40,10 +40,14 @@ export class CoinbaseExchangeProvider implements MarketDataProvider {
 	) {}
 
 	async listMarkets(): Promise<MarketInstrument[]> {
-		const [products, currencies] = await Promise.all([
+		const [productsResult, currenciesResult] = await Promise.allSettled([
 			this.request(`${API_BASE_URL}/products`),
 			this.request(`${API_BASE_URL}/currencies`),
 		]);
+		if (productsResult.status === "rejected") throw productsResult.reason;
+		const products = productsResult.value;
+		const currencies =
+			currenciesResult.status === "fulfilled" ? currenciesResult.value : [];
 		const parsedProducts = z
 			.array(
 				z.object({
@@ -58,13 +62,15 @@ export class CoinbaseExchangeProvider implements MarketDataProvider {
 		const parsedCurrencies = z
 			.array(z.object({ id: z.string(), name: z.string() }))
 			.safeParse(currencies);
-		if (!parsedProducts.success || !parsedCurrencies.success)
+		if (!parsedProducts.success)
 			throw new MarketDataProviderError(
 				"Market catalog could not be validated.",
 				"INVALID_RESPONSE",
 			);
 		const names = new Map(
-			parsedCurrencies.data.map((currency) => [currency.id, currency.name]),
+			(parsedCurrencies.success ? parsedCurrencies.data : []).map(
+				(currency) => [currency.id, currency.name],
+			),
 		);
 		return parsedProducts.data
 			.filter(
@@ -153,6 +159,32 @@ export class CoinbaseExchangeProvider implements MarketDataProvider {
 		return parsed.data;
 	}
 
+	async getCandles(
+		symbol: string,
+		interval: MarketDataInterval,
+		start: number,
+		end: number,
+	): Promise<MarketCandle[]> {
+		const granularity = INTERVAL_SECONDS[interval];
+		if (
+			!Number.isFinite(start) ||
+			!Number.isFinite(end) ||
+			start >= end ||
+			end - start > granularity * MAX_CANDLES * 1000
+		)
+			throw new MarketDataProviderError(
+				"Historical candle range is invalid or exceeds one page.",
+				"INVALID_RESPONSE",
+			);
+		const url = new URL(
+			`${API_BASE_URL}/products/${encodeURIComponent(normalizeProductId(symbol))}/candles`,
+		);
+		url.searchParams.set("granularity", String(granularity));
+		url.searchParams.set("start", new Date(start).toISOString());
+		url.searchParams.set("end", new Date(end - 1).toISOString());
+		return parseCandles(await this.request(url), { start, end });
+	}
+
 	private async request(url: string | URL): Promise<unknown> {
 		let response: Response;
 		try {
@@ -229,7 +261,10 @@ function parseTicker(payload: unknown): CoinbaseTicker {
 	return { price: payload.price, time: payload.time };
 }
 
-function parseCandles(payload: unknown): MarketCandle[] {
+function parseCandles(
+	payload: unknown,
+	window?: { start: number; end: number },
+): MarketCandle[] {
 	if (!Array.isArray(payload)) {
 		throw new MarketDataProviderError(
 			"The provider candle response failed validation.",
@@ -276,6 +311,12 @@ function parseCandles(payload: unknown): MarketCandle[] {
 
 	const uniqueCandles = new Map(candles.map((candle) => [candle.time, candle]));
 	return [...uniqueCandles.values()]
+		.filter(
+			(candle) =>
+				!window ||
+				(Date.parse(candle.time) >= window.start &&
+					Date.parse(candle.time) < window.end),
+		)
 		.sort((left, right) => left.time.localeCompare(right.time))
 		.slice(-MAX_CANDLES);
 }

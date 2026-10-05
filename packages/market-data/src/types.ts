@@ -51,6 +51,15 @@ export const MarketObservationSchema = z.object({
 	providerSymbol: z.string().min(1),
 	source: z.string().optional(),
 	priceKind: z.enum(["quote", "candle_close"]).optional(),
+	candleAggregation: z
+		.object({
+			baseInterval: z.literal("1h"),
+			alignment: z.literal("UTC"),
+			baseCandles: z.number().int().positive().max(1806),
+			historyTruncated: z.boolean(),
+		})
+		.strict()
+		.optional(),
 	interval: MarketDataIntervalSchema,
 	price: z.number().positive().finite(),
 	timestamp: z.string().datetime({ offset: true }),
@@ -72,6 +81,12 @@ export type MarketObservation = z.infer<typeof MarketObservationSchema>;
 export interface MarketDataProvider {
 	readonly id: string;
 	sourceFor?(symbol: string): string;
+	getCandles?(
+		symbol: string,
+		interval: MarketDataInterval,
+		start: number,
+		end: number,
+	): Promise<MarketCandle[]>;
 	getMarketData(
 		symbol: string,
 		interval: MarketDataInterval,

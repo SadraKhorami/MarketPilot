@@ -1,8 +1,8 @@
-import { assetNewsPattern, assetSearchTerms } from "@marketpilot/market-data";
 import { Prisma } from "@marketpilot/db";
-import { MarketCatalogService } from "../market-data/market-catalog.service";
+import { assetNewsPattern, assetSearchTerms, commodityNewsExclusion } from "@marketpilot/market-data";
 import { Injectable } from "@nestjs/common";
 import { DatabaseService } from "../database.module";
+import { MarketCatalogService } from "../market-data/market-catalog.service";
 import { RedisService } from "../redis.service";
 export interface NewsQueryDto {
   asset?: string;
@@ -42,10 +42,12 @@ export class NewsService {
           if (symbol === asset) terms = assetSearchTerms(symbol, instrument?.name);
           const pattern = assetNewsPattern(symbol, instrument?.name);
           const tags = [symbol, symbol.split("-")[0]];
+          const exclusion = commodityNewsExclusion(symbol);
           return this.db.$queryRaw<{ id: string }[]>(Prisma.sql`
           SELECT id FROM "NewsArticle"
-          WHERE "affectedAssets" && ARRAY[${Prisma.join(tags)}]::text[]
-             OR title ~* ${pattern} OR description ~* ${pattern}
+          WHERE ("affectedAssets" && ARRAY[${Prisma.join(tags)}]::text[]
+             OR title ~* ${pattern} OR description ~* ${pattern})
+          ${exclusion ? Prisma.sql`AND NOT (title ~* ${exclusion.corporate} AND NOT title ~* ${exclusion.market})` : Prisma.empty}
         `);
         }),
       );

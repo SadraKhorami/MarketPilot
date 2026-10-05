@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-	calculateSupportResistance,
-	calculateStructuralLevels,
 	articleMatchesAsset,
+	CoinbaseExchangeProvider,
+	calculateStructuralLevels,
+	calculateSupportResistance,
 	calculateTechnicalIndicators,
 	calculateTrend,
-	CoinbaseExchangeProvider,
-	MarketDataProviderError,
 	type MarketCandle,
+	MarketDataProviderError,
 } from "../src";
 
 function makeCandles(count: number): MarketCandle[] {
@@ -191,5 +191,85 @@ test("structural levels use confirmed wick pivots, without inventing levels in a
 			support: [],
 			resistance: [15],
 		},
+	);
+});
+
+test("historical Coinbase pages filter provider spillover and retain real gaps", async () => {
+	const start = Date.parse("2026-10-04T20:00:00Z");
+	const seen: URL[] = [];
+	const provider = new CoinbaseExchangeProvider(async (input) => {
+		seen.push(new URL(String(input)));
+		return Response.json(
+			[0, 2, -1, 300].map((offset) => [
+				start / 1000 + offset * 60,
+				99,
+				102,
+				100,
+				101,
+				1,
+			]),
+		);
+	});
+	const candles = await provider.getCandles(
+		"BTC-USD",
+		"1m",
+		start,
+		start + 300 * 60_000,
+	);
+	assert.deepEqual(
+		candles.map((c) => Date.parse(c.time)),
+		[start, start + 120_000],
+	);
+	assert.equal(seen[0].searchParams.get("granularity"), "60");
+	assert.equal(
+		seen[0].searchParams.get("start"),
+		new Date(start).toISOString(),
+	);
+	await assert.rejects(
+		() => provider.getCandles("BTC-USD", "1m", start, start + 301 * 60_000),
+		MarketDataProviderError,
+	);
+});
+
+test("catalog discovery survives an unavailable optional currency-name endpoint", async () => {
+	const provider = new CoinbaseExchangeProvider(async (url) => {
+		if (String(url).endsWith("/currencies"))
+			return new Response("unavailable", { status: 503 });
+		return Response.json([
+			{
+				id: "ETH-USD",
+				base_currency: "ETH",
+				quote_currency: "USD",
+				status: "online",
+			},
+		]);
+	});
+	const markets = await provider.listMarkets();
+	assert.equal(markets[0].symbol, "ETH-USD");
+	assert.equal(markets[0].name, "ETH");
+});
+test("a mining company personnel announcement is not gold-market evidence", () => {
+	assert.equal(
+		articleMatchesAsset(
+			{
+				title:
+					"Mayfair Gold names Daniel Janusauskas as VP of technical services",
+				description: null,
+				affectedAssets: ["Gold"],
+			},
+			"XAU-USD",
+		),
+		false,
+	);
+	assert.equal(
+		articleMatchesAsset(
+			{
+				title: "Gold prices rise as president names new Fed chair",
+				description: null,
+				affectedAssets: [],
+			},
+			"XAU-USD",
+		),
+		true,
 	);
 });

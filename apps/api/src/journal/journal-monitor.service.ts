@@ -68,12 +68,16 @@ export class JournalMonitorService implements OnModuleInit, OnModuleDestroy {
             })
           )
             throw new Error("Valid ordered candles are required for tracking.");
-          const fine =
+          let fine =
             entry.trackingMode === "automatic" && (entry.source === "ai" || plan.conditionalEntry)
               ? plan.interval === "1m"
                 ? snapshot
                 : await this.market.getMarketData(entry.symbol, "1m")
               : null;
+          if (fine) {
+            const cursor = entry.checkedAt?.getTime() ?? entry.openedAt?.getTime() ?? entry.createdAt.getTime();
+            fine = await this.market.getTrackingWindow(fine, cursor);
+          }
           if (
             fine &&
             (fine.freshness !== "fresh" ||

@@ -267,7 +267,7 @@ export function JournalWorkspace() {
                         ) : null}
                       </TableCell>
                       <TableCell className="tabular-nums">
-                        {chartPrice(entry.plan.entry)}
+                        {chartPrice(entry.entryPrice ?? entry.plan.entry)}
                         <p className="mt-1 text-muted-foreground text-xs">
                           SL {chartPrice(entry.plan.stopLoss)} {entry.plan.quote}
                         </p>

@@ -185,8 +185,7 @@ function AddTradeForm({
         <SheetHeader>
           <SheetTitle>{trade ? `Edit trade · ${trade.symbol}` : "Add a trade"}</SheetTitle>
           <SheetDescription>
-            {trade ? "Update your position, targets and notes." : "Record a trade or a waiting plan."} Dates use your
-            device timezone.
+            {trade ? "Update your position, targets and notes." : "Record a trade or a waiting plan."}
           </SheetDescription>
           {initial && Date.parse(initial.time) > Date.now() ? (
             <p className="text-muted-foreground text-xs">

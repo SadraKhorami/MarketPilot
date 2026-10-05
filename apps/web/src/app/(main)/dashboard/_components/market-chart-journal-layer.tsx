@@ -67,7 +67,7 @@ export function MarketChartJournalLayer({
   const status = journalChartStatus(entry);
   const needsReview = entry.monitoringStatus?.startsWith("Needs review") ?? false;
   const active = (status === "planned" || status === "open") && !needsReview;
-  const showLevels = active || preview;
+  const showLevels = status === "planned" || status === "open" || preview;
   const end = Math.max(position.x, Math.min(position.endX, width));
   const labelOnRight = width - end >= 140;
   const labelX = labelOnRight ? end + 6 : Math.max(0, end - 6);
@@ -149,6 +149,7 @@ export function MarketChartJournalLayer({
                 style={{ left: labelX, top: level.labelY, transform: labelOnRight ? undefined : "translateX(-100%)" }}
               >
                 {level.label} {chartPrice(level.price)}
+                {needsReview && level.label === "Entry" ? " · Needs review" : ""}
               </span>
             ))}
         </>
@@ -212,7 +213,7 @@ export function MarketChartJournalLayer({
                 </PopoverDescription>
               </PopoverHeader>
               <Badge variant="outline">{status}</Badge>
-              <ConditionalEntrySummary plan={entry.plan} />
+              <ConditionalEntrySummary plan={entry.plan} entryPrice={entry.entryPrice} />
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 {levels.map((level) => (
                   <div key={level.label}>

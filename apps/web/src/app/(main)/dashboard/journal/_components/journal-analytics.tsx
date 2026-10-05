@@ -322,7 +322,6 @@ export function JournalAnalyticsWorkspace() {
                   {data.basis === "estimated"
                     ? "Candle-based simulations. Monetary results require a supplied position amount."
                     : "Manual records. Partial exits contribute on their exit dates."}{" "}
-                  Days are grouped in UTC.{" "}
                   {data.unsizedTrades
                     ? `${data.unsizedTrades} unsized simulations are excluded from monetary P&L.`
                     : ""}

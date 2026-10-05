@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { EntryPolicyFields } from "./entry-policy-fields";
 export function TradePreferenceFields({
   value,
@@ -137,19 +138,25 @@ export function TradePreferenceFields({
         <Input
           id={`${id}-reward`}
           type="number"
-          min="1"
+          min="0"
           max="5"
           step="0.1"
           required
           value={policy.minimumNetRewardRisk ?? 1.5}
           disabled={disabled}
           onChange={(event) =>
-            onChange({ ...value, entryPolicy: { ...policy, minimumNetRewardRisk: Number(event.target.value) } })
+            onChange({
+              ...value,
+              entryPolicy: {
+                ...policy,
+                minimumNetRewardRisk: event.target.value === "" ? undefined : Number(event.target.value),
+              },
+            })
           }
         />
         <FieldDescription>
-          1.5 means at least 1.50 of potential profit per 1 of risk, after estimated costs and across all targets. It
-          does not predict success.
+          Enter 0 to disable this ratio threshold. A positive value sets the minimum potential net profit per 1 of risk
+          across all targets. Cost and setup checks still apply.
         </FieldDescription>
       </Field>
       <div className="sm:col-span-2">

@@ -1,10 +1,10 @@
-import { ServiceUnavailableException } from "@nestjs/common";
 import {
-  MarketDataProviderError,
   type MarketDataInterval,
   type MarketDataProvider,
+  MarketDataProviderError,
   type MarketObservation,
 } from "@marketpilot/market-data";
+import { ServiceUnavailableException } from "@nestjs/common";
 
 import type { RedisService } from "../redis.service";
 import { MarketDataService } from "./market-data.service";
@@ -125,5 +125,43 @@ describe("MarketDataService", () => {
     );
     await new MarketDataService(provider, redis).getMarketData("BTC-USD", "15m");
     expect(provider.getMarketData).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("historical tracking pages", () => {
+  const cursor = Date.parse("2026-09-29T00:00:00Z");
+  const recent = {
+    source: "coinbase-exchange",
+    requestedSymbol: "BTC-USD",
+    freshness: "fresh" as const,
+    fetchedAt: new Date().toISOString(),
+    data: { ...observation, interval: "1m" as const },
+  };
+  it("requests a bounded page from the tracking cursor without altering the latest cache", async () => {
+    const history = Array.from({ length: 300 }, (_, i) => ({
+      ...observation.candles[0],
+      time: new Date(cursor + i * 60_000).toISOString(),
+    }));
+    const provider = {
+      id: "coinbase-exchange",
+      getMarketData: jest.fn(),
+      getCandles: jest.fn().mockResolvedValue(history),
+    };
+    const redis = { client: { set: jest.fn() } };
+    const result = await new MarketDataService(provider, redis as never).getTrackingWindow(recent, cursor + 10_000);
+    expect(provider.getCandles).toHaveBeenCalledWith("BTC-USD", "1m", cursor, cursor + 300 * 60_000);
+    expect(result.data.candles).toEqual(history);
+    expect(redis.client.set).not.toHaveBeenCalled();
+  });
+  it("keeps existing coverage and rejects out-of-range historical bars", async () => {
+    const provider = {
+      id: "coinbase-exchange",
+      getMarketData: jest.fn(),
+      getCandles: jest.fn().mockResolvedValue(observation.candles),
+    };
+    const service = new MarketDataService(provider, {} as never);
+    expect(await service.getTrackingWindow(recent, Date.parse(observation.candles[0].time))).toBe(recent);
+    expect(provider.getCandles).not.toHaveBeenCalled();
+    await expect(service.getTrackingWindow(recent, cursor)).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

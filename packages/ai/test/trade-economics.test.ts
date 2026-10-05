@@ -1,7 +1,12 @@
-import { matchesTradeEconomics } from "../src/trade-economics";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assessTradeEconomics, equalTargetAllocations, sizeUnleveragedTrade } from "../src/trade-economics";
+import {
+  assessTradeEconomics,
+  equalTargetAllocations,
+  matchesTradeEconomics,
+  sizeUnleveragedTrade,
+} from "../src/trade-economics";
+
 const plan = { entry: 100, stopLoss: 90, targets: [120, 125], direction: "BUY" as const };
 test("unknown costs do not pass as zero, but an explicit zero is supported", () => {
   assert.equal(assessTradeEconomics(plan, null).accepted, false);
@@ -72,4 +77,19 @@ test("saving accepts database float round-trip differences but rejects modified 
   assert.equal(matchesTradeEconomics({ ...stored, minimumNetRewardRisk: 1.6 }, quality.economics), false);
   assert.equal(matchesTradeEconomics({ ...stored, targetAllocations: [34, 33, 33] }, quality.economics), false);
   assert.equal(matchesTradeEconomics(undefined, quality.economics), false);
+});
+
+test("zero disables only the ratio threshold and survives stored economics validation", () => {
+  const weak = { entry: 100, stopLoss: 90, targets: [104.1], direction: "BUY" as const };
+  assert.equal(assessTradeEconomics(weak, 0, 1.5).accepted, false);
+  const result = assessTradeEconomics(weak, 0, 0);
+  assert.ok(result.accepted);
+  if (!result.accepted) return;
+  assert.equal(result.economics.minimumNetRewardRisk, 0);
+  assert.ok(Math.abs(result.economics.netRewardRisk - 0.41) < 1e-9);
+  assert.equal(matchesTradeEconomics(result.economics, result.economics), true);
+  assert.equal(assessTradeEconomics(weak, null, 0).accepted, false);
+  assert.equal(assessTradeEconomics({ ...weak, targets: [100.5] }, 1, 0).accepted, false);
+  assert.equal(assessTradeEconomics({ ...weak, stopLoss: 110 }, 0, 0).accepted, false);
+  assert.equal(assessTradeEconomics(weak, 0, -1).accepted, false);
 });

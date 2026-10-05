@@ -27,7 +27,7 @@ export function UsageChart({ data }: { data: Array<{ day: string; requests: numb
           tickMargin={10}
         />
         <YAxis axisLine={false} tickLine={false} width={42} allowDecimals={false} />
-        <ChartTooltip cursor={false} content={<ChartTooltipContent labelFormatter={(label) => `${label} · UTC`} />} />
+        <ChartTooltip cursor={false} content={<ChartTooltipContent labelFormatter={(label) => String(label)} />} />
         <Bar dataKey="requests" fill="var(--color-requests)" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ChartContainer>

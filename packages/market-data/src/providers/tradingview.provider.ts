@@ -1,4 +1,4 @@
-import { Client, type ChartSession } from "@mathieuc/tradingview";
+import { type ChartSession, Client } from "@mathieuc/tradingview";
 import { z } from "zod";
 import { referenceMarkets } from "../catalog";
 import {
@@ -7,13 +7,14 @@ import {
 	calculateTrend,
 	calculateVolatility,
 } from "../indicators";
+import { aggregateSixHourHistory } from "../six-hour-candles";
 import {
 	MarketCandleSchema,
-	MarketDataProviderError,
-	MarketObservationSchema,
 	type MarketDataInterval,
 	type MarketDataProvider,
+	MarketDataProviderError,
 	type MarketObservation,
+	MarketObservationSchema,
 } from "../types";
 
 const timeframes: Record<MarketDataInterval, string> = {
@@ -40,7 +41,7 @@ const periodsSchema = z
 		}),
 	)
 	.min(1)
-	.max(300);
+	.max(1806);
 const infosSchema = z.object({
 	full_name: z.string().optional(),
 	pro_name: z.string().optional(),
@@ -96,6 +97,9 @@ export class TradingViewProvider implements MarketDataProvider {
 		quoteAsset: string,
 		interval: MarketDataInterval,
 	): Promise<MarketObservation> {
+		const aggregate = interval === "6h";
+		const observedAt = Date.now();
+		const range = aggregate ? 1806 : 300;
 		return new Promise((resolve, reject) => {
 			let client: Client | undefined;
 			let chart: ChartSession | undefined;
@@ -162,7 +166,7 @@ export class TradingViewProvider implements MarketDataProvider {
 						) {
 							throw new Error("Instrument or currency mismatch");
 						}
-						const candles = periodsSchema
+						const hourlyOrNative = periodsSchema
 							.parse(chart.periods)
 							.map((bar) =>
 								MarketCandleSchema.parse({
@@ -176,14 +180,22 @@ export class TradingViewProvider implements MarketDataProvider {
 							)
 							.sort((a, b) => a.time.localeCompare(b.time));
 						if (
-							candles.some(
+							hourlyOrNative.some(
 								(bar) =>
 									bar.high < Math.max(bar.open, bar.close, bar.low) ||
 									bar.low > Math.min(bar.open, bar.close, bar.high),
 							)
 						)
 							throw new Error("Invalid OHLC values");
-						const latest = candles.at(-1);
+						const derived = aggregate
+							? aggregateSixHourHistory(
+									hourlyOrNative,
+									providerSymbol,
+									observedAt,
+								)
+							: undefined;
+						const candles = derived?.candles ?? hourlyOrNative.slice(-300);
+						const latest = hourlyOrNative.at(-1);
 						if (!latest) throw new Error("No candles");
 						const indicators = calculateTechnicalIndicators(candles);
 						finish(
@@ -192,6 +204,16 @@ export class TradingViewProvider implements MarketDataProvider {
 								providerSymbol,
 								source: this.id,
 								priceKind: "candle_close",
+								...(aggregate
+									? {
+											candleAggregation: {
+												baseInterval: "1h",
+												alignment: "UTC",
+												baseCandles: hourlyOrNative.length,
+												historyTruncated: derived?.historyTruncated ?? false,
+											},
+										}
+									: {}),
 								interval,
 								price: latest.close,
 								timestamp: latest.time,
@@ -214,8 +236,8 @@ export class TradingViewProvider implements MarketDataProvider {
 					}
 				});
 				chart.setMarket(providerSymbol, {
-					timeframe: timeframes[interval],
-					range: 300,
+					timeframe: aggregate ? "60" : timeframes[interval],
+					range,
 					to: Math.floor(Date.now() / 1000),
 				});
 			} catch {

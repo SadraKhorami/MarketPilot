@@ -85,7 +85,7 @@ export function AdminOverviewWorkspace() {
           <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Request volume</CardTitle>
-              <CardDescription>Recorded requests by authentication method · UTC days</CardDescription>
+              <CardDescription>Recorded requests by authentication method · daily totals</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={config} className="aspect-auto h-72 w-full">

@@ -5,6 +5,7 @@ import {
   type AIMessage,
   type AIProvider,
   AnswerSchema,
+  type ToolName,
   toolDefinitions,
 } from "./contracts";
 
@@ -120,11 +121,20 @@ export class OpenRouterProvider implements AIProvider {
     signal: AbortSignal,
     allowTrade = false,
     responseSchema?: { name: string; schema: Record<string, unknown> },
+    requiredTool?: ToolName,
   ): Promise<AICompletion> {
+    const definitions = toolDefinitions(allowAlert, allowTrade);
+    if (requiredTool && (final || !definitions.some((tool) => tool.function.name === requiredTool)))
+      throw new AIError("AI_TOOL_FORBIDDEN", "The required operation is unavailable for this request.");
     const body = {
       model: this.model,
       messages,
-      ...(final ? {} : { tools: toolDefinitions(allowAlert, allowTrade), tool_choice: "auto" }),
+      ...(final
+        ? {}
+        : {
+            tools: requiredTool ? definitions.filter((tool) => tool.function.name === requiredTool) : definitions,
+            tool_choice: requiredTool ? { type: "function", function: { name: requiredTool } } : "auto",
+          }),
       max_tokens: responseSchema ? 3000 : 1200,
       stream: false,
       provider: {
@@ -146,7 +156,10 @@ export class OpenRouterProvider implements AIProvider {
         : {}),
     };
     if (new TextEncoder().encode(JSON.stringify(body)).length > 24_000)
-      throw new AIError("AI_CONTEXT_LIMIT", "Research context is too large. Start a new research question.");
+      throw new AIError(
+        "AI_CONTEXT_LIMIT",
+        "The retrieved research evidence exceeds this request's processing limit. Retry with a narrower scope.",
+      );
     const parsed = completionSchema.safeParse(await this.request("/chat/completions", body, signal));
     if (!parsed.success)
       throw new AIError("AI_INVALID_RESPONSE", "The provider returned an invalid research response.");
@@ -178,10 +191,20 @@ export class OpenRouterProvider implements AIProvider {
       if (!response.ok) {
         await response.body?.cancel();
         throw new AIError(
-          response.status === 429 ? "AI_RATE_LIMITED" : "AI_PROVIDER_UNAVAILABLE",
+          response.status === 429
+            ? "AI_RATE_LIMITED"
+            : response.status === 402
+              ? "AI_CREDITS_EXHAUSTED"
+              : response.status === 401
+                ? "AI_PROVIDER_AUTH"
+                : "AI_PROVIDER_UNAVAILABLE",
           response.status === 429
             ? "The AI provider is busy. Try again shortly."
-            : "The AI provider is unavailable. Check provider configuration or credits.",
+            : response.status === 402
+              ? "The AI provider has insufficient credits. Check provider billing."
+              : response.status === 401
+                ? "The AI provider rejected its credentials. Check the configured provider key."
+                : "The AI provider is temporarily unavailable. Try again shortly.",
         );
       }
       const reader = response.body?.getReader();

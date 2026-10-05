@@ -185,6 +185,141 @@ describe("AI trade simulations", () => {
     });
     return fixture;
   }
+  it.each(["BUY", "SELL"] as const)("closes the remaining volume after TP1 on a %s pullback", async (direction) => {
+    const { entry, tx } = simulation();
+    entry.status = "open";
+    entry.entryPrice = 101;
+    entry.fees = 0;
+    entry.plan.direction = direction;
+    entry.plan.stopLoss = direction === "BUY" ? 90 : 120;
+    entry.plan.targets = direction === "BUY" ? [110, 120] : [90, 80];
+    entry.targetAllocations = [33, 67];
+    const rule = entry.plan.conditionalEntry;
+    if (!rule) throw new Error("Missing fixture rule");
+    rule.invalidation.price = entry.plan.stopLoss;
+    rule.profitProtection = { atrMultiple: 0.25, effectiveAt: new Date(start).toISOString() };
+    const bars =
+      direction === "BUY"
+        ? [
+            candle(start, { open: 108, high: 111, low: 107, close: 109 }),
+            candle(start + 60_000, { open: 109, high: 109, low: 101, close: 102 }),
+          ]
+        : [
+            candle(start, { open: 92, high: 93, low: 89, close: 91 }),
+            candle(start + 60_000, { open: 91, high: 101, low: 91, close: 100 }),
+          ];
+    await trackAutomatic(tx as never, entry as never, snapshot(bars) as never, confirmationSnapshot([]) as never);
+    expect(tx.journalExit.create).toHaveBeenCalledTimes(2);
+    expect(tx.journalExit.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          key: "auto:protection",
+          price: direction === "BUY" ? 101.5 : 100.5,
+          reason: "protection",
+        }),
+      }),
+    );
+    expect(tx.journalExit.create.mock.calls[1][0].data.quantity).toBeCloseTo(1.34);
+    expect(tx.journalEntry.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "closed" }) }),
+    );
+  });
+  it.each([false, true])(
+    "does not apply protection without TP1 or before activation (%s)",
+    async (beforeActivation) => {
+      const { entry, tx } = simulation();
+      entry.status = "open";
+      entry.entryPrice = 100;
+      entry.plan.targets = [110, 120];
+      entry.targetAllocations = [33, 67];
+      const rule = entry.plan.conditionalEntry;
+      if (!rule) throw new Error("Missing fixture rule");
+      rule.profitProtection = {
+        atrMultiple: 0.25,
+        effectiveAt: new Date(start + (beforeActivation ? 120_000 : 0)).toISOString(),
+      };
+      const bars = beforeActivation
+        ? [
+            candle(start, { open: 108, high: 111, low: 107, close: 109 }),
+            candle(start + 60_000, { open: 109, high: 109, low: 100, close: 101 }),
+          ]
+        : [candle(start, { open: 103, high: 104, low: 100, close: 101 })];
+      await trackAutomatic(tx as never, entry as never, snapshot(bars) as never, confirmationSnapshot([]) as never);
+      expect(tx.journalExit.create.mock.calls.every(([call]) => call.data.reason !== "protection")).toBe(true);
+      expect(tx.journalEntry.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "open" }) }),
+      );
+    },
+  );
+  it("uses the observed open when a gap crosses armed protection", async () => {
+    const { entry, tx } = simulation();
+    entry.status = "open";
+    entry.entryPrice = 100;
+    entry.plan.targets = [110, 120];
+    entry.targetAllocations = [33, 67];
+    const rule = entry.plan.conditionalEntry;
+    if (!rule) throw new Error("Missing fixture rule");
+    rule.profitProtection = { atrMultiple: 0.25, effectiveAt: new Date(start).toISOString() };
+    await trackAutomatic(
+      tx as never,
+      entry as never,
+      snapshot([
+        candle(start, { open: 108, high: 111, low: 107, close: 109 }),
+        candle(start + 60_000, { open: 99, high: 101, low: 98, close: 100 }),
+      ]) as never,
+      confirmationSnapshot([]) as never,
+    );
+    expect(tx.journalExit.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ price: 99, reason: "protection" }) }),
+    );
+  });
+  it("requires review if activation occurs inside a minute touching protection", async () => {
+    const { entry, tx } = simulation();
+    entry.status = "open";
+    entry.entryPrice = 100;
+    entry.plan.targets = [110, 120];
+    entry.targetAllocations = [33, 67];
+    const rule = entry.plan.conditionalEntry;
+    if (!rule) throw new Error("Missing fixture rule");
+    rule.profitProtection = { atrMultiple: 0.25, effectiveAt: new Date(start + 90_000).toISOString() };
+    await trackAutomatic(
+      tx as never,
+      entry as never,
+      snapshot([
+        candle(start, { open: 108, high: 111, low: 107, close: 109 }),
+        candle(start + 60_000, { open: 109, high: 109, low: 100, close: 101 }),
+      ]) as never,
+      confirmationSnapshot([]) as never,
+    );
+    expect(tx.journalExit.create).toHaveBeenCalledTimes(1);
+    expect(tx.journalEntry.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ monitoringStatus: "Needs review · protection activation timing unknown" }),
+      }),
+    );
+  });
+  it("pauses when TP1 and protection touch within the same minute", async () => {
+    const { entry, tx } = simulation();
+    entry.status = "open";
+    entry.entryPrice = 100;
+    entry.plan.targets = [110, 120];
+    entry.targetAllocations = [33, 67];
+    const rule = entry.plan.conditionalEntry;
+    if (!rule) throw new Error("Missing fixture rule");
+    rule.profitProtection = { atrMultiple: 0.25, effectiveAt: new Date(start).toISOString() };
+    await trackAutomatic(
+      tx as never,
+      entry as never,
+      snapshot([candle(start, { open: 103, high: 111, low: 100, close: 105 })]) as never,
+      confirmationSnapshot([]) as never,
+    );
+    expect(tx.journalExit.create).not.toHaveBeenCalled();
+    expect(tx.journalEntry.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ monitoringStatus: "Needs review · TP1/protection order unknown" }),
+      }),
+    );
+  });
   it("deducts estimated round-trip costs from each simulated exit", async () => {
     const { entry, tx } = simulation();
     entry.fees = 0;

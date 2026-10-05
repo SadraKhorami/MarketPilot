@@ -280,7 +280,7 @@ export function InteractiveMarketChart({
               </p>
               <p className="text-muted-foreground text-xs">
                 Bells mark alert creation at the configured price. New alerts beyond the available candles appear at the
-                right edge. Dashed levels are not past triggers. Times use your local timezone.
+                right edge. Dashed levels are not past triggers.
               </p>
             </PopoverContent>
           </Popover>

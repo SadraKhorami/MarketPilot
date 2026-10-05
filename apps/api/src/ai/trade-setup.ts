@@ -6,12 +6,20 @@ import {
   entryDeadline,
   entryDurations,
   resolveEntryPolicy,
+  setupScreeningRules,
   sizeUnleveragedTrade,
   type TradePreferences,
   type TradeSetup,
   TradeSetupSchema,
 } from "@marketpilot/ai";
-import { calculateStructuralLevels, calculateTechnicalIndicators, referenceMarkets } from "@marketpilot/market-data";
+import {
+  calculateStructuralLevels,
+  calculateTechnicalIndicators,
+  completedCandleIsCurrent,
+  hasUnexpectedCandleGaps,
+  referenceMarkets,
+  simpleMovingAverage,
+} from "@marketpilot/market-data";
 import type { MarketSnapshot } from "../market-data/market-data.service";
 import { completedSnapshotCandles } from "./market-evidence";
 
@@ -37,6 +45,7 @@ export function calculateTradeSetup(
   context?: MarketSnapshot,
   options?: {
     preferences: TradePreferences;
+    trendInterval?: ConditionalEntry["trendInterval"];
     scenario?: "breakout" | "pullback";
     condition?: "touch" | "candle_close" | "break_retest";
     validityCandles?: number;
@@ -44,85 +53,132 @@ export function calculateTradeSetup(
     validityReason?: string;
     news: ConditionalEntry["news"];
   },
-): { plan: TradeSetup | null; reason: string | null } {
-  const unavailable = (reason: string) => ({ plan: null, reason });
+): { plan: TradeSetup | null; reason: string | null; assessment?: "unavailable" } {
+  const unavailable = (reason: string, assessment?: "unavailable") => ({
+    plan: null,
+    reason,
+    ...(assessment ? { assessment } : {}),
+  });
   const { data } = snapshot;
   const duration = durations[data.interval];
   if (data.marketStatus.isOpen === false)
     return unavailable("The market is closed. A fresh actionable entry scenario is unavailable.");
   const policy = resolveEntryPolicy(options?.preferences ?? { interval: data.interval });
-  if (!context || durations[context.data.interval] <= duration)
-    return unavailable("A supported trend timeframe higher than the entry timeframe is required.");
+  const strictness = policy.strictness ?? "balanced";
+  const screening = setupScreeningRules(strictness);
+  const trendInterval = context?.data.interval ?? options?.trendInterval ?? policy.trendInterval;
+  if (durations[trendInterval] <= duration || (!context && screening.requireTrendAlignment))
+    return unavailable("A supported trend timeframe higher than the entry timeframe is required.", "unavailable");
   if (
     !Number.isFinite(Date.parse(data.timestamp)) ||
     Date.parse(data.timestamp) > now + 60_000 ||
     now - Date.parse(data.timestamp) > Math.max(duration * 2, 120_000)
   )
-    return unavailable("The current price observation is stale or its timestamp is invalid.");
+    return unavailable("The current price observation is stale or its timestamp is invalid.", "unavailable");
   const candles = completedSnapshotCandles(snapshot, now);
   const last = candles.at(-1);
   const previous = candles.at(-2);
-  if (snapshot.freshness !== "fresh" || !last || !previous || now - Date.parse(last.time) > duration * 2)
-    return unavailable("Fresh completed candles are required. Recheck when the market is open and data is current.");
+  if (
+    snapshot.freshness !== "fresh" ||
+    !last ||
+    !previous ||
+    !completedCandleIsCurrent(last.time, now, duration, data.providerSymbol)
+  )
+    return unavailable(
+      "Fresh completed candles are required. Recheck when the market is open and data is current.",
+      "unavailable",
+    );
   if (
     candles.some(
       (candle) =>
+        ![candle.open, candle.close, candle.high, candle.low].every(Number.isFinite) ||
         candle.low > Math.min(candle.open, candle.close) ||
         candle.high < Math.max(candle.open, candle.close) ||
         candle.high < candle.low,
     )
   )
-    return unavailable("Completed candle prices are inconsistent. No validated scenario is available.");
-  if (candles.length < 50)
-    return unavailable("Not enough completed candles for this scenario's trend and volatility checks.");
+    return unavailable("Completed candle prices are inconsistent. No validated scenario is available.", "unavailable");
+  if (candles.length < screening.minimumCandles)
+    return unavailable(
+      `At least ${screening.minimumCandles} completed candles are required at ${strictness} strictness.`,
+      "unavailable",
+    );
   if (candles.some((candle, index) => index > 0 && Date.parse(candle.time) <= Date.parse(candles[index - 1].time)))
-    return unavailable("The candle order could not be validated.");
-  if (
-    candles
-      .slice(-50)
-      .some(
-        (candle, index, window) =>
-          index > 0 && Date.parse(candle.time) - Date.parse(window[index - 1].time) !== duration,
-      )
-  )
-    return unavailable("Recent completed candles contain gaps. A continuous window is required for this entry rule.");
+    return unavailable("The candle order could not be validated.", "unavailable");
+  if (hasUnexpectedCandleGaps(candles.slice(-50), duration, data.providerSymbol))
+    return unavailable(
+      "Recent completed candles contain gaps. A continuous window is required for this entry rule.",
+      "unavailable",
+    );
   const indicators = calculateTechnicalIndicators(candles);
-  if (!indicators.atr || !indicators.sma50) return unavailable("Volatility or moving-average context is unavailable.");
-  const direction = requested === "AUTO" ? (last.close >= indicators.sma50 ? "BUY" : "SELL") : requested;
+  const entryAveragePeriod = candles.length >= 50 ? 50 : 30;
+  const entryAverage = simpleMovingAverage(
+    candles.map((candle) => candle.close),
+    entryAveragePeriod,
+  );
+  if (!indicators.atr || !entryAverage)
+    return unavailable("Volatility or moving-average context is unavailable.", "unavailable");
+  const direction = requested === "AUTO" ? (last.close >= entryAverage ? "BUY" : "SELL") : requested;
   const buy = direction === "BUY";
-  if (buy ? last.close < indicators.sma50 : last.close > indicators.sma50)
+  if (buy ? last.close < entryAverage : last.close > entryAverage)
     return unavailable(
       "The requested direction conflicts with the completed entry-timeframe trend. Wait for alignment.",
     );
+  const limitations: NonNullable<ConditionalEntry["evidence"]>["limitations"] = [];
+  if (candles.length < 50) limitations.push("limited_entry_history");
+  let contextCandles = context ? completedSnapshotCandles(context, now) : [];
+  let trendStatus: NonNullable<ConditionalEntry["evidence"]>["trendStatus"] = "unavailable";
+  let trendAveragePeriod: 30 | 50 | null = null;
   if (context) {
-    const contextCandles = completedSnapshotCandles(context, now);
     if (
-      contextCandles
-        .slice(-50)
-        .some(
-          (candle, index, window) =>
-            index > 0 &&
-            Date.parse(candle.time) - Date.parse(window[index - 1].time) !== durations[context.data.interval],
-        )
+      contextCandles.some(
+        (candle, index) =>
+          ![candle.open, candle.close, candle.high, candle.low].every(Number.isFinite) ||
+          candle.low > Math.min(candle.open, candle.close) ||
+          candle.high < Math.max(candle.open, candle.close) ||
+          candle.high < candle.low ||
+          (index > 0 && Date.parse(candle.time) <= Date.parse(contextCandles[index - 1].time)),
+      )
     )
-      return unavailable("Recent higher-timeframe candles contain gaps. Trend alignment cannot be validated.");
-    const contextAverage = calculateTechnicalIndicators(contextCandles).sma50;
+      return unavailable("Higher-timeframe candle prices or order are inconsistent.", "unavailable");
+    if (
+      hasUnexpectedCandleGaps(contextCandles.slice(-50), durations[context.data.interval], context.data.providerSymbol)
+    )
+      return unavailable(
+        "Recent higher-timeframe candles contain gaps. Trend alignment cannot be validated.",
+        "unavailable",
+      );
+    const period = contextCandles.length >= 50 ? 50 : 30;
+    const contextAverage = simpleMovingAverage(
+      contextCandles.map((candle) => candle.close),
+      period,
+    );
     const contextLast = contextCandles.at(-1);
-    const contextClose = contextLast?.close;
     if (
       context.freshness !== "fresh" ||
       !contextAverage ||
-      !contextClose ||
       !contextLast ||
-      contextCandles.length < 50 ||
-      now - Date.parse(contextLast.time) > durations[context.data.interval] * 2
-    )
-      return unavailable("Higher-timeframe context is unavailable. Recheck before forming a plan.");
-    if (buy ? contextClose < contextAverage : contextClose > contextAverage)
-      return unavailable(
-        "The entry timeframe and higher-timeframe trend disagree. Wait for alignment rather than forcing a direction.",
-      );
+      contextCandles.length < screening.minimumCandles ||
+      !completedCandleIsCurrent(contextLast.time, now, durations[context.data.interval], context.data.providerSymbol)
+    ) {
+      if (screening.requireTrendAlignment)
+        return unavailable("Higher-timeframe context is unavailable. Recheck before forming a plan.", "unavailable");
+      // Unavailable context cannot contribute targets or imply alignment.
+      contextCandles = [];
+    } else {
+      trendAveragePeriod = period;
+      trendStatus = (buy ? contextLast.close < contextAverage : contextLast.close > contextAverage)
+        ? "conflicting"
+        : "aligned";
+      if (trendStatus === "conflicting" && screening.requireTrendAlignment)
+        return unavailable(
+          "The entry timeframe and higher-timeframe trend disagree. Wait for alignment rather than forcing a direction.",
+        );
+      if (contextCandles.length < 50) limitations.push("limited_trend_history");
+    }
   }
+  if (trendStatus === "unavailable") limitations.push("trend_unavailable");
+  if (trendStatus === "conflicting") limitations.push("trend_conflict");
   const scenario = policy.scenario === "auto" ? (options?.scenario ?? "breakout") : policy.scenario;
   const condition =
     policy.condition === "auto"
@@ -145,10 +201,12 @@ export function calculateTradeSetup(
       ? Math.min(...recent.map((candle) => candle.low)) - indicators.atr * 0.25
       : Math.max(...recent.map((candle) => candle.high)) + indicators.atr * 0.25,
   );
-  const maxEntryDistance = indicators.atr * 1.5;
+  const maxEntryDistance = indicators.atr * screening.maxEntryDistanceAtr;
   if (Math.abs(data.price - entry) > maxEntryDistance)
     return unavailable(
-      "Price is too far from the structural entry (more than one and a half ATR). No timely entry plan is available.",
+      strictness === "balanced"
+        ? "Price is too far from the structural entry (more than one and a half ATR). No timely entry plan is available."
+        : `Price is too far from the structural entry (more than ${screening.maxEntryDistanceAtr} ATR at ${strictness} strictness).`,
     );
   const observedBreak = candles
     .slice(-6, -1)
@@ -171,7 +229,7 @@ export function calculateTradeSetup(
       "Price has moved beyond this entry area. Recheck for a new pullback instead of chasing the move.",
     );
   const levels = calculateStructuralLevels(candles);
-  const contextLevels = context ? calculateStructuralLevels(completedSnapshotCandles(context, now)) : null;
+  const contextLevels = contextCandles.length ? calculateStructuralLevels(contextCandles) : null;
   const candidates = buy
     ? [...levels.resistance, ...(contextLevels?.resistance ?? [])]
     : [...levels.support, ...(contextLevels?.support ?? [])];
@@ -228,7 +286,16 @@ export function calculateTradeSetup(
       version: 2,
       scenario,
       condition,
-      trendInterval: context.data.interval,
+      strictness,
+      evidence: {
+        entryCandles: candles.length,
+        trendCandles: contextCandles.length,
+        entryAveragePeriod,
+        trendAveragePeriod,
+        trendStatus,
+        limitations,
+      },
+      trendInterval,
       timeframeMode: policy.timeframeMode,
       validityMode: policy.validityMode,
       validityCandles,
@@ -236,10 +303,11 @@ export function calculateTradeSetup(
       candleOffsetMs,
       breakoutAt,
       proposedAt: new Date(now).toISOString(),
-      rationale: `${data.symbol}: prior completed-candle range boundary, aligned ${context.data.interval} trend and entry within 1.5 ATR. Required: ${entryDescription}.`,
+      rationale: `${data.symbol}: prior completed-candle range boundary; ${strictness} strictness; ${trendInterval} trend ${trendStatus}; entry within ${screening.maxEntryDistanceAtr} ATR. Required: ${entryDescription}.`,
       validityReason: `${validityBasis === "entry_candle_closes" ? `${validityCandles} future ${data.interval} candle closes from proposal` : `${validityCandles} × ${data.interval} elapsed from proposal`}; deadline ${expiresAt}, inclusive. Entry is monitored only after saving. Stop touched before entry invalidates; expiry applies only while waiting.`,
       invalidation: { kind: "stop_before_entry", price: stopLoss },
       atr: indicators.atr,
+      profitProtection: { atrMultiple: 0.25, effectiveAt: new Date(now).toISOString() },
       maxEntryDistance,
       news: options?.news ?? {
         status: "unavailable",
@@ -269,7 +337,7 @@ export function calculateTradeSetup(
     stopLoss,
     targets,
     targetBasis: "Observed support/resistance beyond entry, ordered by distance; not price predictions.",
-    ...(context ? { contextInterval: context.data.interval } : {}),
+    ...(contextCandles.length ? { contextInterval: trendInterval } : {}),
     observedPrice: data.price,
     observedAt: data.timestamp,
     expiresAt,

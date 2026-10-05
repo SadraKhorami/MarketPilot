@@ -168,7 +168,7 @@ export function MarketSymbolField({
               { key: "favorites", title: "Favorites", markets: favoriteMatches },
               ...(["crypto", "forex", "commodity", "stock"] as const).map((assetClass) => ({
                 key: assetClass,
-                title: { crypto: "Crypto", forex: "Forex", commodity: "Metals", stock: "Stocks" }[assetClass],
+                title: { crypto: "Crypto", forex: "Forex", commodity: "Commodities", stock: "Stocks" }[assetClass],
                 markets: visible.filter((market) => market.assetClass === assetClass),
               })),
             ]

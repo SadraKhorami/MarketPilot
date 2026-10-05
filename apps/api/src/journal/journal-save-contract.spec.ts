@@ -4,15 +4,20 @@ import { JournalService } from "./journal.service";
 const proposalTime = Date.parse("2026-10-04T19:34:14.456Z");
 const saveTime = Date.parse("2026-10-04T19:34:28.950Z");
 const runId = "00000000-0000-4000-8000-000000000001";
-function fixture() {
-  const prices = { entry: 100, stopLoss: 90, targets: [130], direction: "BUY" as const };
-  const quality = assessTradeEconomics(prices, 0);
+function fixture(minimumNetRewardRisk = 1.5) {
+  const prices = {
+    entry: 100,
+    stopLoss: 90,
+    targets: [minimumNetRewardRisk === 0 ? 104.1 : 130],
+    direction: "BUY" as const,
+  };
+  const quality = assessTradeEconomics(prices, 0, minimumNetRewardRisk);
   if (!quality.accepted) throw new Error(quality.reason);
   const context = {
     ...defaultTradePreferences,
     symbol: "BTC-USD",
     capital: 1000,
-    entryPolicy: { ...resolveEntryPolicy(defaultTradePreferences), roundTripCostPercent: 0 },
+    entryPolicy: { ...resolveEntryPolicy(defaultTradePreferences), roundTripCostPercent: 0, minimumNetRewardRisk },
   };
   const plan = TradeSetupSchema.parse({
     ...prices,
@@ -136,6 +141,22 @@ describe("confirmed AI save contract", () => {
       }),
     );
     expect(f.plan.expiresAt).toBe("2026-10-04T20:15:00.000Z");
+  });
+  it("saves a low-ratio plan with an explicitly disabled threshold without restoring the default", async () => {
+    const f = fixture(0);
+    await f.service.save("owner", runId);
+    expect(f.plan.conditionalEntry?.economics?.netRewardRisk).toBeLessThan(1.5);
+    expect(f.tx.journalEntry.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          plan: expect.objectContaining({
+            conditionalEntry: expect.objectContaining({
+              economics: expect.objectContaining({ minimumNetRewardRisk: 0 }),
+            }),
+          }),
+        }),
+      }),
+    );
   });
   it.each(["stale", "different market", "stop", "chase", "expired"])(
     "refuses %s evidence before writing a plan",

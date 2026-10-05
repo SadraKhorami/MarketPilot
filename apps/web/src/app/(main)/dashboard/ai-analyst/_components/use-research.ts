@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ResearchResult, StreamEvent, TradeContext } from "@marketpilot/ai/contracts";
 
-import { type ApiEnvelope, apiRequest } from "@/lib/api/client";
+import { type ApiEnvelope, ApiError, apiRequest } from "@/lib/api/client";
 
 import { streamResearch, toolLabels } from "./research-stream";
 
@@ -22,6 +22,28 @@ function failureMessage(error: unknown) {
 }
 function researchFailure(code: string | undefined, fallback: string) {
   switch (code) {
+    case "AI_NO_EVIDENCE":
+    case "AI_SETUP_NOT_CHECKED":
+      return "AI did not complete the required market or trade-setup checks. No conclusion about a valid setup was established. Retry the request.";
+    case "AI_CREDITS_EXHAUSTED":
+      return "The AI provider has insufficient credits. Check provider billing before retrying.";
+    case "AI_PROVIDER_AUTH":
+      return "The AI provider rejected its credentials. Check the configured provider key.";
+    case "AI_DAILY_BUDGET":
+    case "AI_PLAN_LIMIT":
+      return "Your daily research allowance has been reached. Check usage in Billing.";
+    case "AI_BUSY":
+    case "AI_RATE_LIMITED":
+      return "AI is busy or temporarily rate limited. Try again shortly.";
+    case "AI_TIMEOUT":
+    case "AI_INTERRUPTED":
+      return "Research was interrupted or timed out. Recover the result before retrying.";
+    case "AI_CANCELLED":
+      return "Research was cancelled.";
+    case "AI_PROVIDER_UNAVAILABLE":
+      return "The AI provider is temporarily unavailable. Try again shortly.";
+    case "AI_UNGROUNDED_ANSWER":
+      return "AI returned claims that could not be verified against the retrieved evidence. Retry the request.";
     case "AI_MISSING_CITATION":
       return "AI returned an analysis without citing the retrieved sources. The answer could not be verified; retry the question. This is not a rejection of the trade conditions.";
     case "AI_INVALID_CITATION":
@@ -128,14 +150,16 @@ export function useResearch() {
                 : { ok: "received", partial: "has incomplete data", unavailable: "is unavailable" }[
                     event.status ?? "unavailable"
                   ];
+            const outcomes = {
+              no_setup: "No valid entry setup under the current conditions.",
+              unavailable: "Setup assessment could not be completed with the available data.",
+              ready: "Conditional entry plan ready.",
+            };
+            const outcomeMessage = event.outcome ? outcomes[event.outcome] : undefined;
             setProgress(
               event.state === "complete" && event.reason
                 ? event.reason
-                : event.outcome === "no_setup"
-                  ? "No valid entry setup under the current conditions."
-                  : event.outcome === "ready"
-                    ? "Conditional entry plan ready."
-                    : `${toolLabels[event.tool]} ${detail}`,
+                : (outcomeMessage ?? `${toolLabels[event.tool]} ${detail}`),
             );
           }
           if (event.type === "result")
@@ -151,7 +175,10 @@ export function useResearch() {
     } catch (error) {
       update(requestId, {
         status: controller.signal.aborted ? "cancelled" : "interrupted",
-        error: controller.signal.aborted ? "Research cancelled." : failureMessage(error),
+        error: controller.signal.aborted
+          ? "Research cancelled."
+          : researchFailure(error instanceof ApiError ? error.code : undefined, failureMessage(error)),
+        errorCode: error instanceof ApiError ? error.code : undefined,
       });
     } finally {
       active.current = false;

@@ -14,6 +14,8 @@ export type MarketInstrument = z.infer<typeof MarketInstrumentSchema>;
 export const referenceMarkets: MarketInstrument[] = [
 	["XAU-USD", "Gold", "commodity", "OANDA:XAUUSD"],
 	["XAG-USD", "Silver", "commodity", "OANDA:XAGUSD"],
+	["WTI-USD", "WTI Crude Oil", "commodity", "OANDA:WTICOUSD"],
+	["BRENT-USD", "Brent Crude Oil", "commodity", "OANDA:BCOUSD"],
 	["EUR-USD", "Euro / US Dollar", "forex", "OANDA:EURUSD"],
 	["GBP-USD", "British Pound / US Dollar", "forex", "OANDA:GBPUSD"],
 	["USD-JPY", "US Dollar / Japanese Yen", "forex", "OANDA:USDJPY"],
@@ -49,6 +51,8 @@ const aliases: Record<string, string[]> = {
 	AVAX: ["Avalanche"],
 	XAU: ["Gold", "طلا"],
 	XAG: ["Silver", "نقره"],
+	WTI: ["WTI", "Crude oil", "Oil", "نفت"],
+	BRENT: ["Brent", "Brent oil", "نفت برنت"],
 	AAPL: ["Apple"],
 	MSFT: ["Microsoft"],
 	NVDA: ["Nvidia"],
@@ -82,6 +86,13 @@ export function articleMatchesAsset(
 	name?: string,
 ) {
 	const base = symbol.toUpperCase().split("-")[0];
+	const exclusion = commodityNewsExclusion(symbol);
+	if (
+		exclusion &&
+		new RegExp(exclusion.corporate, "i").test(article.title) &&
+		!new RegExp(exclusion.market, "i").test(article.title)
+	)
+		return false;
 	if (
 		article.affectedAssets.some((tag) =>
 			[symbol.toUpperCase(), base].includes(tag.toUpperCase()),
@@ -122,4 +133,18 @@ export function normalizeInstrumentSymbol(input: string) {
 		known?.symbol ??
 		(/^[A-Z0-9]+$/.test(normalized) ? `${normalized}-USD` : normalized)
 	);
+}
+
+// Generic metal words also occur in mining-company names. Corporate personnel
+// announcements are not commodity-market evidence, even when tagged "Gold".
+export function commodityNewsExclusion(
+	symbol: string,
+): { corporate: string; market: string } | null {
+	if (!["XAU", "XAG"].includes(symbol.toUpperCase().split("-")[0])) return null;
+	return {
+		corporate:
+			"(^|[^a-z0-9_])(appoints?|names|ceo|cfo|vp|vice president|technical services|board of directors)([^a-z0-9_]|$)",
+		market:
+			"(^|[^a-z0-9_])(prices?|bullion|futures|spot|per ounce|oz|xau|xag)([^a-z0-9_]|$)",
+	};
 }

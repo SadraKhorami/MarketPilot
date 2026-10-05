@@ -113,7 +113,7 @@ test("aborted calls, timeout, large provider output and context size are bounded
   await assert.rejects(provider.complete([], false, false, abort.signal), /cancelled/);
   await assert.rejects(
     provider.complete([{ role: "user", content: "x".repeat(25000) }], false, false, signal),
-    /too large/,
+    /processing limit/,
   );
   await assert.rejects(
     new OpenRouterProvider("test/research", "test-only-key", undefined, async () => {
@@ -151,4 +151,34 @@ test("shares catalog discovery and isolates cancellation before spend admission"
   assert.equal(requests, 1);
   await provider.check(signal);
   assert.equal(requests, 1);
+});
+
+test("requires an authorized named tool and refuses to force unauthorized mutations", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const provider = new OpenRouterProvider("test/research", "test-only-key", undefined, async (_url, options) => {
+    bodies.push(JSON.parse(String(options?.body)));
+    return Response.json(response);
+  });
+  await provider.complete([], false, false, signal, true, undefined, "getTradeSetup");
+  assert.deepEqual(bodies[0].tool_choice, { type: "function", function: { name: "getTradeSetup" } });
+  await assert.rejects(provider.complete([], false, false, signal, false, undefined, "getTradeSetup"), /unavailable/);
+  await assert.rejects(provider.complete([], false, false, signal, true, undefined, "createAlert"), /unavailable/);
+  await assert.rejects(provider.complete([], false, true, signal, true, undefined, "getTradeSetup"), /unavailable/);
+});
+
+test("provider billing and credentials failures have distinct safe error codes", async () => {
+  for (const [status, code] of [
+    [402, "AI_CREDITS_EXHAUSTED"],
+    [401, "AI_PROVIDER_AUTH"],
+    [429, "AI_RATE_LIMITED"],
+    [503, "AI_PROVIDER_UNAVAILABLE"],
+  ] as const) {
+    const provider = new OpenRouterProvider("test/research", "test-only-key", undefined, async () =>
+      Response.json({ error: { message: "private-provider-detail" } }, { status }),
+    );
+    await assert.rejects(
+      provider.complete([], false, false, signal),
+      (error: unknown) => error instanceof AIError && error.code === code && !error.message.includes("private"),
+    );
+  }
 });

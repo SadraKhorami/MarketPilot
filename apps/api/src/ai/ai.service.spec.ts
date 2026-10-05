@@ -163,3 +163,52 @@ describe("AI research lifecycle", () => {
     );
   });
 });
+
+describe("failed research diagnostics", () => {
+  it("records completed lookup metadata when the provider fails afterward", async () => {
+    const { service, provider, tools, db, release } = setup();
+    provider.complete = jest
+      .fn()
+      .mockResolvedValueOnce({
+        content: null,
+        calls: [
+          {
+            id: "lookup",
+            type: "function",
+            function: {
+              name: "getMarketPrice",
+              arguments: JSON.stringify({ symbol: "BTC-USD" }),
+            },
+          },
+        ],
+        inputTokens: 10,
+        outputTokens: 5,
+        cost: 0.001,
+      })
+      .mockRejectedValueOnce(new AIError("AI_CREDITS_EXHAUSTED", "Insufficient provider credits."));
+    tools.execute.mockResolvedValue({
+      tool: "getMarketPrice",
+      status: "unavailable",
+      sources: [],
+      proposal: null,
+      error: "Source unavailable.",
+    });
+    await expect(
+      service.research("owner", { ...input, input: "Analyze BTC-USD" }, new AbortController().signal, () => undefined),
+    ).rejects.toMatchObject({ code: "AI_CREDITS_EXHAUSTED" });
+    expect(db.aiRun.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "failed",
+          errorCode: "AI_CREDITS_EXHAUSTED",
+          result: {
+            diagnostics: {
+              tools: [expect.objectContaining({ tool: "getMarketPrice", state: "complete", status: "unavailable" })],
+            },
+          },
+        }),
+      }),
+    );
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+});

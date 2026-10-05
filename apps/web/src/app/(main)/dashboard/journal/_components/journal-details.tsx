@@ -202,7 +202,7 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
             <>
               <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {[
-                  ["Entry", entry.plan.entry],
+                  [entry.entryPrice === null ? "Planned entry" : "Actual entry", entry.entryPrice ?? entry.plan.entry],
                   ["Stop loss", entry.plan.stopLoss],
                   ...entry.plan.targets.map((target, i) => [`TP ${i + 1}`, target]),
                 ].map(([label, value]) => (
@@ -214,7 +214,7 @@ export function JournalDetails({ id, close, changed }: { id: string; close: () =
                   </div>
                 ))}
               </dl>
-              <ConditionalEntrySummary plan={entry.plan} />
+              <ConditionalEntrySummary plan={entry.plan} entryPrice={entry.entryPrice} />
               {entry.source === "ai" && !entry.plan.conditionalEntry ? (
                 <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
                   <span>

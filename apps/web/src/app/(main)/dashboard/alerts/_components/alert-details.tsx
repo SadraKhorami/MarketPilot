@@ -71,9 +71,7 @@ export function AlertDetails({
       >
         <Header className={presentation === "sheet" ? "p-0 pr-8" : undefined}>
           <Title>{data?.name ?? "Alert details"}</Title>
-          <Description>
-            Rule status and trigger history · {Intl.DateTimeFormat().resolvedOptions().timeZone}
-          </Description>
+          <Description>Rule status and trigger history</Description>
         </Header>
         <ResourceState {...rule} retry={rule.reload} />
         {data && !rule.error && !rule.loading ? (

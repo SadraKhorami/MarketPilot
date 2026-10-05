@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TradeSetupSchema } from "../src/contracts";
+import { assessTradeEconomics, profitProtectionLevel, TradeSetupSchema } from "../src/contracts";
 import {
   ConditionalEntrySchema,
   conditionalEntryStage,
+  defaultEntryPolicy,
   describeEntryCondition,
+  EntryPolicySchema,
   entryAlertApproach,
   entryConditionMet,
   entryDeadline,
+  setupScreeningRules,
 } from "../src/entry-policy";
 import { JournalExitInputSchema } from "../src/journal-trades";
 
@@ -148,4 +151,55 @@ test("reconciling estimates requires actual entry details and normal exits canno
   assert.equal(JournalExitInputSchema.safeParse({ ...exit, reconcile: true }).success, false);
   assert.equal(JournalExitInputSchema.safeParse({ ...exit, reconcile: true, actualEntry }).success, true);
   assert.equal(JournalExitInputSchema.safeParse({ ...exit, actualEntry }).success, false);
+});
+
+test("profit protection uses actual entry, covers supplied costs and preserves old plans", () => {
+  for (const direction of ["BUY", "SELL"] as const) {
+    const setup = TradeSetupSchema.parse({
+      ...plan(direction, "touch"),
+      conditionalEntry: {
+        ...plan(direction, "touch").conditionalEntry,
+        invalidation: { kind: "stop_before_entry", price: direction === "BUY" ? 90 : 110 },
+      },
+      symbol: "BTC-USD",
+      interval: "15m",
+      contextInterval: "1h",
+      stage: "confirmed",
+      stopLoss: direction === "BUY" ? 90 : 110,
+      targets: direction === "BUY" ? [120, 130] : [80, 70],
+      observedPrice: 100,
+      observedAt: time,
+      expiresAt: "2026-10-04T10:45:00Z",
+      quote: "USD",
+      pipSize: null,
+      sourceId: "fixture",
+    });
+    const rule = setup.conditionalEntry;
+    if (!rule) throw new Error("Missing fixture rule");
+    assert.equal(profitProtectionLevel(setup, 101), null);
+    rule.profitProtection = { atrMultiple: 0.25, effectiveAt: time };
+    assert.equal(profitProtectionLevel(setup, 101), direction === "BUY" ? 101.5 : 100.5);
+    const assessment = assessTradeEconomics(setup, 1);
+    if (!assessment.accepted) throw new Error(assessment.reason);
+    rule.economics = assessment.economics;
+    assert.equal(profitProtectionLevel(setup, 101), direction === "BUY" ? 102 : 100);
+    assert.equal(profitProtectionLevel(setup, direction === "BUY" ? 119.5 : 80.5), null);
+  }
+});
+
+test("strictness is backward compatible and rejects unknown policy values", () => {
+  assert.equal(EntryPolicySchema.parse(defaultEntryPolicy).strictness, undefined);
+  assert.equal(EntryPolicySchema.safeParse({ ...defaultEntryPolicy, strictness: "always_accept" }).success, false);
+  assert.deepEqual(setupScreeningRules(), setupScreeningRules("balanced"));
+  assert.equal(
+    EntryPolicySchema.parse({ ...defaultEntryPolicy, strictness: "low", minimumNetRewardRisk: 2 }).minimumNetRewardRisk,
+    2,
+  );
+});
+
+test("policy supports explicit zero and fractional reward thresholds without changing the default", () => {
+  assert.equal(EntryPolicySchema.parse({ ...defaultEntryPolicy, minimumNetRewardRisk: 0 }).minimumNetRewardRisk, 0);
+  assert.equal(EntryPolicySchema.parse({ ...defaultEntryPolicy, minimumNetRewardRisk: 0.5 }).minimumNetRewardRisk, 0.5);
+  assert.equal(EntryPolicySchema.safeParse({ ...defaultEntryPolicy, minimumNetRewardRisk: -0.1 }).success, false);
+  assert.equal(defaultEntryPolicy.minimumNetRewardRisk ?? 1.5, 1.5);
 });

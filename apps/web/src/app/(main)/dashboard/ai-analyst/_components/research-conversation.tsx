@@ -18,6 +18,18 @@ import {
 
 import { ResearchResponse } from "./research-response";
 import type { useResearch } from "./use-research";
+
+const failureTitles: Record<string, string> = {
+  AI_CREDITS_EXHAUSTED: "AI provider needs credits",
+  AI_PROVIDER_AUTH: "AI provider credentials rejected",
+  AI_SETUP_NOT_CHECKED: "Required setup check did not complete",
+  AI_NO_EVIDENCE: "Required evidence was not retrieved",
+  AI_MISSING_CITATION: "AI response could not be verified",
+  AI_INVALID_CITATION: "AI response could not be verified",
+  AI_UNGROUNDED_ANSWER: "AI response could not be verified",
+  AI_TIMEOUT: "Research timed out",
+  AI_INTERRUPTED: "Research was interrupted",
+};
 export function ResearchConversation({
   research,
   disabled,
@@ -77,9 +89,7 @@ export function ResearchConversation({
                         >
                           <div className="min-w-0">
                             <AlertTitle>
-                              {turn.errorCode === "AI_MISSING_CITATION" || turn.errorCode === "AI_INVALID_CITATION"
-                                ? "AI response could not be verified"
-                                : "Research did not complete"}
+                              {failureTitles[turn.errorCode ?? ""] ?? "Research did not complete"}
                             </AlertTitle>
                             <AlertDescription className="mt-1 [overflow-wrap:anywhere]">{turn.error}</AlertDescription>
                           </div>

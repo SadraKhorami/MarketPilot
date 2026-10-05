@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   defaultTradePreferences,
+  type JournalRecord,
   resolveEntryPolicy,
   type TradeContext,
-  type JournalRecord,
   type TradePreferences,
   TradePreferencesSchema,
 } from "@marketpilot/ai/contracts";
@@ -151,7 +151,16 @@ export function TradeContextQuestion({
                   ? "Required · edit preferences"
                   : `${resolveEntryPolicy(value).roundTripCostPercent}%`,
               ],
-              ["Minimum net reward / risk", `${resolveEntryPolicy(value).minimumNetRewardRisk ?? 1.5}R`],
+              [
+                "Setup strictness",
+                { low: "Low", balanced: "Balanced", high: "High" }[resolveEntryPolicy(value).strictness ?? "balanced"],
+              ],
+              [
+                "Minimum net reward / risk",
+                resolveEntryPolicy(value).minimumNetRewardRisk === 0
+                  ? "Disabled"
+                  : `${resolveEntryPolicy(value).minimumNetRewardRisk ?? 1.5}R`,
+              ],
               [
                 "Manual capital",
                 value.capital ? `${value.capital.toLocaleString()} ${value.currency}` : "Not supplied · no sizing",

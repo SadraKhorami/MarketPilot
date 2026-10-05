@@ -198,7 +198,7 @@ export const troubleshooting = [
   {
     question: "Research has reached a budget or allowance",
     answer:
-      "Billing shows your plan's daily research allowance, which resets at 00:00 UTC. The AI provider also has independent spending, rate and concurrency safeguards. Changing the provider token does not reset these application counters.",
+      "Billing shows your plan's daily research allowance and its next reset time. The AI provider also has independent spending, rate and concurrency safeguards. Changing the provider token does not reset these application counters.",
   },
   {
     question: "An alert did not arrive in Telegram or Discord",

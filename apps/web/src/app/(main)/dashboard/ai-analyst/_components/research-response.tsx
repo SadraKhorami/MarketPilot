@@ -1,8 +1,10 @@
 "use client";
 
 import type { ResearchResult } from "@marketpilot/ai/contracts";
+
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { MessageHeader } from "@/components/ui/message";
+
 import { AlertProposal } from "./alert-proposal";
 import { ResearchSources } from "./research-sources";
 import { toolLabels } from "./research-stream";
@@ -21,21 +23,32 @@ export function ResearchResponse({
 }) {
   const text = (en: string, fa: string) => (persian ? fa : en);
   const summary = result.answer.interpretation[0];
+  const outcomeLabels = {
+    no_setup: text("No valid setup", "پلن معتبر موجود نیست"),
+    ready: text("Plan ready", "پلن آماده"),
+    unavailable: text("Assessment unavailable", "بررسی تکمیل نشد"),
+  };
   const setup = result.tools.findLast((tool) => tool.tool === "getTradeSetup");
   const noSetupReason =
     setup?.reason ?? result.sources.find((source) => source.kind === "market" && source.error)?.error;
+  let assessmentLabel = text("No valid entry setup", "فعلاً سناریوی ورود معتبر موجود نیست");
+  if (setup?.outcome === "unavailable")
+    assessmentLabel = text("Setup assessment unavailable", "دادهٔ کافی برای تکمیل بررسی ستاپ موجود نیست");
+  else if (setup?.setupAttempts?.some((attempt) => attempt.outcome === "unavailable"))
+    assessmentLabel = text("No validated setup · some checks incomplete", "ستاپ تأیید نشد؛ بعضی بررسی‌ها ناقص مانده‌اند");
   return (
     <>
       <MessageHeader>MarketPilot · {text("Research", "تحلیل")}</MessageHeader>
       {!result.tradeSetup && setup ? (
         <div className="flex flex-col gap-1" dir={persian ? "rtl" : undefined}>
-          <p className="text-sm font-medium">{text("No valid entry setup", "فعلاً سناریوی ورود معتبر موجود نیست")}</p>
-          {noSetupReason ? <p className="text-sm text-muted-foreground">{noSetupReason}</p> : null}
+          <p className="font-medium text-sm">{assessmentLabel}</p>
+          {noSetupReason ? <p className="text-muted-foreground text-sm">{noSetupReason}</p> : null}
         </div>
       ) : null}
       {result.tradeSetup ? (
         <TradeScenario plan={result.tradeSetup} result={result} change={change} persian={persian} edit={edit} />
-      ) : summary ? (
+      ) : null}
+      {!result.tradeSetup && summary ? (
         <Bubble variant="ghost">
           <BubbleContent className="whitespace-pre-wrap leading-relaxed" dir={persian ? "rtl" : undefined}>
             {summary.text}
@@ -65,7 +78,7 @@ export function ResearchResponse({
           />
         ))}
       <details className="group border-b pb-3" dir={persian ? "rtl" : undefined}>
-        <summary className="cursor-pointer rounded-md py-2 text-sm font-medium focus-visible:outline-ring">
+        <summary className="cursor-pointer rounded-md py-2 font-medium text-sm focus-visible:outline-ring">
           {text("Analysis & sources", "تحلیل و منابع")} · {result.sources.length}{" "}
           {text(result.sources.length === 1 ? "source" : "sources", "منبع")}
         </summary>
@@ -100,13 +113,8 @@ export function ResearchResponse({
             <ul className="mt-2 flex flex-col gap-1 text-muted-foreground text-xs">
               {result.tools.map((tool) => (
                 <li key={tool.id}>
-                  {toolLabels[tool.tool]} ·{" "}
-                  {tool.outcome === "no_setup"
-                    ? text("No valid setup", "پلن معتبر موجود نیست")
-                    : tool.outcome === "ready"
-                      ? text("Plan ready", "پلن آماده")
-                      : tool.status}{" "}
-                  · {tool.latencyMs} ms
+                  {toolLabels[tool.tool]} · {tool.outcome ? outcomeLabels[tool.outcome] : tool.status} ·{" "}
+                  {tool.latencyMs} ms
                   {tool.reason ? ` · ${tool.reason}` : ""}
                 </li>
               ))}

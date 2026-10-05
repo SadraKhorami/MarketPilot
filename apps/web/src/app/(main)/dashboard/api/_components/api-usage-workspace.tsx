@@ -85,7 +85,7 @@ export function ApiUsageWorkspace({ initialKeyId = "all" }: { initialKeyId?: str
         <>
           <div className="grid gap-4 sm:grid-cols-3">
             {[
-              ["Requests", data.totalRequests.toLocaleString(), `Across ${data.days} UTC days`],
+              ["Requests", data.totalRequests.toLocaleString(), `Across ${data.days} days`],
               [
                 "Successful",
                 success === null ? "—" : `${success.toFixed(1)}%`,
@@ -113,7 +113,7 @@ export function ApiUsageWorkspace({ initialKeyId = "all" }: { initialKeyId?: str
               <CardHeader>
                 <CardTitle>Daily requests</CardTitle>
                 <CardDescription>
-                  {data.period.since.slice(0, 10)} – {data.period.until.slice(0, 10)} · UTC · today is partial
+                  {data.period.since.slice(0, 10)} – {data.period.until.slice(0, 10)} · today is partial
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -166,7 +166,7 @@ export function ApiUsageWorkspace({ initialKeyId = "all" }: { initialKeyId?: str
             <CardHeader>
               <CardTitle>Request history</CardTitle>
               <CardDescription>
-                Recorded requests within the selected key and UTC period; rejected authenticated requests are included.
+                Recorded requests within the selected key and period; rejected authenticated requests are included.
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0">
@@ -200,7 +200,7 @@ export function ApiUsageWorkspace({ initialKeyId = "all" }: { initialKeyId?: str
                         </TableCell>
                         <TableCell>{row.latencyMs} ms</TableCell>
                         <TableCell className="text-muted-foreground text-xs">
-                          {new Date(row.occurredAt).toLocaleString("en-GB", { timeZone: "UTC" })} UTC
+                          {new Date(row.occurredAt).toLocaleString("en-GB")}
                         </TableCell>
                       </TableRow>
                     ))}

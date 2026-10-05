@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Link from "next/link";
 
-import { marketSourceLabel, type MarketObservation } from "@marketpilot/market-data";
+import { type MarketObservation, marketSourceLabel } from "@marketpilot/market-data";
 import { ArrowUpRight, CandlestickChart, CircleAlert } from "lucide-react";
 
 import {
@@ -124,7 +124,7 @@ export function MarketsExplorer() {
           </FieldGroup>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex flex-col gap-1">
-              <span className="font-medium">Crypto · Forex · Metals · Stocks</span>
+              <span className="font-medium">Crypto · Forex · Commodities · Stocks</span>
               <span className="text-muted-foreground text-xs">Automatic updates · 15m candles</span>
             </div>
             <Badge variant="secondary">{quoteCount} observations</Badge>

@@ -1,15 +1,16 @@
+import { randomUUID } from "node:crypto";
 import {
   AIError,
-  automaticEntryIntervals,
-  resolveEntryPolicy,
-  type TradeContext,
-  type ConditionalEntry,
   AlertInputSchema,
+  automaticEntryIntervals,
+  type ConditionalEntry,
+  resolveEntryPolicy,
   type Source,
   SourceSchema,
   type ToolName,
   type ToolResult,
   ToolResultSchema,
+  type TradeContext,
   toolSchemas,
 } from "@marketpilot/ai";
 import {
@@ -23,12 +24,12 @@ import {
   referenceMarkets,
 } from "@marketpilot/market-data";
 import { Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { MarketDataService, type MarketSnapshot } from "../market-data/market-data.service";
 import { NewsService } from "../news/news.service";
 import { WatchlistsService } from "../watchlists/watchlists.service";
 import { completedSnapshotCandles } from "./market-evidence";
 import { calculateTradeSetup } from "./trade-setup";
+import { searchTradeSetups, tradeSetupCandidates } from "./trade-setup-search";
 
 export interface ResearchContext {
   userId: string;
@@ -90,6 +91,8 @@ export class AiToolsService {
         sources: [
           {
             ...baseSource(tool === "getMarketNews" ? "news" : "market", "Research source unavailable", "MarketPilot"),
+            symbol: context.tradeSymbol ?? null,
+            interval: tool === "getMarketNews" ? null : (context.tradeInterval ?? null),
             status: "unavailable",
             error: "The requested source is temporarily unavailable.",
           },
@@ -203,49 +206,97 @@ export class AiToolsService {
         return ToolResultSchema.parse(result);
       }
       const symbol = resolveResearchSymbol(args.symbol);
-      const snapshot = await this.snapshot(symbol, args.interval, context);
-
-      const higher = { "1m": "15m", "5m": "1h", "15m": "1h", "1h": "6h", "6h": "1d", "1d": "1d" } as const;
-      const trendInterval =
-        policy.timeframeMode === "manual" ? policy.trendInterval : (args.trendInterval ?? higher[args.interval]);
-      const contextSnapshot = await this.snapshot(symbol, trendInterval, context);
-      const evaluatedAt = Date.now();
-      const source = this.marketSource(snapshot, 50, tool, undefined, evaluatedAt);
-      const contextSource = this.marketSource(contextSnapshot, 50, "getTrendAnalysis", undefined, evaluatedAt);
       const newsSources = context.newsResult.sources.filter((source) => source.status !== "unavailable");
       const latestPublishedAt =
         newsSources
           .map((source) => source.observedAt)
           .filter((time): time is string => !!time)
           .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
-      const scenario = calculateTradeSetup(snapshot, args.direction, source.id, evaluatedAt, contextSnapshot, {
+      const news: ConditionalEntry["news"] = {
+        status: !newsSources.length
+          ? "unavailable"
+          : latestPublishedAt &&
+              Date.now() >= Date.parse(latestPublishedAt) &&
+              Date.now() - Date.parse(latestPublishedAt) <= 24 * 3_600_000
+            ? "available"
+            : "stale",
+        latestPublishedAt,
+        checkedAt: new Date().toISOString(),
+        sourceIds: newsSources.map((source) => source.id),
+        calendar: "unavailable",
+      };
+      const scenario = await searchTradeSetups(
+        tradeSetupCandidates(args, preferences),
         preferences,
-        scenario: args.scenario,
-        condition: args.condition,
-        validityCandles: args.validityCandles,
-        rationale: args.rationale,
-        validityReason: args.validityReason,
-        news: {
-          status: !newsSources.length
-            ? "unavailable"
-            : latestPublishedAt &&
-                Date.now() >= Date.parse(latestPublishedAt) &&
-                Date.now() - Date.parse(latestPublishedAt) <= 24 * 3_600_000
-              ? "available"
-              : "stale",
-          latestPublishedAt,
-          checkedAt: new Date().toISOString(),
-          sourceIds: newsSources.map((source) => source.id),
-          calendar: "unavailable",
+        async (candidate) => {
+          try {
+            const snapshot = await this.snapshot(symbol, candidate.interval, context);
+            context.signal.throwIfAborted();
+            let contextSnapshot: MarketSnapshot | undefined;
+            try {
+              try {
+                contextSnapshot = await this.snapshot(symbol, candidate.trendInterval ?? policy.trendInterval, context);
+              } catch (error) {
+                context.signal.throwIfAborted();
+                if (error instanceof AIError || (error instanceof Error && error.name === "ZodError")) throw error;
+                if (policy.timeframeMode !== "auto" || candidate.interval !== "1h" || candidate.trendInterval !== "6h")
+                  throw error;
+                candidate.trendInterval = "1d";
+                contextSnapshot = await this.snapshot(symbol, "1d", context);
+              }
+            } catch (error) {
+              context.signal.throwIfAborted();
+              if (
+                policy.strictness !== "low" ||
+                error instanceof AIError ||
+                (error instanceof Error && error.name === "ZodError")
+              )
+                throw error;
+              // Low screening permits entry-only evidence; the stored plan discloses missing trend context.
+            }
+            const evaluatedAt = Date.now();
+            context.signal.throwIfAborted();
+            const source = this.marketSource(snapshot, 50, tool, undefined, evaluatedAt);
+            const contextSource = contextSnapshot
+              ? this.marketSource(contextSnapshot, 50, "getTrendAnalysis", undefined, evaluatedAt)
+              : this.unavailable(symbol, candidate.trendInterval ?? policy.trendInterval);
+            const evaluation = calculateTradeSetup(
+              snapshot,
+              candidate.direction,
+              source.id,
+              evaluatedAt,
+              contextSnapshot,
+              { preferences, ...candidate, news },
+            );
+            return { ...evaluation, sources: [source, contextSource] };
+          } catch (error) {
+            if (
+              context.signal.aborted ||
+              error instanceof AIError ||
+              (error instanceof Error && error.name === "ZodError")
+            )
+              throw error;
+            const source = this.unavailable(symbol);
+            source.interval = candidate.interval;
+            return {
+              plan: null,
+              reason: "Market observations for this entry/trend pair are unavailable.",
+              sources: [source],
+            };
+          }
         },
-      });
+        context.signal,
+      );
+      const source = scenario.sources[0];
+      result.setupAttempts = scenario.attempts;
       if (scenario.plan?.conditionalEntry) {
         scenario.plan.conditionalEntry.openRisk = await context.readOpenRisk?.(scenario.plan.quote);
       }
       result.status = scenario.plan ? "ok" : "unavailable";
       result.tradeSetup = scenario.plan;
       result.error = scenario.reason;
-      if (scenario.plan) {
+      if (scenario.plan && source) {
+        const quote = scenario.plan.quote;
         source.facts.push(
           {
             label: "Entry basis",
@@ -275,11 +326,11 @@ export class AiToolsService {
           ...scenario.plan.targets.map((target, index) => ({
             label: `Target ${index + 1} (observed structural level)`,
             value: target,
-            unit: scenario.plan!.quote,
+            unit: quote,
           })),
         );
       }
-      result.sources = [SourceSchema.parse(source), contextSource];
+      result.sources = scenario.sources.map((source) => SourceSchema.parse(source));
     } else if (tool === "createAlert") {
       const args = AlertInputSchema.parse(input);
       const symbol = resolveResearchSymbol(args.symbol);
@@ -311,7 +362,7 @@ export class AiToolsService {
       } catch (error) {
         if (context.signal.aborted || (error instanceof Error && error.name === "ZodError") || error instanceof AIError)
           throw error;
-        result.sources = [this.unavailable(symbol)];
+        result.sources = [this.unavailable(symbol, args.interval)];
       }
     }
     if (result.sources.some((s) => s.status !== "ok") || result.sources.some((s) => s.freshness === "stale")) {
@@ -343,10 +394,11 @@ export class AiToolsService {
       throw new AIError("AI_INVALID_TOOL_RESULT", "The market observation did not match the request.");
     return { ...snapshot, data };
   }
-  private unavailable(symbol: string): Source {
+  private unavailable(symbol: string, interval: MarketDataInterval | null = null): Source {
     return {
       ...baseSource("market", symbol, "MarketPilot market service"),
       symbol,
+      interval,
       status: "unavailable",
       error: "This exact product or its observations are unavailable. The quote asset has not been changed.",
     };
@@ -359,7 +411,7 @@ export class AiToolsService {
     const start = good.length ? Math.max(...good.map((s) => Date.parse(s.data.candles.slice(-window)[0].time))) : 0;
     const end = good.length ? Math.min(...good.map((s) => Date.parse(s.data.candles.at(-1)?.time ?? ""))) : 0;
     return results.map((result, i) => {
-      if (result.status === "rejected") return this.unavailable(resolveResearchSymbol(symbols[i]));
+      if (result.status === "rejected") return this.unavailable(resolveResearchSymbol(symbols[i]), interval);
       const candles = result.value.data.candles.filter((c) => Date.parse(c.time) >= start && Date.parse(c.time) <= end);
       return this.marketSource(result.value, window, "compareAssets", candles);
     });
@@ -378,7 +430,7 @@ export class AiToolsService {
       : completed.slice(-window);
     const quote = data.symbol.split("-")[1];
     const end = candles.at(-1);
-    if (!end) return this.unavailable(data.symbol);
+    if (!end) return this.unavailable(data.symbol, data.interval);
     // Earlier candles initialize indicators; comparison calculations never include bars after the shared endpoint.
     const calculationCandles = completed.filter((candle) => Date.parse(candle.time) <= Date.parse(end.time));
     const indicators = calculateTechnicalIndicators(calculationCandles);
@@ -410,6 +462,23 @@ export class AiToolsService {
         { label: "Chart candles", value: candles.length, unit: "candles" },
       ],
     };
+    if (data.candleAggregation) {
+      source.facts.push(
+        {
+          label: "Candle construction",
+          value: "6h OHLC from observed 1h candles; fixed UTC buckets, not native 6h bars.",
+          unit: "method",
+        },
+        { label: "Hourly observations retrieved", value: data.candleAggregation.baseCandles, unit: "candles" },
+      );
+    }
+    if (data.candleAggregation?.historyTruncated) {
+      source.facts.push({
+        label: "History limitation",
+        value: "History starts after the last unclassified hourly gap; no missing prices filled.",
+        unit: "method",
+      });
+    }
     if (tool !== "getMarketPrice") {
       source.facts.push(
         { label: "Latest completed candle close", value: end.close, unit: quote },

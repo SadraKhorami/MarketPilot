@@ -4,7 +4,7 @@ export const TradeEconomicsSchema = z
   .object({
     costBasis: z.literal("user_estimate"),
     roundTripCostPercent: z.number().min(0).max(10).finite(),
-    minimumNetRewardRisk: z.number().min(1).max(5).finite(),
+    minimumNetRewardRisk: z.number().min(0).max(5).finite(),
     targetAllocations: z.array(z.number().positive().max(100)).min(1).max(3),
     costPerUnit: z.number().nonnegative().finite(),
     grossRewardRisk: z.number().positive().finite(),
@@ -36,7 +36,7 @@ export function assessTradeEconomics(
     roundTripCostPercent < 0 ||
     roundTripCostPercent > 10 ||
     !Number.isFinite(minimumNetRewardRisk) ||
-    minimumNetRewardRisk < 1 ||
+    minimumNetRewardRisk < 0 ||
     minimumNetRewardRisk > 5
   )
     return reject("Choose valid cost and minimum net reward/risk settings.");
@@ -71,7 +71,7 @@ export function assessTradeEconomics(
   const stopRiskPerUnit = risk + costPerUnit;
   const netRewardPerUnit = reward - costPerUnit;
   const netRewardRisk = netRewardPerUnit / stopRiskPerUnit;
-  if (netRewardRisk + 1e-9 < minimumNetRewardRisk)
+  if (minimumNetRewardRisk > 0 && netRewardRisk + 1e-9 < minimumNetRewardRisk)
     return reject(
       `No suitable setup: weighted net reward/risk is ${netRewardRisk.toFixed(2)}R, below your ${minimumNetRewardRisk.toFixed(2)}R minimum after estimated costs.`,
     );

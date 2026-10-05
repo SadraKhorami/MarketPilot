@@ -210,7 +210,7 @@ export function JournalImport({
               />
               <FieldDescription>
                 Excel: first worksheet, first row contains column names. Dates: ISO format (YYYY-MM-DD HH:mm). Times
-                without an offset use the timezone below.
+                without an offset use the selected clock.
               </FieldDescription>
             </Field>
             {rows.length ? (
@@ -275,15 +275,15 @@ export function JournalImport({
                       </Select>
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor="import-zone">Dates without timezone</FieldLabel>
+                      <FieldLabel htmlFor="import-zone">File clock</FieldLabel>
                       <Select value={timezone} onValueChange={setTimezone}>
                         <SelectTrigger id="import-zone" className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            <SelectItem value="UTC">UTC</SelectItem>
-                            <SelectItem value="local">My device timezone</SelectItem>
+                            <SelectItem value="UTC">Universal clock</SelectItem>
+                            <SelectItem value="local">My device clock</SelectItem>
                           </SelectGroup>
                         </SelectContent>
                       </Select>

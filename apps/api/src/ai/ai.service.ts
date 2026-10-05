@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   AIError,
   type AIMessage,
@@ -10,15 +11,14 @@ import {
 } from "@marketpilot/ai";
 import { type AiRun, Prisma } from "@marketpilot/db";
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { createHash } from "node:crypto";
 import { EntitlementsService } from "../billing/entitlements.service";
 
 import { DatabaseService } from "../database.module";
-import { AiSettingsService } from "./ai-settings.service";
+import type { ResearchDto } from "./ai.dto";
 import { AiBudgetService } from "./ai-budget.service";
 import { AiProposalsService, serializeProposal } from "./ai-proposals.service";
+import { AiSettingsService } from "./ai-settings.service";
 import { AiToolsService } from "./ai-tools.service";
-import type { ResearchDto } from "./ai.dto";
 import { recordedJournalRisk } from "./journal-risk";
 
 export const AI_PROVIDER = Symbol("AI_PROVIDER");
@@ -157,6 +157,7 @@ export class AiService {
     let outputTokens = 0;
     let costUsd: number | null = null;
     let toolCount = 0;
+    const toolDiagnostics: Array<Extract<StreamEvent, { type: "tool" }>> = [];
     const start = Date.now();
     try {
       signal.throwIfAborted();
@@ -254,6 +255,7 @@ export class AiService {
         })(),
         emit: (event) => {
           if (event.type === "tool" && event.state === "running") toolCount++;
+          if (event.type === "tool" && event.state === "complete") toolDiagnostics.push(event);
           emit(event);
         },
         usage: (incoming, outgoing, cost) => {
@@ -307,6 +309,7 @@ export class AiService {
           data: {
             status: signal.aborted ? "cancelled" : "failed",
             errorCode: safe.code,
+            result: { diagnostics: { tools: toolDiagnostics } },
             inputTokens,
             outputTokens,
             costUsd,

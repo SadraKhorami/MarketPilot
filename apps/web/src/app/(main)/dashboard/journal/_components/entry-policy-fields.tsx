@@ -1,14 +1,16 @@
 "use client";
 import { useId } from "react";
+
 import {
-  resolveEntryPolicy,
-  EntryPolicySchema,
-  IntervalSchema,
   automaticEntryIntervals,
-  entryDurations,
   type EntryPolicy,
+  EntryPolicySchema,
+  entryDurations,
+  IntervalSchema,
+  resolveEntryPolicy,
   type TradePreferences,
 } from "@marketpilot/ai/contracts";
+
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -46,7 +48,7 @@ export function EntryPolicyFields({
       <FieldDescription>
         {key === "timeframeMode"
           ? policy.timeframeMode === "auto"
-            ? `AI proposes within ${automaticEntryIntervals(value.holding).join(" / ")}; server validates trend alignment.`
+            ? `AI proposes within ${automaticEntryIntervals(value.holding).join(" / ")}; server applies the selected screening level.`
             : "Entry and trend timeframes stay exactly as selected."
           : "Only the deadline for a waiting entry. An open trade has no expiry from this setting."}
       </FieldDescription>
@@ -82,6 +84,35 @@ export function EntryPolicyFields({
     policy.timeframeMode === "manual" && entryDurations[policy.trendInterval] <= entryDurations[value.interval];
   return (
     <FieldGroup className="grid gap-4 sm:grid-cols-2">
+      <Field className="sm:col-span-2">
+        <FieldLabel id={`${id}-strictness`}>Setup strictness</FieldLabel>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={policy.strictness ?? "balanced"}
+          disabled={disabled}
+          aria-labelledby={`${id}-strictness`}
+          onValueChange={(strictness) => {
+            if (strictness === "low" || strictness === "balanced" || strictness === "high") update({ strictness });
+          }}
+        >
+          <ToggleGroupItem value="low">Low</ToggleGroupItem>
+          <ToggleGroupItem value="balanced">Balanced</ToggleGroupItem>
+          <ToggleGroupItem value="high">High</ToggleGroupItem>
+        </ToggleGroup>
+        <FieldDescription>
+          {
+            {
+              low: "Flexible screening: 30+ completed candles, entry within 2.5 ATR. Higher trend may conflict or be unavailable; limitations appear on the plan.",
+              balanced:
+                "Standard screening: 50+ completed candles on both timeframes, aligned higher trend and entry within 1.5 ATR.",
+              high: "Selective screening: 100+ completed candles on both timeframes, aligned higher trend and entry within 1 ATR.",
+            }[policy.strictness ?? "balanced"]
+          }{" "}
+          A positive minimum reward / risk and estimated costs apply at every level. Zero disables the ratio threshold.
+        </FieldDescription>
+      </Field>
       {mode("Entry & trend timeframes", "timeframeMode")}
       {mode("Entry validity", "validityMode")}
       {policy.timeframeMode === "manual" ? (

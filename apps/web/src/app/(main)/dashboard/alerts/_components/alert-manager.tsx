@@ -209,8 +209,8 @@ export function AlertManager() {
                 }}
               />
               <p className="text-muted-foreground text-xs">
-                Times use your device timezone. The first observation sets a baseline; a new notification requires a
-                crossing after the condition has reset. Paused rules are not evaluated.
+                The first observation sets a baseline; a new notification requires a crossing after the condition has
+                reset. Paused rules are not evaluated.
               </p>
             </>
           ) : null}

@@ -22,7 +22,6 @@ export function observationTime(value: string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZoneName: "short",
   });
 }
 export function MarketAlertDetails({ report }: { report: MarketAlertReport }) {

@@ -103,7 +103,7 @@ const descriptions: Record<ToolName, string> = {
   createAlert:
     "Propose a rule only when the current user explicitly requests an alert. Never saves it. Separate user confirmation is required.",
   getTradeSetup:
-    "Only on an explicit entry/exit or trade setup request, after mandatory stored-news retrieval. Propose breakout or pullback, an entry interval from the confirmed allowed set, a higher trend interval, a supported touch/candle_close/break_retest condition and validity of one to twelve entry candles (maximum seventy-two hours). Manual preferences override proposals. For new close/retest plans the count means future entry-timeframe candle closes from proposal; touch uses elapsed duration. Saving never restarts the deadline. candle_close breakout requires a strict close beyond Entry; a close on the other side does not invalidate. Price-based invalidation is only Stop touched before entry; economic and capital checks can also reject confirmation. Pullback requires an observed break and later retest; break_retest uses separate candles. Never add unsupported execution rules to rationale or validityReason. The server generates the saved operational prose. Reversal is unsupported. The server validates the proposal and calculates levels from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use observed structural levels, with one to three targets when supported. AUTO selects a conditional side only when entry and higher-timeframe context align. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
+    "Only on an explicit entry/exit or trade setup request, after mandatory stored-news retrieval. Propose breakout or pullback, an entry interval from the confirmed allowed set, a higher trend interval, a supported touch/candle_close/break_retest condition and validity of one to twelve entry candles (maximum seventy-two hours). Manual preferences override proposals. For new close/retest plans the count means future entry-timeframe candle closes from proposal; touch uses elapsed duration. Saving never restarts the deadline. candle_close breakout requires a strict close beyond Entry; a close on the other side does not invalidate. Price-based invalidation is only Stop touched before entry; economic and capital checks can also reject confirmation. Pullback requires an observed break and later retest; break_retest uses separate candles. Never add unsupported execution rules to rationale or validityReason. The server generates the saved operational prose. Reversal is unsupported. The server validates the proposal and calculates levels from completed candles. Entry comes from the prior candle range high/low, NOT a moving average. Stop comes from recent swing extremes with an ATR buffer. Targets use observed structural levels, with one to three targets when supported. AUTO selects the side from completed entry candles. Balanced/high require higher-timeframe alignment; low can permit conflicting or unavailable higher context and shorter history, disclosed in conditionalEntry.evidence. Strictness comes only from confirmed preferences, never from model proposals. Server returns the stage, levels or an unavailable reason. Never invent levels or claim a guaranteed outcome.",
 };
 export function toolDefinitions(allowAlert: boolean, allowTrade = false) {
   return Object.entries(toolSchemas)
@@ -209,9 +209,16 @@ export const TradeSetupSchema = z
     const rule = plan.conditionalEntry;
     if (rule) {
       const validity = Date.parse(plan.expiresAt) - Date.parse(rule.proposedAt);
+      const entryOnly =
+        rule.strictness === "low" &&
+        rule.evidence?.trendStatus === "unavailable" &&
+        rule.evidence.trendCandles === 0 &&
+        rule.evidence.trendAveragePeriod === null &&
+        rule.evidence.limitations.includes("trend_unavailable") &&
+        plan.contextInterval === undefined;
       if (
         rule.invalidation.price !== plan.stopLoss ||
-        rule.trendInterval !== plan.contextInterval ||
+        (!entryOnly && rule.trendInterval !== plan.contextInterval) ||
         entryDurations[rule.trendInterval] <= entryDurations[plan.interval] ||
         Date.parse(plan.expiresAt) !==
           entryDeadline(
@@ -231,6 +238,18 @@ export const TradeSetupSchema = z
     if (!valid) context.addIssue({ code: "custom", message: "Invalid scenario level ordering" });
   });
 export type TradeSetup = z.infer<typeof TradeSetupSchema>;
+export const TradeSetupAttemptSchema = z
+  .object({
+    interval: IntervalSchema,
+    trendInterval: IntervalSchema,
+    scenario: z.enum(["breakout", "pullback"]),
+    condition: z.enum(["touch", "candle_close", "break_retest"]),
+    outcome: z.enum(["ready", "no_setup", "unavailable"]),
+    reason: z.string().max(160).nullable(),
+  })
+  .strict();
+export type TradeSetupAttempt = z.infer<typeof TradeSetupAttemptSchema>;
+const setupAttempts = z.array(TradeSetupAttemptSchema).max(32).optional();
 export const ToolResultSchema = z
   .object({
     tool: ToolNameSchema,
@@ -238,6 +257,7 @@ export const ToolResultSchema = z
     sources: z.array(SourceSchema).max(6),
     proposal: ProposalSchema.nullable(),
     tradeSetup: TradeSetupSchema.nullable().optional(),
+    setupAttempts,
     error: z.string().max(160).nullable(),
   })
   .strict();
@@ -274,7 +294,8 @@ export const ResearchResultSchema = z
             status: z.enum(["ok", "partial", "unavailable"]),
             latencyMs: z.number().int().nonnegative(),
             reason: z.string().max(160).optional(),
-            outcome: z.enum(["ready", "no_setup"]).optional(),
+            outcome: z.enum(["ready", "no_setup", "unavailable"]).optional(),
+            setupAttempts,
           })
           .strict(),
       )
@@ -294,7 +315,8 @@ export type StreamEvent =
       state: "running" | "complete";
       status?: ToolResult["status"];
       reason?: string;
-      outcome?: "ready" | "no_setup";
+      outcome?: "ready" | "no_setup" | "unavailable";
+      setupAttempts?: TradeSetupAttempt[];
     }
   | { type: "result"; result: ResearchResult }
   | { type: "error"; code: string; message: string };
@@ -326,6 +348,7 @@ export interface AIProvider {
     signal: AbortSignal,
     allowTrade?: boolean,
     responseSchema?: { name: string; schema: Record<string, unknown> },
+    requiredTool?: ToolName,
   ): Promise<AICompletion>;
 }
 export class AIError extends Error {
@@ -347,7 +370,8 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
       state: z.enum(["running", "complete"]),
       status: z.enum(["ok", "partial", "unavailable"]).optional(),
       reason: z.string().max(160).optional(),
-      outcome: z.enum(["ready", "no_setup"]).optional(),
+      outcome: z.enum(["ready", "no_setup", "unavailable"]).optional(),
+      setupAttempts,
     })
     .strict(),
   z.object({ type: z.literal("result"), result: ResearchResultSchema }).strict(),
@@ -362,4 +386,5 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
 
 export * from "./journal";
 export * from "./journal-trades";
+export * from "./profit-protection";
 export * from "./settings";

@@ -16,7 +16,7 @@ export function BillingUsage({ data }: { data: BillingOverview }) {
       <CardHeader>
         <CardTitle>Your allowance</CardTitle>
         <CardDescription>
-          Daily allowances reset at {new Date(data.resetAt).toLocaleString()} (00:00 UTC).
+          Daily allowances reset at {new Date(data.resetAt).toLocaleString()}.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">

@@ -32,7 +32,6 @@ export function JournalDatePicker({
   max?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [zone, setZone] = useState("");
   const parsed = value ? new Date(dateOnly ? `${value}T00:00:00` : value) : undefined;
   const selected = parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined;
   const hour = value.slice(11, 13) || "00";
@@ -42,13 +41,7 @@ export function JournalDatePicker({
     onChange(`${day}T${part === "hour" ? next : hour}:${part === "minute" ? next : minute}`);
   }
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) setZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
-      }}
-    >
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           id={id}
@@ -113,8 +106,7 @@ export function JournalDatePicker({
                 </Field>
               ))}
             </FieldGroup>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-muted-foreground">{zone}</span>
+            <div className="flex justify-end">
               <Button type="button" size="sm" onClick={() => setOpen(false)}>
                 Done
               </Button>

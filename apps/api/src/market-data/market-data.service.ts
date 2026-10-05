@@ -1,3 +1,4 @@
+import { entryDurations } from "@marketpilot/ai";
 import {
   type MarketDataInterval,
   type MarketDataProvider,
@@ -7,7 +8,6 @@ import {
   referenceMarkets,
 } from "@marketpilot/market-data";
 import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
-
 import { RedisService } from "../redis.service";
 
 export const MARKET_DATA_PROVIDER = Symbol("MARKET_DATA_PROVIDER");
@@ -31,6 +31,26 @@ export class MarketDataService {
     @Inject(MARKET_DATA_PROVIDER) private readonly provider: MarketDataProvider,
     private readonly redis: RedisService,
   ) {}
+
+  async getTrackingWindow(snapshot: MarketSnapshot, cursor: number): Promise<MarketSnapshot> {
+    const duration = entryDurations[snapshot.data.interval];
+    const start = Math.floor(cursor / duration) * duration;
+    const availableStart = Date.parse(snapshot.data.candles[0]?.time ?? "");
+    if (availableStart <= start) return snapshot;
+    if (!Number.isFinite(start) || !this.provider.getCandles)
+      throw new ServiceUnavailableException("Historical tracking data is unavailable.");
+    // One bounded page per monitor pass. The next pass resumes from the persisted cursor.
+    const end = Math.min(start + 300 * duration, Math.floor(Date.now() / duration) * duration);
+    const candlesObservedAt = new Date().toISOString();
+    const candles = await this.provider.getCandles(snapshot.requestedSymbol, snapshot.data.interval, start, end);
+    const data = MarketObservationSchema.parse({ ...snapshot.data, candles });
+    if (
+      !matchingObservation(data, snapshot.requestedSymbol, data.interval, snapshot.source) ||
+      data.candles.some((candle) => Date.parse(candle.time) < start || Date.parse(candle.time) >= end)
+    )
+      throw new ServiceUnavailableException("Historical tracking candles failed validation.");
+    return { ...snapshot, data, candlesObservedAt, fetchedAt: new Date().toISOString() };
+  }
 
   async getMarketData(symbol: string, interval: MarketDataInterval): Promise<MarketSnapshot> {
     const normalizedSymbol = symbol.trim().toUpperCase();

@@ -1,8 +1,16 @@
-import { describeEntryCondition, type TradeSetup } from "@marketpilot/ai/contracts";
+import { describeEntryCondition, profitProtectionLevel, type TradeSetup } from "@marketpilot/ai/contracts";
 
 import { Badge } from "@/components/ui/badge";
 
-export function ConditionalEntrySummary({ plan, persian = false }: { plan: TradeSetup; persian?: boolean }) {
+export function ConditionalEntrySummary({
+  plan,
+  persian = false,
+  entryPrice,
+}: {
+  plan: TradeSetup;
+  persian?: boolean;
+  entryPrice?: number | null;
+}) {
   const rule = plan.conditionalEntry;
   const text = (en: string, fa: string) => (persian ? fa : en);
   if (!rule)
@@ -32,6 +40,7 @@ export function ConditionalEntrySummary({ plan, persian = false }: { plan: Trade
     unavailable: text("Relevant news unavailable", "خبر مرتبط ناموجود"),
   };
   const price = (value: number) => `${value.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${plan.quote}`;
+  const protection = entryPrice != null ? profitProtectionLevel(plan, entryPrice) : null;
   return (
     <div className="flex min-w-0 flex-col gap-3" dir={persian ? "rtl" : undefined}>
       <div className="flex flex-wrap gap-2">
@@ -40,9 +49,72 @@ export function ConditionalEntrySummary({ plan, persian = false }: { plan: Trade
           {rule.timeframeMode === "auto" ? "Auto" : "Manual"} · {plan.interval} / {rule.trendInterval}
         </Badge>
       </div>
+      {rule.evidence?.limitations.length ? (
+        <p className="text-muted-foreground text-sm" role="status">
+          {text("Limited evidence", "محدودیت شواهد")}:{" "}
+          {rule.evidence.limitations
+            .map(
+              (limitation) =>
+                ({
+                  limited_entry_history: text(
+                    "Entry trend uses 30–49 candles (SMA30)",
+                    "روند ورود با ۳۰ تا ۴۹ کندل و SMA30",
+                  ),
+                  limited_trend_history: text(
+                    "Higher trend uses 30–49 candles (SMA30)",
+                    "روند بالاتر با ۳۰ تا ۴۹ کندل و SMA30",
+                  ),
+                  trend_conflict: text(
+                    "Entry direction conflicts with the higher trend",
+                    "جهت ورود مخالف روند بالاتر است",
+                  ),
+                  trend_unavailable: text(
+                    "Higher trend is unverified; only entry-timeframe levels are used",
+                    "روند بالاتر تأیید نشده؛ سطوح فقط از تایم‌فریم ورود هستند",
+                  ),
+                })[limitation],
+            )
+            .join(" · ")}
+        </p>
+      ) : null}
       <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         {[
           [text("Entry condition", "شرط ورود"), condition],
+          ...(rule.strictness
+            ? [
+                [
+                  text("Setup strictness", "سطح سخت‌گیری"),
+                  {
+                    low: text("Low", "پایین"),
+                    balanced: text("Balanced", "متعادل"),
+                    high: text("High", "بالا"),
+                  }[rule.strictness],
+                ],
+              ]
+            : []),
+          ...(rule.evidence
+            ? [
+                [
+                  text("Completed candles reviewed", "کندل‌های بسته‌شدهٔ بررسی‌شده"),
+                  `${plan.interval}: ${rule.evidence.entryCandles} · ${rule.trendInterval}: ${rule.evidence.trendCandles}`,
+                ],
+              ]
+            : []),
+          ...(rule.profitProtection
+            ? [
+                [
+                  text("Profit protection after TP1", "حفاظت از سود پس از TP1"),
+                  entryPrice != null
+                    ? protection === null
+                      ? text("Unavailable: the buffer reaches TP1.", "ناموجود؛ فاصلهٔ محافظ به TP1 می‌رسد.")
+                      : `${price(protection)} · ${text("Close all remaining volume on a return to this level.", "با بازگشت به این سطح، تمام حجم باقی‌مانده بسته می‌شود.")}`
+                    : text(
+                        `Remaining volume exits at actual entry with a ${rule.profitProtection.atrMultiple} ATR buffer in the profit direction, or estimated costs if larger.`,
+                        `خروج باقی حجم با فاصلهٔ ${rule.profitProtection.atrMultiple} ATR از ورود واقعی در سمت سود؛ اگر هزینهٔ برآوردی بیشتر باشد، همان ملاک است.`,
+                      ),
+                ],
+              ]
+            : []),
           [
             text("Entry deadline", "مهلت دقیق ورود"),
             `${new Date(plan.expiresAt).toLocaleString(persian ? "fa-IR" : undefined)} · ${rule.validityMode === "auto" ? "Auto" : "Manual"} · ${validity}`,
@@ -55,7 +127,7 @@ export function ConditionalEntrySummary({ plan, persian = false }: { plan: Trade
             ? [
                 [
                   text("Net reward / risk", "نسبت سود خالص به ریسک"),
-                  `${rule.economics.netRewardRisk.toFixed(2)}R · ${text("minimum", "حداقل")} ${rule.economics.minimumNetRewardRisk}R`,
+                  `${rule.economics.netRewardRisk.toFixed(2)}R · ${rule.economics.minimumNetRewardRisk === 0 ? text("threshold disabled", "فیلتر نسبت غیرفعال") : `${text("minimum", "حداقل")} ${rule.economics.minimumNetRewardRisk}R`}`,
                 ],
                 [
                   text("Estimated round-trip costs", "برآورد هزینهٔ رفت‌وبرگشت"),

@@ -11,10 +11,23 @@ export const entryDurations = {
   "6h": 21_600_000,
   "1d": 86_400_000,
 };
+export const SetupStrictnessSchema = z.enum(["low", "balanced", "high"]);
+export type SetupStrictness = z.infer<typeof SetupStrictnessSchema>;
+
+// Balanced preserves the original policy. These are screening choices, not success probabilities.
+export function setupScreeningRules(level: SetupStrictness = "balanced") {
+  return {
+    minimumCandles: level === "low" ? 30 : level === "high" ? 100 : 50,
+    maxEntryDistanceAtr: level === "low" ? 2.5 : level === "high" ? 1 : 1.5,
+    requireTrendAlignment: level !== "low",
+  };
+}
+
 export const EntryPolicySchema = z
   .object({
+    strictness: SetupStrictnessSchema.optional(),
     roundTripCostPercent: z.number().min(0).max(10).finite().nullable().optional(),
-    minimumNetRewardRisk: z.number().min(1).max(5).finite().optional(),
+    minimumNetRewardRisk: z.number().min(0).max(5).finite().optional(),
     timeframeMode: z.enum(["auto", "manual"]),
     trendInterval: z.enum(["15m", "1h", "6h", "1d"]),
     validityMode: z.enum(["auto", "manual"]),
@@ -53,6 +66,20 @@ export function automaticEntryIntervals(holding: "scalp" | "day" | "swing" | "hy
 export const ConditionalEntrySchema = z
   .object({
     version: z.literal(2),
+    strictness: SetupStrictnessSchema.optional(),
+    evidence: z
+      .object({
+        entryCandles: z.number().int().min(30),
+        trendCandles: z.number().int().nonnegative(),
+        entryAveragePeriod: z.union([z.literal(30), z.literal(50)]),
+        trendAveragePeriod: z.union([z.literal(30), z.literal(50)]).nullable(),
+        trendStatus: z.enum(["aligned", "conflicting", "unavailable"]),
+        limitations: z
+          .array(z.enum(["limited_entry_history", "limited_trend_history", "trend_conflict", "trend_unavailable"]))
+          .max(4),
+      })
+      .strict()
+      .optional(),
     scenario: z.enum(["breakout", "pullback"]),
     condition: z.enum(["touch", "candle_close", "break_retest"]),
     trendInterval: z.enum(["15m", "1h", "6h", "1d"]),
@@ -68,6 +95,13 @@ export const ConditionalEntrySchema = z
     validityReason: z.string().min(1).max(400),
     invalidation: z.object({ kind: z.literal("stop_before_entry"), price: z.number().positive().finite() }).strict(),
     atr: z.number().positive().finite(),
+    profitProtection: z
+      .object({
+        atrMultiple: z.number().positive().max(5),
+        effectiveAt: z.string().datetime({ offset: true }),
+      })
+      .strict()
+      .optional(),
     maxEntryDistance: z.number().positive().finite(),
     news: z
       .object({
